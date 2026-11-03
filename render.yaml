@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: veyra-ai-prototype
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_MODEL
+        value: gpt-4.1-mini
+      - key: BUSINESS_NAME
+        value: Veyra AI Demo
+      - key: BUSINESS_FAQ
+        value: "This is a demo. No real business policies, rates, bookings, or availability are configured."

@@ -140,6 +140,6 @@ ${BUSINESS_FAQ}`,
 // Serve the prototype website and API from one Node deployment.
 app.use(express.static(__dirname));
 
-app.listen(PORT, () => {
+app.listen(PORT, "0.0.0.0", () => {
   console.log(`Veyra AI server listening on port ${PORT}`);
 });

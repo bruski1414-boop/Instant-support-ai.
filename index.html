@@ -1,116 +1,80 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Instant Support AI</title>
+<meta name="description" content="Instant Support AI — fast, helpful customer responses for hospitality and service businesses.">
+<title>Instant Support AI | Every enquiry matters</title>
 <style>
-*{box-sizing:border-box}
-body{margin:0;background:#070b12;color:#eef5ff;font-family:Arial,sans-serif}
-main{max-width:1200px;margin:auto;padding:25px}
-header{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap}
-h1{font-size:30px;margin-bottom:5px}
-.sub{color:#8194ad}
-.logo{color:#52d7ff;font-weight:bold;font-size:20px}
-button{background:#12243a;color:white;border:1px solid #254765;padding:12px;border-radius:9px}
-.notice{background:#101d2c;border:1px solid #24394f;padding:12px;border-radius:10px;margin:22px 0;color:#a8bdd3}
-.cards{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
-.card,.panel{background:linear-gradient(140deg,#101b2b,#0b121d);border:1px solid #203147;border-radius:14px;padding:20px}
-label{color:#8296ae;font-size:13px}
-.number{font-size:28px;font-weight:bold;margin:12px 0;color:#fff}
-.green{color:#53d8a6;font-size:12px}
-.layout{display:grid;grid-template-columns:1.5fr 1fr;gap:14px;margin-top:15px}
-h2{font-size:17px}
-.chart{width:100%;height:220px}
-svg{width:100%;height:100%}
-.row{display:flex;justify-content:space-between;border-bottom:1px solid #203147;padding:14px 0;color:#b9cbe0}
-table{width:100%;border-collapse:collapse;margin-top:15px}
-td,th{text-align:left;padding:13px;border-bottom:1px solid #203147;font-size:13px}
-th{color:#8194ad}
-footer{color:#627890;font-size:12px;margin-top:20px}
-@media(max-width:750px){.cards{grid-template-columns:repeat(2,1fr)}.layout{grid-template-columns:1fr}main{padding:15px}}
+:root{--bg:#070a10;--panel:#0e1420;--line:#243044;--text:#f3f6fc;--muted:#9aa8bc;--blue:#65d8ff;--violet:#9c8cff}
+*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,Arial,sans-serif}a{color:inherit;text-decoration:none}.wrap{max-width:1160px;margin:auto;padding:0 24px}
+nav{height:76px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #ffffff12}.brand{display:flex;align-items:center;gap:10px;font-weight:750;letter-spacing:.02em}.mark{display:grid;place-items:center;width:34px;height:34px;border-radius:10px;background:linear-gradient(135deg,var(--blue),var(--violet));color:#07101b;font-size:20px}.navlinks{display:flex;gap:26px;color:var(--muted);font-size:14px}.navlinks a:hover{color:white}.navbtn,.primary{border:0;border-radius:10px;padding:12px 18px;background:linear-gradient(100deg,var(--blue),#9ba9ff);color:#06101a;font-weight:750;cursor:pointer}
+.hero{padding:94px 0 70px;display:grid;grid-template-columns:1.1fr .9fr;gap:50px;align-items:center}.eyebrow{color:var(--blue);text-transform:uppercase;letter-spacing:.16em;font-size:12px;font-weight:800}.hero h1{font-size:clamp(42px,6vw,70px);line-height:1.02;letter-spacing:-.055em;margin:18px 0}.hero h1 span{background:linear-gradient(90deg,var(--blue),#b8b0ff);-webkit-background-clip:text;background-clip:text;color:transparent}.lead{font-size:18px;line-height:1.7;color:var(--muted);max-width:600px}.actions{display:flex;gap:12px;flex-wrap:wrap;margin-top:28px}.secondary{border:1px solid #344157;background:#111824;color:white;border-radius:10px;padding:12px 18px;font-weight:650}.fine{font-size:12px;color:#728198;margin-top:16px}
+.preview{background:radial-gradient(ellipse at 50% 0,#152a40,transparent 65%),#0b111b;border:1px solid #26364c;border-radius:22px;padding:22px;box-shadow:0 30px 100px #0008}.previewtop{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #26364c;padding-bottom:15px}.status{font-size:12px;color:#72e3b4}.metricgrid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:16px 0}.metric{background:#111b29;border:1px solid #26364c;padding:15px;border-radius:12px}.metric small{color:var(--muted)}.metric strong{display:block;font-size:25px;margin-top:7px}.spark{height:105px;display:flex;align-items:end;gap:7px;padding:8px 2px}.spark i{display:block;flex:1;border-radius:5px 5px 0 0;background:linear-gradient(#65d8ff,#687bff);opacity:.85}
+section{padding:64px 0}.sectionhead{max-width:650px;margin-bottom:28px}.sectionhead h2{font-size:clamp(30px,4vw,44px);letter-spacing:-.04em;margin:12px 0}.sectionhead p{color:var(--muted);line-height:1.7}.features{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}.feature{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:24px}.feature .icon{font-size:24px}.feature h3{margin:15px 0 8px}.feature p{color:var(--muted);line-height:1.65;font-size:14px}
+.demoarea{display:grid;grid-template-columns:.9fr 1.1fr;gap:24px;align-items:start}.demo-copy p{color:var(--muted);line-height:1.7}.chat{border:1px solid var(--line);border-radius:18px;overflow:hidden;background:#0e1520}.chathead{padding:17px;background:#131f2e;display:flex;gap:12px;align-items:center}.avatar{width:38px;height:38px;border-radius:12px;background:linear-gradient(135deg,#65d8ff,#8f82ff);display:grid;place-items:center;color:#07101a;font-weight:bold}.chathead small{display:block;color:#9aa8bc;margin-top:3px}.messages{padding:18px;min-height:250px;max-height:330px;overflow:auto;display:flex;flex-direction:column;gap:12px}.bubble{padding:12px 14px;border-radius:13px;max-width:88%;font-size:14px;line-height:1.55}.bot{background:#1a2636;align-self:flex-start}.user{background:#17415a;align-self:flex-end}.quick{display:flex;gap:8px;flex-wrap:wrap;padding:0 16px 14px}.quick button{border:1px solid #344157;background:#111b28;color:#dcecff;border-radius:20px;padding:8px 11px;cursor:pointer;font-size:12px}.chatform{display:flex;padding:12px;border-top:1px solid var(--line);gap:8px}.chatform input{flex:1;min-width:0;background:#080d14;border:1px solid #29364a;border-radius:10px;padding:12px;color:white}.chatform button{background:var(--blue);border:0;border-radius:10px;padding:0 16px;font-weight:bold;cursor:pointer}
+.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}.step{border-top:1px solid #344157;padding:20px 0}.step b{color:var(--blue);font-size:12px}.step h3{margin:10px 0}.step p{color:var(--muted);line-height:1.6;font-size:14px}
+.cta{border:1px solid #2b3e54;border-radius:22px;padding:38px;background:radial-gradient(ellipse at 100% 0,#16344a,transparent 55%),#0e1520;display:flex;justify-content:space-between;align-items:center;gap:20px}.cta h2{font-size:34px;margin:0 0 10px}.cta p{color:var(--muted);margin:0;line-height:1.6}
+footer{border-top:1px solid #ffffff12;padding:28px 0;color:#7e8da3;font-size:12px;display:flex;justify-content:space-between;gap:15px;flex-wrap:wrap}
+@media(max-width:800px){.hero,.demoarea{grid-template-columns:1fr}.hero{padding-top:60px}.features,.steps{grid-template-columns:1fr}.navlinks{display:none}.cta{display:block}.cta .primary{margin-top:20px}.wrap{padding:0 17px}}
 </style>
 </head>
 <body>
+<div class="wrap">
+<nav>
+<a class="brand" href="#"><span class="mark">✦</span> INSTANT SUPPORT AI</a>
+<div class="navlinks"><a href="#features">Platform</a><a href="#demo">Live demo</a><a href="#how">How it works</a></div>
+<a class="navbtn" href="#demo">Try the demo</a>
+</nav>
 <main>
-<header>
+<div class="hero">
 <div>
-<div class="logo">✦ INSTANT SUPPORT AI</div>
-<h1>Business Intelligence</h1>
-<div class="sub">Your AI-powered business overview</div>
+<div class="eyebrow">Customer response, reimagined</div>
+<h1>Every enquiry<br>deserves an <span>instant answer.</span></h1>
+<p class="lead">A polished AI customer-response assistant for hospitality and service businesses—helping teams respond quickly, capture enquiries, and hand complex requests to real staff.</p>
+<div class="actions"><a class="primary" href="#demo">Explore the interactive demo ↗</a><a class="secondary" href="#how">See how it works</a></div>
+<div class="fine">Prototype preview · Not connected to a live business or AI service yet</div>
 </div>
-<button onclick="alert('Demo dashboard — real data integration coming next.')">Export Report ↓</button>
-</header>
-
-<div class="notice">
-⚡ DEMO MODE — All numbers below are fictional examples.
-Real company data will appear after cloud and business integrations.
-</div>
-
-<div class="cards">
-<div class="card">
-<label>AI-Attributed Revenue</label>
-<div class="number">€24,850</div>
-<div class="green">Example only</div>
-</div>
-<div class="card">
-<label>Conversations</label>
-<div class="number">1,284</div>
-<div class="green">Example only</div>
-</div>
-<div class="card">
-<label>Qualified Leads</label>
-<div class="number">186</div>
-<div class="green">Example only</div>
-</div>
-<div class="card">
-<label>Bookings</label>
-<div class="number">73</div>
-<div class="green">Example only</div>
+<div class="preview">
+<div class="previewtop"><div><b>Support overview</b><div class="fine" style="margin:5px 0 0">Illustrative dashboard</div></div><span class="status">● Demo data</span></div>
+<div class="metricgrid"><div class="metric"><small>Enquiries received</small><strong>128</strong></div><div class="metric"><small>Response target</small><strong>&lt; 1 min</strong></div><div class="metric"><small>Needs staff</small><strong>12</strong></div><div class="metric"><small>Handled in demo</small><strong>84%</strong></div></div>
+<div class="fine">Illustrative activity only — no real customer data</div><div class="spark" aria-label="Decorative sample activity chart"><i style="height:35%"></i><i style="height:50%"></i><i style="height:43%"></i><i style="height:68%"></i><i style="height:54%"></i><i style="height:82%"></i><i style="height:70%"></i><i style="height:95%"></i><i style="height:75%"></i><i style="height:100%"></i></div>
 </div>
 </div>
-
-<div class="layout">
-<section class="panel">
-<h2>Revenue Performance</h2>
-<div class="sub">Illustrative revenue trend</div>
-<div class="chart">
-<svg viewBox="0 0 600 220" preserveAspectRatio="none">
-<g stroke="#203147">
-<path d="M0 40H600M0 90H600M0 140H600M0 190H600"/>
-</g>
-<path d="M0 180 L70 160 L140 175 L210 110 L280 130 L350 75 L420 100 L490 45 L550 65 L600 20"
-fill="none" stroke="#4da3ff" stroke-width="4"/>
-<path d="M0 200 L70 190 L140 175 L210 165 L280 145 L350 150 L420 125 L490 120 L550 100 L600 90"
-fill="none" stroke="#52d7ff" stroke-width="3"/>
-</svg>
+<section id="features">
+<div class="sectionhead"><div class="eyebrow">Built for busy teams</div><h2>Fast replies. Thoughtful handoffs.<br>More enquiries handled.</h2><p>Designed to support your staff—not replace them. The real product will need each business’s approved information, integrations, and escalation rules.</p></div>
+<div class="features">
+<div class="feature"><div class="icon">⚡</div><h3>Quick first response</h3><p>Give visitors a helpful first reply while your team is busy or away.</p></div>
+<div class="feature"><div class="icon">✧</div><h3>Business-specific answers</h3><p>Use approved FAQs, service details, policies, and availability information.</p></div>
+<div class="feature"><div class="icon">↗</div><h3>Human handoff</h3><p>Route sensitive, urgent, uncertain, or high-value requests to staff.</p></div>
 </div>
-<div class="sub">Blue: revenue · Cyan: conversations</div>
 </section>
-
-<section class="panel">
-<h2>AI Performance</h2>
-<div class="row"><span>Average response time</span><b>2.4 sec</b></div>
-<div class="row"><span>AI resolution rate</span><b>82%</b></div>
-<div class="row"><span>Human handoffs</span><b>14%</b></div>
-<div class="row"><span>Customer satisfaction</span><b>4.8/5</b></div>
-<div class="notice">Sample metrics only</div>
-</section>
+<section id="demo">
+<div class="demoarea">
+<div class="demo-copy"><div class="eyebrow">Interactive preview</div><h2 style="font-size:38px;letter-spacing:-.04em">Try a sample hotel conversation.</h2><p>Choose a suggested question or type your own. This local demo uses example responses only; it does not contact a hotel, send messages, or use a live AI model.</p><p><b>Example business:</b> Northstar Hotel<br><b>Demo assistant:</b> Ava</p><div class="fine">For real deployment, the hotel would review and approve its information and escalation contacts.</div></div>
+<div class="chat">
+<div class="chathead"><div class="avatar">A</div><div><b>Ava · Northstar Hotel</b><small>Sample support assistant · Demo mode</small></div></div>
+<div class="messages" id="messages" aria-live="polite"><div class="bubble bot">Hello and welcome to Northstar Hotel. I’m Ava, the sample virtual assistant. How may I help you today?</div></div>
+<div class="quick"><button onclick="ask('What time is check-in?')">Check-in time</button><button onclick="ask('Do you have airport transfers?')">Airport transfer</button><button onclick="ask('I need to speak to a staff member')">Speak to staff</button></div>
+<form class="chatform" id="chatform"><input id="question" placeholder="Ask a sample question…" autocomplete="off" aria-label="Type a demo question"><button type="submit">Send</button></form>
 </div>
-
-<section class="panel" style="margin-top:15px">
-<h2>Recent Conversations</h2>
-<div class="sub">Example customer activity</div>
-<table>
-<tr><th>Customer</th><th>Enquiry</th><th>Status</th><th>Revenue</th></tr>
-<tr><td>Customer #1042</td><td>Product enquiry</td><td>Lead captured</td><td>€450*</td></tr>
-<tr><td>Customer #1041</td><td>Booking request</td><td>Human handoff</td><td>€1,200*</td></tr>
-<tr><td>Customer #1040</td><td>Pricing question</td><td>Resolved</td><td>—</td></tr>
-<tr><td>Customer #1039</td><td>Order support</td><td>Escalated</td><td>—</td></tr>
-</table>
-<footer>*Fictional example revenue. Actual attribution requires verified transaction data.</footer>
+</div>
 </section>
-
-<footer>Instant Support AI · Dashboard prototype · Cloud integration not yet connected</footer>
+<section id="how">
+<div class="sectionhead"><div class="eyebrow">A simple workflow</div><h2>From first enquiry to the right next step.</h2></div>
+<div class="steps"><div class="step"><b>01 / CONNECT</b><h3>Configure the business</h3><p>Load approved FAQs, policies, services, and contact pathways.</p></div><div class="step"><b>02 / RESPOND</b><h3>Answer with context</h3><p>Provide relevant answers and ask clarifying questions when needed.</p></div><div class="step"><b>03 / HAND OFF</b><h3>Bring in the team</h3><p>Escalate requests that require staff judgement or confirmation.</p></div></div>
+</section>
+<section><div class="cta"><div><h2>Make every enquiry count.</h2><p>Explore the demo now. The next build step is a secure backend and real AI integration.</p></div><a class="primary" href="#demo">Try the demo ↗</a></div></section>
 </main>
+<footer><span>© 2026 Instant Support AI · Prototype</span><span>Demo content only · No live AI or customer integrations</span></footer>
+</div>
+<script>
+const messages=document.getElementById('messages');
+const input=document.getElementById('question');
+function add(text,who){const el=document.createElement('div');el.className='bubble '+who;el.textContent=text;messages.appendChild(el);messages.scrollTop=messages.scrollHeight;}
+function response(q){const s=q.toLowerCase();if(s.includes('check-in')||s.includes('check in'))return 'Our sample check-in time is 3:00 PM and check-out is 11:00 AM. Please confirm actual times with the hotel before relying on them.';if(s.includes('airport')||s.includes('transfer'))return 'Airport transfers may be available by arrangement in this demo. I can ask the hotel team to confirm pricing and availability.';if(s.includes('staff')||s.includes('human')||s.includes('person'))return 'Of course. This is a demo, so I cannot notify real staff. In a live setup, I would pass your request to the hotel team and explain that a response is needed.';if(s.includes('price')||s.includes('rate')||s.includes('room'))return 'Room rates depend on dates, room type, and availability. I would need the live hotel booking system or staff confirmation to provide an accurate quote.';if(s.includes('wifi')||s.includes('wi-fi'))return 'I don’t have verified Wi-Fi details for this sample hotel. In a live deployment, I would answer from the hotel’s approved FAQ or hand this over to staff.';return 'Thanks for your question. I don’t have verified information for that in this sample demo, so I would hand it to the hotel team rather than guess.';}
+function ask(q){if(!q.trim())return;add(q,'user');input.value='';setTimeout(()=>add(response(q),'bot'),250);}
+document.getElementById('chatform').addEventListener('submit',e=>{e.preventDefault();ask(input.value);});
+</script>
 </body>
 </html>

@@ -24,6 +24,21 @@ This is **not yet a complete €5,000/month enterprise product**. It does not ye
 
 Do not promise those features to customers until they are implemented and tested. Pricing needs to be justified by proven business value, reliability, support, and integrations—not by the number of AI features listed.
 
+## Deploy a prototype on Render
+
+This repository includes a Render Blueprint in `render.yaml`.
+
+1. A parent/guardian should help create or manage any hosting and AI-provider accounts, review billing, and approve API usage.
+2. Open Render and choose **New → Blueprint** (or connect the GitHub repository and create a Blueprint).
+3. Select this repository and review the service settings in `render.yaml`.
+4. In the Render service's Environment settings, add `OPENAI_API_KEY` as a secret. Never paste it into GitHub, website JavaScript, chat messages, or screenshots.
+5. Add the real business's approved FAQ and business name only after receiving permission.
+6. Deploy, then open the service's `/api/health` endpoint and test the chat with non-sensitive sample questions.
+
+Render's free web services may sleep after inactivity and take time to wake up. AI-provider usage may still cost money. A free hosting tier does not mean unlimited or free AI requests. Review current hosting and API prices before enabling customer traffic.
+
+This is a **single-business prototype**, not a multi-company SaaS. Do not connect real customer data or promise service-level guarantees until authentication, tenant isolation, privacy controls, monitoring, and a security review are implemented.
+
 ## Run locally
 
 Requirements: Node.js 20 or newer.

@@ -53,7 +53,7 @@ footer{border-top:1px solid #ffffff12;padding:28px 0;color:#7e8da3;font-size:12p
 <div class="demoarea">
 <div class="demo-copy"><div class="eyebrow">Interactive preview</div><h2 style="font-size:38px;letter-spacing:-.04em">Try a sample hotel conversation.</h2><p>Choose a suggested question or type your own. This local demo uses example responses only; it does not contact a hotel, send messages, or use a live AI model.</p><p><b>Example business:</b> Northstar Hotel<br><b>Demo assistant:</b> Ava</p><div class="fine">For real deployment, the hotel would review and approve its information and escalation contacts.</div></div>
 <div class="chat">
-<div class="chathead"><div class="avatar">A</div><div><b>Ava · Northstar Hotel</b><small>Sample support assistant · Demo mode</small></div></div>
+<div class="chathead"><div class="avatar">A</div><div><b>Ava · Northstar Hotel</b><small id="serviceStatus">Checking assistant connection…</small></div></div>
 <div class="messages" id="messages" aria-live="polite"><div class="bubble bot">Hello and welcome to Northstar Hotel. I’m Ava, the sample virtual assistant. How may I help you today?</div></div>
 <div class="quick"><button onclick="ask('What time is check-in?')">Check-in time</button><button onclick="ask('Do you have airport transfers?')">Airport transfer</button><button onclick="ask('I need to speak to a staff member')">Speak to staff</button></div>
 <form class="chatform" id="chatform"><input id="question" placeholder="Ask a sample question…" autocomplete="off" aria-label="Type a demo question"><button type="submit">Send</button></form>
@@ -71,10 +71,85 @@ footer{border-top:1px solid #ffffff12;padding:28px 0;color:#7e8da3;font-size:12p
 <script>
 const messages=document.getElementById('messages');
 const input=document.getElementById('question');
-function add(text,who){const el=document.createElement('div');el.className='bubble '+who;el.textContent=text;messages.appendChild(el);messages.scrollTop=messages.scrollHeight;}
-function response(q){const s=q.toLowerCase();if(s.includes('check-in')||s.includes('check in'))return 'Our sample check-in time is 3:00 PM and check-out is 11:00 AM. Please confirm actual times with the hotel before relying on them.';if(s.includes('airport')||s.includes('transfer'))return 'Airport transfers may be available by arrangement in this demo. I can ask the hotel team to confirm pricing and availability.';if(s.includes('staff')||s.includes('human')||s.includes('person'))return 'Of course. This is a demo, so I cannot notify real staff. In a live setup, I would pass your request to the hotel team and explain that a response is needed.';if(s.includes('price')||s.includes('rate')||s.includes('room'))return 'Room rates depend on dates, room type, and availability. I would need the live hotel booking system or staff confirmation to provide an accurate quote.';if(s.includes('wifi')||s.includes('wi-fi'))return 'I don’t have verified Wi-Fi details for this sample hotel. In a live deployment, I would answer from the hotel’s approved FAQ or hand this over to staff.';return 'Thanks for your question. I don’t have verified information for that in this sample demo, so I would hand it to the hotel team rather than guess.';}
-function ask(q){if(!q.trim())return;add(q,'user');input.value='';setTimeout(()=>add(response(q),'bot'),250);}
-document.getElementById('chatform').addEventListener('submit',e=>{e.preventDefault();ask(input.value);});
+const serviceStatus=document.getElementById('serviceStatus');
+const conversationHistory=[];
+let liveAI=false;
+
+async function checkService(){
+  try{
+    const r=await fetch('/api/health');
+    if(!r.ok)throw new Error('API unavailable');
+    const data=await r.json();
+    liveAI=data.mode==='ai-configured';
+    serviceStatus.textContent=liveAI?'Live AI · Connected':'Demo mode · Server needs API key';
+  }catch{
+    liveAI=false;
+    serviceStatus.textContent='Demo mode · Backend not connected';
+  }
+}
+checkService();
+
+function add(text,who){
+  const el=document.createElement('div');
+  el.className='bubble '+who;
+  el.textContent=text;
+  messages.appendChild(el);
+  messages.scrollTop=messages.scrollHeight;
+}
+function demoResponse(q){
+  const s=q.toLowerCase();
+  if(s.includes('check-in')||s.includes('check in'))return 'Our sample check-in time is 3:00 PM and check-out is 11:00 AM. Please confirm actual times with the hotel before relying on them.';
+  if(s.includes('airport')||s.includes('transfer'))return 'Airport transfers may be available by arrangement in this demo. I can ask the hotel team to confirm pricing and availability.';
+  if(s.includes('staff')||s.includes('human')||s.includes('person'))return 'Of course. This is a demo, so I cannot notify real staff. In a live setup, I would pass your request to the hotel team and explain that a response is needed.';
+  if(s.includes('price')||s.includes('rate')||s.includes('room'))return 'Room rates depend on dates, room type, and availability. I would need the live hotel booking system or staff confirmation to provide an accurate quote.';
+  if(s.includes('wifi')||s.includes('wi-fi'))return 'I don’t have verified Wi-Fi details for this sample hotel. In a live deployment, I would answer from the hotel’s approved FAQ or hand this over to staff.';
+  return 'Thanks for your question. I don’t have verified information for that in this sample demo, so I would hand it to the hotel team rather than guess.';
+}
+async function ask(q){
+  q=q.trim();
+  if(!q)return;
+  add(q,'user');
+  input.value='';
+  conversationHistory.push({role:'user',content:q});
+  const pending=document.createElement('div');
+  pending.className='bubble bot';
+  pending.textContent='One moment…';
+  messages.appendChild(pending);
+  messages.scrollTop=messages.scrollHeight;
+
+  let reply='';
+  let needsHuman=false;
+  try{
+    const r=await fetch('/api/chat',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({message:q,history:conversationHistory.slice(0,-1)})
+    });
+    const data=await r.json();
+    if(r.ok&&data.reply){
+      liveAI=data.mode==='live-ai';
+      serviceStatus.textContent=liveAI?'Live AI · Connected':'Assistant connected';
+      reply=data.reply;
+      needsHuman=Boolean(data.needsHuman);
+    }else{
+      liveAI=false;
+      serviceStatus.textContent='Demo mode · Backend needs setup';
+      reply=demoResponse(q);
+    }
+  }catch{
+    liveAI=false;
+    serviceStatus.textContent='Demo mode · Backend not connected';
+    reply=demoResponse(q);
+  }
+  pending.remove();
+  if(needsHuman)reply+='\n\nA staff member should review this request. (Handoff is flagged; staff notification is not configured in this prototype.)';
+  add(reply,'bot');
+  conversationHistory.push({role:'assistant',content:reply});
+}
+document.getElementById('chatform').addEventListener('submit',e=>{
+  e.preventDefault();
+  ask(input.value);
+});
 </script>
 </body>
 </html>

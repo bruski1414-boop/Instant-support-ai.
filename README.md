@@ -9,18 +9,22 @@ Veyra AI is an early customer-support assistant prototype aimed at hospitality a
 - OpenAI API key stays on the server in an environment variable.
 - Business-specific FAQ/context injected into the AI system prompt.
 - Basic request validation and API rate limiting.
-- Escalation flag for requests that should be reviewed by staff.
+- Conservative escalation rules for sensitive or uncertain requests.
+- Optional Slack-compatible incoming-webhook alerts for staff handoffs.
+- Explicit delivery status: notified, delivery failed, or not connected.
+- Security headers, bounded request/history sizes, API timeout, and restricted public routes.
+- Built-in Node test suite (`npm test`).
 - Demo responses when the live backend is not configured.
 
 ## Important: prototype, not production SaaS
 
 This is **not yet a complete €5,000/month enterprise product**. It does not yet include:
 - Customer accounts, organization isolation, or a secure multi-tenant database.
-- Real staff email/SMS/WhatsApp notifications.
+- Native staff email/SMS/WhatsApp integrations (only a generic optional webhook is available).
 - Booking, CRM, hotel PMS, Shopify, or payment integrations.
 - A secure business-owner dashboard for editing FAQs.
 - Billing, subscription management, audit logs, or enterprise SLAs.
-- Production monitoring, automated tests, or independent security review.
+- Production monitoring, executed CI test results, or independent security review.
 
 Do not promise those features to customers until they are implemented and tested. Pricing needs to be justified by proven business value, reliability, support, and integrations—not by the number of AI features listed.
 
@@ -32,12 +36,17 @@ This repository includes a Render Blueprint in `render.yaml`.
 2. Open Render and choose **New → Blueprint** (or connect the GitHub repository and create a Blueprint).
 3. Select this repository and review the service settings in `render.yaml`.
 4. In the Render service's Environment settings, add `OPENAI_API_KEY` as a secret. Never paste it into GitHub, website JavaScript, chat messages, or screenshots.
-5. Add the real business's approved FAQ and business name only after receiving permission.
-6. Deploy, then open the service's `/api/health` endpoint and test the chat with non-sensitive sample questions.
+5. Optionally set `HANDOFF_WEBHOOK_URL` to a private, business-approved Slack-compatible incoming webhook. Staff alerts include the customer's message, so configure this only with the business owner's explicit permission and follow the business's privacy policy. Test delivery with a non-sensitive message.
+6. Add the real business's approved FAQ and business name only after receiving permission.
+7. Deploy, then open the service's `/api/health` endpoint and test the chat with non-sensitive sample questions.
 
 Render's free web services may sleep after inactivity and take time to wake up. AI-provider usage may still cost money. A free hosting tier does not mean unlimited or free AI requests. Review current hosting and API prices before enabling customer traffic.
 
 This is a **single-business prototype**, not a multi-company SaaS. Do not connect real customer data or promise service-level guarantees until authentication, tenant isolation, privacy controls, monitoring, and a security review are implemented.
+
+## Run tests
+
+Run `npm test` with Node.js 20 or newer. The tests cover escalation rules, safe fallback wording, health status, input validation, and blocked access to private source/configuration files. These tests still need to be executed in a real Node environment before any release.
 
 ## Run locally
 
@@ -54,6 +63,7 @@ Without an API key, the website still displays sample demo responses, but the ba
 
 ## Environment variables
 
+- HANDOFF_WEBHOOK_URL: optional private Slack-compatible incoming webhook for staff alerts. It receives the customer's message when a handoff is triggered; use only with explicit business approval.
 - OPENAI_API_KEY: server-side secret; required for live AI.
 - OPENAI_MODEL: model name, default gpt-4.1-mini.
 - PORT: server port, default 3000.

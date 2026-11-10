@@ -107,7 +107,7 @@ function createAuthRouter(app, { pool, env = process.env, logger = console }) {
     app.post("/api/auth/login", unavailable);
     app.get("/api/auth/me", unavailable);
     app.post("/api/auth/logout", unavailable);
-    return;
+    return (_req, res) => res.redirect(303, "/login.html");
   }
 
   async function getSession(req) {
@@ -124,6 +124,26 @@ function createAuthRouter(app, { pool, env = process.env, logger = console }) {
       if (!result.rows[0]) return null;
       return { ...result.rows[0], tokenHash, csrfCookie: cookies[CSRF_COOKIE] || "" };
     });
+  }
+
+  async function requireAuth(req, res, next) {
+    try {
+      const session = await getSession(req);
+      if (!session) return res.redirect(303, "/login.html");
+      const profile = await inTransaction(pool, async (client) => {
+        await client.query("SELECT set_config('app.user_id', $1, true)", [session.user_id]);
+        const user = await client.query("SELECT id, email FROM users WHERE id = $1 AND disabled_at IS NULL LIMIT 1", [session.user_id]);
+        const memberships = await client.query("SELECT tenant_id, role FROM memberships WHERE user_id = $1 ORDER BY created_at", [session.user_id]);
+        if (!user.rows[0] || !memberships.rows.length) return null;
+        return { user: user.rows[0], memberships: memberships.rows };
+      });
+      if (!profile) return res.redirect(303, "/login.html");
+      req.auth = profile;
+      return next();
+    } catch (error) {
+      logger.error("Veyra dashboard authentication failed:", error?.message || "Unknown error");
+      return res.status(503).send("Dashboard sign-in is temporarily unavailable.");
+    }
   }
 
   app.post("/api/auth/login", async (req, res) => {
@@ -218,6 +238,7 @@ function createAuthRouter(app, { pool, env = process.env, logger = console }) {
       return res.status(503).json({ error: "Sign-out is temporarily unavailable." });
     }
   });
+  return requireAuth;
 }
 
 module.exports = { hashPassword, verifyPassword, parseCookies, hashToken, createAuthRouter };

@@ -32,6 +32,23 @@ function safeStaffReviewReply(message) {
   return "This request needs review by the hotel team. I cannot make or confirm booking changes, refunds, charges, availability, or service resolutions here. Please contact reception directly.";
 }
 
+function normaliseWebsiteOrigins(input) {
+  if (!Array.isArray(input) || input.length > 20) return null;
+  const origins = [];
+  for (const raw of input) {
+    if (typeof raw !== "string" || raw.length > 300) return null;
+    const value = raw.trim();
+    if (!value) continue;
+    try {
+      const url = new URL(value);
+      if (url.protocol !== "https:" || !url.hostname || url.username || url.password || url.port || url.pathname !== "/" || url.search || url.hash) return null;
+      const origin = url.origin.toLowerCase();
+      if (!origins.includes(origin)) origins.push(origin);
+    } catch { return null; }
+  }
+  return origins.length <= 20 ? origins : null;
+}
+
 function validWebhookUrl(raw) {
   if (!raw) return null;
   try {
@@ -412,6 +429,36 @@ function createApp(options = {}) {
     } catch (error) { return workspaceFailure(res, error, "Veyra knowledge approval failed:"); }
   });
 
+  // Website launcher origins are managed only by workspace owners/admins.
+  app.get("/api/widget/domains", requireAuth, async (req, res) => {
+    const tenantId = selectedTenant(req, res); if (!tenantId) return;
+    try {
+      const scoped = await withTenantTransaction(req.auth.user.id, tenantId, async (client, role) => {
+        const result = await client.query("SELECT allowed_origins, updated_at FROM tenant_widget_settings WHERE tenant_id = $1", [tenantId]);
+        return { origins: result.rows[0]?.allowed_origins || [], updatedAt: result.rows[0]?.updated_at || null, canManage: ["owner", "admin"].includes(role) };
+      });
+      if (scoped.forbidden) return res.status(403).json({ error: "You do not have access to this workspace." });
+      return res.json(scoped.result);
+    } catch (error) { return workspaceFailure(res, error, "Veyra widget domain settings failed:"); }
+  });
+
+  app.put("/api/widget/domains", requireAuth, async (req, res) => {
+    const tenantId = selectedTenant(req, res); if (!tenantId) return;
+    const origins = normaliseWebsiteOrigins(req.body?.origins);
+    if (!origins) return res.status(400).json({ error: "Enter up to 20 valid HTTPS website origins, such as https://hotel.example. Do not include paths." });
+    try {
+      const scoped = await withTenantTransaction(req.auth.user.id, tenantId, async (client, role) => {
+        if (!["owner", "admin"].includes(role)) return { forbiddenRole: true };
+        await client.query("INSERT INTO tenant_widget_settings (tenant_id, allowed_origins, updated_at) VALUES ($1, $2::text[], now()) ON CONFLICT (tenant_id) DO UPDATE SET allowed_origins = EXCLUDED.allowed_origins, updated_at = now()", [tenantId, origins]);
+        await client.query("INSERT INTO audit_events (tenant_id, actor_user_id, action, resource_type, metadata) VALUES ($1, $2, 'widget.allowed_origins_updated', 'tenant_widget_settings', $3::jsonb)", [tenantId, req.auth.user.id, JSON.stringify({ origin_count: origins.length })]);
+        return { saved: true };
+      });
+      if (scoped.forbidden) return res.status(403).json({ error: "You do not have access to this workspace." });
+      if (scoped.result.forbiddenRole) return res.status(403).json({ error: "Only workspace owners and admins can manage website domains." });
+      return res.json({ saved: true, origins });
+    } catch (error) { return workspaceFailure(res, error, "Veyra widget domain save failed:"); }
+  });
+
   // Slack integration secrets are encrypted at rest; only workspace owners/admins can manage them.
   app.get("/api/integrations/slack", requireAuth, async (req, res) => {
     const tenantId = selectedTenant(req, res); if (!tenantId) return;
@@ -752,10 +799,41 @@ ${businessFaq}`,
   app.get("/login.html", (_req, res) => res.sendFile(path.join(__dirname, "login.html")));
   app.get("/guest.html", (_req, res) => res.sendFile(path.join(__dirname, "guest.html")));
   app.get("/dashboard.html", requireAuth, (_req, res) => res.sendFile(path.join(__dirname, "dashboard.html")));
-  app.get("/widget.js", (_req, res) => {
-    res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
-    res.type("application/javascript");
-    res.sendFile(path.join(__dirname, "widget.js"));
+  app.get("/widget.js", async (req, res) => {
+    const tenantId = req.query.workspace;
+    if (!validUuid(tenantId)) return res.status(404).type("text").send("Veyra website launcher unavailable.");
+    let requestingOrigin = "";
+    try {
+      const referer = req.get("referer");
+      if (!referer) throw new Error("Missing referrer");
+      const parsed = new URL(referer);
+      if (parsed.protocol !== "https:" || parsed.username || parsed.password) throw new Error("Invalid referrer");
+      requestingOrigin = parsed.origin.toLowerCase();
+    } catch {
+      return res.status(403).type("text").send("This website is not authorised to use this Veyra launcher.");
+    }
+    try {
+      if (!dbPool) return res.status(503).type("text").send("Veyra website launcher is temporarily unavailable.");
+      const client = await dbPool.connect();
+      let allowedOrigins = [];
+      try {
+        await client.query("BEGIN");
+        await client.query("SELECT set_config('app.tenant_id', $1, true)", [tenantId]);
+        const result = await client.query("SELECT allowed_origins FROM tenant_widget_settings WHERE tenant_id = $1", [tenantId]);
+        allowedOrigins = result.rows[0]?.allowed_origins || [];
+        await client.query("COMMIT");
+      } catch (error) {
+        try { await client.query("ROLLBACK"); } catch {}
+        throw error;
+      } finally { client.release(); }
+      if (!allowedOrigins.includes(requestingOrigin)) return res.status(403).type("text").send("This website is not authorised to use this Veyra launcher.");
+      res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+      res.setHeader("Cache-Control", "no-store");
+      res.setHeader("Vary", "Referer");
+      res.setHeader("X-Content-Type-Options", "nosniff");
+      res.type("application/javascript");
+      return res.sendFile(path.join(__dirname, "widget.js"));
+    } catch (error) { return workspaceFailure(res, error, "Veyra widget origin check failed:"); }
   });
   app.get("/widget.css", (_req, res) => {
     res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");

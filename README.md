@@ -13,6 +13,7 @@ Veyra AI is an early customer-support assistant prototype aimed at hospitality a
 - Optional Slack-compatible incoming-webhook alerts for staff handoffs.
 - Explicit delivery status: notified, delivery failed, or not connected.
 - Security headers, bounded request/history sizes, API timeout, and restricted public routes.
+- Staff webhook destinations restricted to Slack's official incoming-webhook hosts; redirects are blocked to reduce SSRF risk.
 - Built-in Node test suite (`npm test`) with GitHub Actions CI.
 - Opt-in live-model evaluation (`npm run test:live`) using fictional hotel facts and synthetic questions.
 - Demo responses when the live backend is not configured.
@@ -37,7 +38,7 @@ This repository includes a Render Blueprint in `render.yaml`.
 2. Open Render and choose **New → Blueprint** (or connect the GitHub repository and create a Blueprint).
 3. Select this repository and review the service settings in `render.yaml`.
 4. In the Render service's Environment settings, add `OPENAI_API_KEY` as a secret. Never paste it into GitHub, website JavaScript, chat messages, or screenshots.
-5. Optionally set `HANDOFF_WEBHOOK_URL` to a private, business-approved Slack-compatible incoming webhook. Staff alerts exclude the guest's message by default. Enable message forwarding only after explicit owner approval and a privacy review. Test delivery with a non-sensitive message.
+5. Optionally set `HANDOFF_WEBHOOK_URL` to a private, business-approved Slack incoming webhook hosted on `hooks.slack.com` or `hooks.slack-gov.com`. Staff alerts exclude the guest's message by default. Enable message forwarding only after explicit owner approval and a privacy review. Test delivery with a non-sensitive message.
 6. Add the real business's approved FAQ and business name only after receiving permission.
 7. Deploy, then open the service's `/api/health` endpoint and test the chat with non-sensitive sample questions.
 
@@ -71,7 +72,7 @@ Without an API key, the website still displays sample demo responses, but the ba
 
 ## Environment variables
 
-- HANDOFF_WEBHOOK_URL: optional private Slack-compatible incoming webhook for staff alerts. It receives a handoff reason by default, not the guest's message. Guest message forwarding is disabled by default; only enable HANDOFF_INCLUDE_MESSAGE=true after explicit business-owner approval and a privacy review.
+- HANDOFF_WEBHOOK_URL: optional private Slack incoming webhook URL on `hooks.slack.com` or `hooks.slack-gov.com`. Other hosts and redirects are rejected. It receives a handoff reason by default, not the guest's message. Guest message forwarding is disabled by default; only enable HANDOFF_INCLUDE_MESSAGE=true after explicit business-owner approval and a privacy review.
 - HANDOFF_INCLUDE_MESSAGE: optional privacy-sensitive switch; defaults to false.
 - OPENAI_API_KEY: server-side secret; required for live AI.
 - OPENAI_MODEL: model name, default gpt-4.1-mini.

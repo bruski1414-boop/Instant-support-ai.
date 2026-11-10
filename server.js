@@ -7,7 +7,6 @@
 require("dotenv").config();
 
 const express = require("express");
-const cors = require("cors");
 const rateLimit = require("express-rate-limit");
 const OpenAI = require("openai");
 const path = require("node:path");
@@ -30,14 +29,8 @@ app.use((req, res, next) => {
   res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
   next();
 });
-app.use(cors({
-  origin(origin, callback) {
-    if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
-    return callback(new Error("Origin not allowed by CORS"));
-  },
-  methods: ["GET", "POST"],
-  allowedHeaders: ["Content-Type"],
-}));
+// The website and API are served from the same origin; cross-origin access is disabled.
+
 app.use(express.json({ limit: "12kb", strict: true }));
 app.use("/api/", rateLimit({
   windowMs: 60 * 1000,

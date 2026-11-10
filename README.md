@@ -90,9 +90,13 @@ Without an API key, the website still displays sample demo responses, but the ba
 - BUSINESS_NAME: business name used by the assistant.
 - BUSINESS_FAQ: approved facts and policies for the business.
 
+## Browser end-to-end checks
+
+The CI workflow installs a pinned Playwright version and Chromium to exercise the guest chat and hosted launcher in a real browser. These tests use a local static server and mocked chat responses; they do not verify the live hotel database, live AI provider, real Slack delivery, production hosting, or a hotel's actual website.
+
 ## Next engineering milestones
 
-1. Validate the tenant website origin allowlist and hosted guest launcher in browser end-to-end tests.
+1. Expand browser end-to-end coverage to the authenticated dashboard, staff handoff inbox, and mobile viewport.
 2. Add automatic conversation retention and deletion policies, export, and documented privacy controls.
 3. Add delivery retries/monitoring and additional staff channels only after the Slack workflow is validated.
 4. Improve source-grounded answers, confidence checks, and broader synthetic evaluation coverage.

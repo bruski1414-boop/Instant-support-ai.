@@ -40,12 +40,12 @@ END $$;
 
 BEGIN;
 SELECT set_config('app.login_email', 'owner@example.test', true);
-DO $
+DO $$
 BEGIN
   IF (SELECT count(*) FROM auth_credentials) <> 1 THEN
     RAISE EXCEPTION 'email-scoped credential lookup should return exactly one row';
   END IF;
-END $;
+END $$;
 SELECT set_config('app.login_email', '', true);
 SELECT set_config('app.user_id', 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', true);
 SELECT set_config('app.tenant_id', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', true);

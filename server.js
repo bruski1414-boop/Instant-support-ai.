@@ -150,7 +150,7 @@ function createApp(options = {}) {
     }
   }
 
-  async function notifyTenantStaff(tenantId, integration, reason) {
+  async function notifyTenantStaff(tenantId, integration, reason, conversationId) {
     if (!integration || !integration.enabled) return { configured: false, delivered: false };
     if (!tenantIntegrationKey) return { configured: true, delivered: false };
     try {
@@ -160,7 +160,7 @@ function createApp(options = {}) {
         authTag: integration.secret_auth_tag,
       }, tenantIntegrationKey);
       if (!validWebhookUrl(url)) return { configured: true, delivered: false };
-      const delivered = await postSlackWebhook(url, `Veyra AI: a guest conversation needs staff review. Reason: ${String(reason || "Staff review requested").slice(0, 240)}. Open the Veyra dashboard handoff inbox to review it. Guest message content was not forwarded.`);
+      const delivered = await postSlackWebhook(url, `Veyra AI: a guest conversation needs staff review. Reason: ${String(reason || "Staff review requested").slice(0, 240)}. Conversation reference: ${String(conversationId || "unavailable").slice(0, 64)}. Open the Veyra dashboard handoff inbox to review it. Guest message content was not forwarded.`);
       return { configured: true, delivered };
     } catch (error) {
       logger.error("Veyra tenant notification could not be prepared:", error?.message || "Unknown error");
@@ -267,7 +267,7 @@ function createApp(options = {}) {
         return true;
       });
       const notification = needsHuman
-        ? await notifyTenantStaff(tenantId, scoped.result.integration, handoffReason)
+        ? await notifyTenantStaff(tenantId, scoped.result.integration, handoffReason, currentId)
         : { configured: Boolean(scoped.result.integration?.enabled), delivered: false };
       return res.json({
         conversationId: currentId,

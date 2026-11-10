@@ -279,6 +279,49 @@ function createApp(options = {}) {
     } catch (error) { return workspaceFailure(res, error, "Veyra knowledge create failed:"); }
   });
 
+
+  app.put("/api/knowledge/:id", requireAuth, async (req, res) => {
+    const tenantId = selectedTenant(req, res); if (!tenantId) return;
+    if (!validUuid(req.params.id)) return res.status(400).json({ error: "Invalid knowledge document ID." });
+    const title = typeof req.body?.title === "string" ? req.body.title.trim() : "";
+    const content = typeof req.body?.content === "string" ? req.body.content.trim() : "";
+    const version = Number(req.body?.version);
+    if (!title || title.length > 200 || !content || content.length > 100000 || !Number.isInteger(version) || version < 1) return res.status(400).json({ error: "Enter a title, content, and current document version." });
+    try {
+      const scoped = await withTenantTransaction(req.auth.user.id, tenantId, async (client, role) => {
+        if (!["owner", "admin"].includes(role)) return { forbiddenRole: true };
+        const updated = await client.query("UPDATE knowledge_documents SET title = $1, content = $2, version = version + 1, approved_by = NULL, approved_at = NULL, updated_at = now() WHERE tenant_id = $3 AND id = $4 AND version = $5 RETURNING id, title, content, version, approved_at, updated_at", [title, content, tenantId, req.params.id, version]);
+        if (!updated.rows[0]) return null;
+        await client.query("INSERT INTO audit_events (tenant_id, actor_user_id, action, resource_type, resource_id, metadata) VALUES ($1, $2, 'knowledge.updated', 'knowledge_document', $3, $4::jsonb)", [tenantId, req.auth.user.id, req.params.id, JSON.stringify({ version: updated.rows[0].version })]);
+        return updated.rows[0];
+      });
+      if (scoped.forbidden) return res.status(403).json({ error: "You do not have access to this workspace." });
+      if (scoped.result?.forbiddenRole) return res.status(403).json({ error: "Only workspace owners and admins can edit knowledge." });
+      if (!scoped.result) return res.status(409).json({ error: "Document changed or no longer exists. Refresh and try again." });
+      return res.json({ document: scoped.result });
+    } catch (error) { return workspaceFailure(res, error, "Veyra knowledge update failed:"); }
+  });
+
+  app.patch("/api/conversations/:id/status", requireAuth, async (req, res) => {
+    const tenantId = selectedTenant(req, res); if (!tenantId) return;
+    if (!validUuid(req.params.id)) return res.status(400).json({ error: "Invalid conversation ID." });
+    const status = req.body?.status;
+    if (!["open", "waiting_staff", "resolved", "closed"].includes(status)) return res.status(400).json({ error: "Invalid conversation status." });
+    try {
+      const scoped = await withTenantTransaction(req.auth.user.id, tenantId, async (client, role) => {
+        if (!["owner", "admin", "staff"].includes(role)) return { forbiddenRole: true };
+        const updated = await client.query("UPDATE conversations SET status = $1, updated_at = now() WHERE tenant_id = $2 AND id = $3 RETURNING id, status, updated_at", [status, tenantId, req.params.id]);
+        if (!updated.rows[0]) return null;
+        await client.query("INSERT INTO audit_events (tenant_id, actor_user_id, action, resource_type, resource_id, metadata) VALUES ($1, $2, 'conversation.status_changed', 'conversation', $3, $4::jsonb)", [tenantId, req.auth.user.id, req.params.id, JSON.stringify({ status })]);
+        return updated.rows[0];
+      });
+      if (scoped.forbidden) return res.status(403).json({ error: "You do not have access to this workspace." });
+      if (scoped.result?.forbiddenRole) return res.status(403).json({ error: "Your workspace role cannot update conversations." });
+      if (!scoped.result) return res.status(404).json({ error: "Conversation not found." });
+      return res.json({ conversation: scoped.result });
+    } catch (error) { return workspaceFailure(res, error, "Veyra conversation status update failed:"); }
+  });
+
   app.post("/api/knowledge/:id/approve", requireAuth, async (req, res) => {
     const tenantId = selectedTenant(req, res); if (!tenantId) return;
     if (!validUuid(req.params.id)) return res.status(400).json({ error: "Invalid knowledge document ID." });

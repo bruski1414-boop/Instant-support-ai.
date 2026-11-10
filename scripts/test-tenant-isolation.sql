@@ -26,7 +26,7 @@ INSERT INTO conversations (tenant_id, id) VALUES
   ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', '22222222-2222-4222-8222-222222222222');
 
 INSERT INTO tenant_integrations (tenant_id, provider, secret_ciphertext, secret_iv, secret_auth_tag) VALUES
-  ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'slack', 'ciphertext', '123456789012', '123456789012345678901234');
+  ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'slack', 'ciphertext', '1234567890123456', '123456789012345678901234');
 
 SET ROLE veyra_runtime_test;
 
@@ -74,7 +74,7 @@ BEGIN
   END IF;
   BEGIN
     INSERT INTO tenant_integrations (tenant_id, provider, secret_ciphertext, secret_iv, secret_auth_tag)
-    VALUES ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 'slack', 'blocked', '123456789012', '123456789012345678901234');
+    VALUES ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 'slack', 'blocked', '1234567890123456', '123456789012345678901234');
     RAISE EXCEPTION 'cross-tenant integration insert unexpectedly succeeded';
   EXCEPTION WHEN insufficient_privilege THEN
     NULL;

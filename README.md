@@ -10,8 +10,8 @@ Veyra AI is an early customer-support assistant prototype aimed at hospitality a
 - Business-specific FAQ/context injected into the AI system prompt.
 - Basic request validation and API rate limiting.
 - Conservative escalation rules for sensitive or uncertain requests.
-- Optional Slack-compatible incoming-webhook alerts for staff handoffs.
-- Explicit delivery status: notified, delivery failed, or not connected.
+- Legacy single-business optional Slack-compatible webhook alerts; tenant-specific webhook delivery is not connected.
+- Tenant-scoped staff handoff inbox in the authenticated dashboard, with queue refresh, conversation review, staff replies, and resolution.
 - Security headers, bounded request/history sizes, API timeout, and restricted public routes.
 - Staff webhook destinations restricted to Slack's official incoming-webhook hosts; redirects are blocked to reduce SSRF risk.
 - Built-in Node test suite (`npm test`) with GitHub Actions CI.
@@ -61,7 +61,7 @@ Apply migrations in order: `001_multi_tenant_foundation.sql`, then `002_authenti
 
 ## Run tests
 
-Run `npm test` with Node.js 20 or newer. GitHub Actions runs this suite on pushes and pull requests, then starts disposable PostgreSQL 16, applies both migrations, verifies row-level tenant isolation with a restricted database role, and exercises login, profile lookup, CSRF-protected logout, and session revocation against that role. The PostgreSQL integration check uses two synthetic hotels and a restricted runtime role to test workspace membership, knowledge draft/approval, cross-tenant denial, conversation storage, staff messages, and public guest chat with a fake AI provider. The Node suite also covers backend routes, password hashing, the OpenAI SDK request path using a controlled fake transport, prompt-injection handling, response schema validation, handoff delivery outcomes, frontend script parsing, rate limiting, and blocked access to private source/configuration files.
+Run `npm test` with Node.js 20 or newer. GitHub Actions runs this suite on pushes and pull requests, then starts disposable PostgreSQL 16, applies both migrations, verifies row-level tenant isolation with a restricted database role, and exercises login, profile lookup, CSRF-protected logout, and session revocation against that role. The PostgreSQL integration check uses two synthetic hotels and a restricted runtime role to test workspace membership, knowledge draft/approval, cross-tenant denial, conversation storage, staff messages, public guest chat with a fake AI provider, and escalated conversations entering and leaving the authenticated staff handoff inbox. The Node suite also covers backend routes, password hashing, the OpenAI SDK request path using a controlled fake transport, prompt-injection handling, response schema validation, handoff delivery outcomes, frontend script parsing, rate limiting, and blocked access to private source/configuration files.
 
 For a separate real-model check, run `npm run test:live` only after a parent/guardian has approved the API account and any usage charges, and after setting `OPENAI_API_KEY`. This sends ten synthetic questions about a fictional hotel through the live model. It does not use real guest data, is not run automatically in CI, and may incur API charges. A passing live evaluation is still not proof of production readiness.
 

@@ -66,7 +66,7 @@ async function loadStatus(){
     document.getElementById('knowledgeBar').style.width=data.businessKnowledgeConfigured?'100%':'0%';
     document.getElementById('knowledgePercent').textContent=data.businessKnowledgeConfigured?'Present':'Missing';
     document.getElementById('handoffExplanation').textContent=data.handoffConfigured?'A webhook URL is configured. The dashboard cannot confirm staff receipt, reading, or action.':'No staff webhook is configured. Handoffs will not notify staff automatically.';
-    message.innerHTML='<strong>Connection successful.</strong> Status below reflects current server configuration.';
+    message.textContent='Connection successful. Status below reflects current server configuration.';
     dot.style.background='var(--green)';
   }catch(error){
     backend.textContent='Offline';
@@ -76,7 +76,7 @@ async function loadStatus(){
     handoff.textContent='Unknown';document.getElementById('handoffDetail').textContent='Cannot verify webhook configuration';
     document.getElementById('knowledgeBar').style.width='0%';
     document.getElementById('knowledgePercent').textContent='—';
-    message.innerHTML='<strong>Backend unavailable.</strong> '+String(error.message||'Connection failed');
+    message.textContent='Backend unavailable. '+String(error.message||'Connection failed');
     dot.style.background='var(--amber)';
   }
   document.getElementById('lastChecked').textContent='Last checked: '+new Date().toLocaleString();

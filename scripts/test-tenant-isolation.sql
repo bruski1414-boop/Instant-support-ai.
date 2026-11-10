@@ -25,6 +25,9 @@ INSERT INTO conversations (tenant_id, id) VALUES
   ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', '11111111-1111-4111-8111-111111111111'),
   ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', '22222222-2222-4222-8222-222222222222');
 
+INSERT INTO tenant_integrations (tenant_id, provider, secret_ciphertext, secret_iv, secret_auth_tag) VALUES
+  ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'slack', 'ciphertext', '123456789012', '123456789012345678901234');
+
 SET ROLE veyra_runtime_test;
 
 DO $$
@@ -66,6 +69,16 @@ BEGIN
   IF (SELECT count(*) FROM users) <> 1 THEN
     RAISE EXCEPTION 'user should see their own account';
   END IF;
+  IF (SELECT count(*) FROM tenant_integrations) <> 1 THEN
+    RAISE EXCEPTION 'tenant A should see only its own integration credentials';
+  END IF;
+  BEGIN
+    INSERT INTO tenant_integrations (tenant_id, provider, secret_ciphertext, secret_iv, secret_auth_tag)
+    VALUES ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 'slack', 'blocked', '123456789012', '123456789012345678901234');
+    RAISE EXCEPTION 'cross-tenant integration insert unexpectedly succeeded';
+  EXCEPTION WHEN insufficient_privilege THEN
+    NULL;
+  END;
 
   INSERT INTO user_sessions (user_id, token_hash, csrf_hash, expires_at)
   VALUES ('cccccccc-cccc-4ccc-8ccc-cccccccccccc', decode(repeat('ab', 32), 'hex'), decode(repeat('cd', 32), 'hex'), now() + interval '8 hours');

@@ -44,12 +44,47 @@
 <p class="footnote">Authenticated prototype dashboard. Prototype only: booking integrations, billing, retention/deletion workflows, independent security review, and real-hotel validation remain outstanding. Do not use it as a production hotel control panel.</p>
 </main></div>
 <div id="toast" style="position:fixed;bottom:20px;left:50%;transform:translateX(-50%);padding:12px 18px;border:1px solid #34465b;background:#172536;color:#edf6ff;border-radius:10px;display:none;max-width:90%;z-index:5"></div>
+<section class="card" id="privacyRetention" style="margin:20px 0;padding:20px;border:1px solid var(--line);border-radius:14px;background:var(--panel)">
+<h2>Guest conversation privacy</h2>
+<p class="muted">Choose how long guest conversations are retained. Expired conversations and their messages are automatically removed when a workspace member accesses the dashboard or workspace APIs. Default: 90 days.</p>
+<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+<label for="retentionDays">Retention period</label>
+<select id="retentionDays" style="padding:10px;border-radius:8px;background:#080e17;color:white;border:1px solid #35465b">
+<option value="30">30 days</option><option value="60">60 days</option><option value="90">90 days</option><option value="180">180 days</option><option value="365">365 days</option><option value="730">730 days</option>
+</select>
+<button class="btn" id="saveRetention" type="button">Save privacy setting</button>
+</div>
+<p id="retentionFeedback" class="muted" role="status" aria-live="polite"></p>
+</section>
 <script>
 let activeWorkspaceId="";
 function apiHeaders(){return {"Content-Type":"application/json","X-Veyra-Workspace":activeWorkspaceId,"X-CSRF-Token":readCookie("veyra_csrf")};}
 function safeText(value){return String(value??"").replace(/[&<>"']/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch]));}
 async function loadWorkspaces(){const response=await fetch("/api/workspaces",{cache:"no-store"});if(!response.ok)throw new Error("Could not load workspaces");const data=await response.json();const select=document.getElementById("workspaceSelect");select.replaceChildren();for(const item of data.workspaces){const option=document.createElement("option");option.value=item.id;option.textContent=item.name+" · "+item.role;select.append(option);}if(!data.workspaces.length){select.add(new Option("No workspace membership",""));return;}activeWorkspaceId=data.workspaces[0].id;select.value=activeWorkspaceId;document.getElementById("guestSupportLink").href="/guest.html?workspace="+encodeURIComponent(activeWorkspaceId);document.getElementById("workspaceName").textContent=data.workspaces[0].name;document.getElementById("workspaceRole").textContent=data.workspaces[0].role;await loadWorkspaceData();}
-async function loadWorkspaceData(){await Promise.all([loadKnowledge(),loadConversations(),loadHandoffs(),loadSlackIntegration()]);}
+async function loadRetentionSettings(){
+  const select=document.getElementById("retentionDays");
+  const feedback=document.getElementById("retentionFeedback");
+  const button=document.getElementById("saveRetention");
+  const response=await fetch("/api/privacy/retention",{headers:apiHeaders(),cache:"no-store"});
+  const data=await response.json().catch(()=>({}));
+  if(!response.ok)throw new Error(data.error||"Could not load privacy settings");
+  select.value=String(data.conversationRetentionDays);
+  select.disabled=!data.canManage;
+  button.disabled=!data.canManage;
+  feedback.textContent=data.canManage?"Only expired conversations are automatically purged; individual deletions are also available in conversation details.":"Only workspace owners and admins can change this setting.";
+}
+document.getElementById("saveRetention").addEventListener("click",async()=>{
+  const button=document.getElementById("saveRetention"),feedback=document.getElementById("retentionFeedback");
+  button.disabled=true;feedback.textContent="Saving…";
+  try{
+    const response=await fetch("/api/privacy/retention",{method:"PATCH",headers:apiHeaders(),body:JSON.stringify({conversationRetentionDays:Number(document.getElementById("retentionDays").value)})});
+    const data=await response.json().catch(()=>({}));
+    if(!response.ok)throw new Error(data.error||"Could not save privacy setting");
+    feedback.textContent="Saved. Conversations older than "+data.conversationRetentionDays+" days will be purged on the next workspace access.";
+  }catch(error){feedback.textContent=String(error.message||"Could not save privacy setting");}
+  finally{button.disabled=false;}
+});
+async function loadWorkspaceData(){await Promise.all([loadKnowledge(),loadConversations(),loadHandoffs(),loadSlackIntegration() ,loadRetentionSettings()]);}
 async function loadKnowledge(){const list=document.getElementById("knowledgeList");list.textContent="Loading knowledge…";const response=await fetch("/api/knowledge",{headers:apiHeaders()});if(!response.ok)throw new Error("Could not load knowledge");const data=await response.json();list.replaceChildren();if(!data.documents.length){list.textContent="No knowledge documents yet.";return;}for(const doc of data.documents){const item=document.createElement("div");item.className="alert";const approved=Boolean(doc.approved_at);item.innerHTML='<div style="flex:1;min-width:0"><h3>'+safeText(doc.title)+'</h3><p>'+safeText(doc.content.slice(0,280))+'</p><span class="tag '+(approved?"green":"warn")+'">'+(approved?"Approved":"Draft · not used for answers")+'</span></div>';if(["owner","admin"].includes(data.role)){const edit=document.createElement("button");edit.className="btn";edit.textContent="Edit";edit.addEventListener("click",()=>editKnowledge(doc));item.append(edit);if(!approved){const button=document.createElement("button");button.className="btn";button.textContent="Approve";button.addEventListener("click",()=>approveKnowledge(doc.id));item.append(button);}}list.append(item);}}
 function editKnowledge(doc){document.getElementById("knowledgeId").value=doc.id;document.getElementById("knowledgeVersion").value=doc.version;document.getElementById("knowledgeTitle").value=doc.title;document.getElementById("knowledgeContent").value=doc.content;document.getElementById("knowledgeSave").textContent="Save new draft version";document.getElementById("knowledgeCancel").hidden=false;document.getElementById("knowledgeTitle").focus();}
 document.getElementById("knowledgeCancel").addEventListener("click",()=>{document.getElementById("knowledgeForm").reset();document.getElementById("knowledgeId").value="";document.getElementById("knowledgeSave").textContent="Save as draft";document.getElementById("knowledgeCancel").hidden=true;});

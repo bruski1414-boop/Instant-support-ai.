@@ -134,6 +134,157 @@ function createApp(options = {}) {
 
   const requireAuth = createAuthRouter(app, { pool: dbPool, env, logger });
 
+  async function withTenantTransaction(userId, tenantId, callback) {
+    if (!dbPool) throw new Error("Database is not configured.");
+    const client = await dbPool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("SELECT set_config('app.user_id', $1, true)", [userId]);
+      await client.query("SELECT set_config('app.tenant_id', $1, true)", [tenantId]);
+      const membership = await client.query("SELECT role FROM memberships WHERE tenant_id = $1 AND user_id = $2 LIMIT 1", [tenantId, userId]);
+      if (!membership.rows[0]) { await client.query("ROLLBACK"); return { forbidden: true }; }
+      const result = await callback(client, membership.rows[0].role);
+      await client.query("COMMIT");
+      return { result, role: membership.rows[0].role };
+    } catch (error) { try { await client.query("ROLLBACK"); } catch {} throw error; }
+    finally { client.release(); }
+  }
+  const validUuid = (value) => typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+  function selectedTenant(req, res) {
+    const id = req.get("x-veyra-workspace");
+    if (!validUuid(id)) { res.status(400).json({ error: "Select a valid workspace first." }); return null; }
+    return id;
+  }
+  function workspaceFailure(res, error, label) {
+    logger.error(label, error?.message || "Unknown error");
+    return res.status(503).json({ error: "Workspace data is temporarily unavailable." });
+  }
+
+  app.get("/api/workspaces", requireAuth, async (req, res) => {
+    try {
+      const result = await dbPool.query(
+        "SELECT o.id, o.name, m.role FROM memberships m JOIN organizations o ON o.id = m.tenant_id WHERE m.user_id = $1 ORDER BY o.name",
+        [req.auth.user.id],
+      );
+      return res.json({ workspaces: result.rows });
+    } catch (error) { return workspaceFailure(res, error, "Veyra workspace list failed:"); }
+  });
+
+  app.get("/api/knowledge", requireAuth, async (req, res) => {
+    const tenantId = selectedTenant(req, res); if (!tenantId) return;
+    try {
+      const scoped = await withTenantTransaction(req.auth.user.id, tenantId, async (client, role) => {
+        const result = await client.query("SELECT id, title, content, version, approved_by, approved_at, created_at, updated_at FROM knowledge_documents WHERE tenant_id = $1 ORDER BY updated_at DESC LIMIT 100", [tenantId]);
+        return { documents: result.rows, role };
+      });
+      if (scoped.forbidden) return res.status(403).json({ error: "You do not have access to this workspace." });
+      return res.json(scoped.result);
+    } catch (error) { return workspaceFailure(res, error, "Veyra knowledge list failed:"); }
+  });
+
+  app.post("/api/knowledge", requireAuth, async (req, res) => {
+    const tenantId = selectedTenant(req, res); if (!tenantId) return;
+    const title = typeof req.body?.title === "string" ? req.body.title.trim() : "";
+    const content = typeof req.body?.content === "string" ? req.body.content.trim() : "";
+    if (!title || title.length > 200 || !content || content.length > 100000) return res.status(400).json({ error: "Enter a title and knowledge content within the allowed limits." });
+    try {
+      const scoped = await withTenantTransaction(req.auth.user.id, tenantId, async (client, role) => {
+        if (!["owner", "admin"].includes(role)) return { forbiddenRole: true };
+        const created = await client.query("INSERT INTO knowledge_documents (tenant_id, title, content) VALUES ($1, $2, $3) RETURNING id, title, content, version, approved_at, created_at, updated_at", [tenantId, title, content]);
+        await client.query("INSERT INTO audit_events (tenant_id, actor_user_id, action, resource_type, resource_id, metadata) VALUES ($1, $2, 'knowledge.created', 'knowledge_document', $3, $4::jsonb)", [tenantId, req.auth.user.id, created.rows[0].id, JSON.stringify({ title })]);
+        return created.rows[0];
+      });
+      if (scoped.forbidden) return res.status(403).json({ error: "You do not have access to this workspace." });
+      if (scoped.result.forbiddenRole) return res.status(403).json({ error: "Only workspace owners and admins can add knowledge." });
+      return res.status(201).json({ document: scoped.result });
+    } catch (error) { return workspaceFailure(res, error, "Veyra knowledge create failed:"); }
+  });
+
+  app.post("/api/knowledge/:id/approve", requireAuth, async (req, res) => {
+    const tenantId = selectedTenant(req, res); if (!tenantId) return;
+    if (!validUuid(req.params.id)) return res.status(400).json({ error: "Invalid knowledge document ID." });
+    try {
+      const scoped = await withTenantTransaction(req.auth.user.id, tenantId, async (client, role) => {
+        if (!["owner", "admin"].includes(role)) return { forbiddenRole: true };
+        const approved = await client.query("UPDATE knowledge_documents SET approved_by = $1, approved_at = now(), updated_at = now() WHERE tenant_id = $2 AND id = $3 RETURNING id, title, content, version, approved_at, updated_at", [req.auth.user.id, tenantId, req.params.id]);
+        if (!approved.rows[0]) return null;
+        await client.query("INSERT INTO audit_events (tenant_id, actor_user_id, action, resource_type, resource_id) VALUES ($1, $2, 'knowledge.approved', 'knowledge_document', $3)", [tenantId, req.auth.user.id, req.params.id]);
+        return approved.rows[0];
+      });
+      if (scoped.forbidden) return res.status(403).json({ error: "You do not have access to this workspace." });
+      if (scoped.result?.forbiddenRole) return res.status(403).json({ error: "Only workspace owners and admins can approve knowledge." });
+      if (!scoped.result) return res.status(404).json({ error: "Knowledge document not found." });
+      return res.json({ document: scoped.result });
+    } catch (error) { return workspaceFailure(res, error, "Veyra knowledge approval failed:"); }
+  });
+
+  app.get("/api/conversations", requireAuth, async (req, res) => {
+    const tenantId = selectedTenant(req, res); if (!tenantId) return;
+    try {
+      const scoped = await withTenantTransaction(req.auth.user.id, tenantId, async (client) => {
+        const result = await client.query("SELECT c.id, c.channel, c.status, c.started_at, c.updated_at, count(m.id)::int AS message_count, max(m.created_at) AS last_message_at FROM conversations c LEFT JOIN messages m ON m.tenant_id = c.tenant_id AND m.conversation_id = c.id WHERE c.tenant_id = $1 GROUP BY c.tenant_id, c.id ORDER BY c.updated_at DESC LIMIT 100", [tenantId]);
+        return result.rows;
+      });
+      if (scoped.forbidden) return res.status(403).json({ error: "You do not have access to this workspace." });
+      return res.json({ conversations: scoped.result });
+    } catch (error) { return workspaceFailure(res, error, "Veyra conversations list failed:"); }
+  });
+
+  app.post("/api/conversations", requireAuth, async (req, res) => {
+    const tenantId = selectedTenant(req, res); if (!tenantId) return;
+    const channel = ["website", "email", "whatsapp", "other"].includes(req.body?.channel) ? req.body.channel : "website";
+    try {
+      const scoped = await withTenantTransaction(req.auth.user.id, tenantId, async (client, role) => {
+        if (!["owner", "admin", "staff"].includes(role)) return { forbiddenRole: true };
+        const created = await client.query("INSERT INTO conversations (tenant_id, channel) VALUES ($1, $2) RETURNING id, channel, status, started_at, updated_at", [tenantId, channel]);
+        await client.query("INSERT INTO audit_events (tenant_id, actor_user_id, action, resource_type, resource_id) VALUES ($1, $2, 'conversation.created', 'conversation', $3)", [tenantId, req.auth.user.id, created.rows[0].id]);
+        return created.rows[0];
+      });
+      if (scoped.forbidden) return res.status(403).json({ error: "You do not have access to this workspace." });
+      if (scoped.result.forbiddenRole) return res.status(403).json({ error: "Your workspace role cannot create conversations." });
+      return res.status(201).json({ conversation: scoped.result });
+    } catch (error) { return workspaceFailure(res, error, "Veyra conversation create failed:"); }
+  });
+
+  app.get("/api/conversations/:id", requireAuth, async (req, res) => {
+    const tenantId = selectedTenant(req, res); if (!tenantId) return;
+    if (!validUuid(req.params.id)) return res.status(400).json({ error: "Invalid conversation ID." });
+    try {
+      const scoped = await withTenantTransaction(req.auth.user.id, tenantId, async (client) => {
+        const conversation = await client.query("SELECT id, channel, status, started_at, updated_at FROM conversations WHERE tenant_id = $1 AND id = $2 LIMIT 1", [tenantId, req.params.id]);
+        if (!conversation.rows[0]) return null;
+        const messages = await client.query("SELECT id, sender_type, body, created_at FROM messages WHERE tenant_id = $1 AND conversation_id = $2 ORDER BY created_at ASC LIMIT 500", [tenantId, req.params.id]);
+        return { conversation: conversation.rows[0], messages: messages.rows };
+      });
+      if (scoped.forbidden) return res.status(403).json({ error: "You do not have access to this workspace." });
+      if (!scoped.result) return res.status(404).json({ error: "Conversation not found." });
+      return res.json(scoped.result);
+    } catch (error) { return workspaceFailure(res, error, "Veyra conversation detail failed:"); }
+  });
+
+  app.post("/api/conversations/:id/messages", requireAuth, async (req, res) => {
+    const tenantId = selectedTenant(req, res); if (!tenantId) return;
+    if (!validUuid(req.params.id)) return res.status(400).json({ error: "Invalid conversation ID." });
+    const body = typeof req.body?.body === "string" ? req.body.body.trim() : "";
+    if (!body || body.length > 20000) return res.status(400).json({ error: "Enter a message under 20,000 characters." });
+    try {
+      const scoped = await withTenantTransaction(req.auth.user.id, tenantId, async (client, role) => {
+        if (!["owner", "admin", "staff"].includes(role)) return { forbiddenRole: true };
+        const exists = await client.query("SELECT id FROM conversations WHERE tenant_id = $1 AND id = $2 FOR UPDATE", [tenantId, req.params.id]);
+        if (!exists.rows[0]) return null;
+        const inserted = await client.query("INSERT INTO messages (tenant_id, conversation_id, sender_type, body) VALUES ($1, $2, 'staff', $3) RETURNING id, sender_type, body, created_at", [tenantId, req.params.id, body]);
+        await client.query("UPDATE conversations SET updated_at = now(), status = 'waiting_staff' WHERE tenant_id = $1 AND id = $2", [tenantId, req.params.id]);
+        await client.query("INSERT INTO audit_events (tenant_id, actor_user_id, action, resource_type, resource_id) VALUES ($1, $2, 'conversation.staff_message_added', 'conversation', $3)", [tenantId, req.auth.user.id, req.params.id]);
+        return inserted.rows[0];
+      });
+      if (scoped.forbidden) return res.status(403).json({ error: "You do not have access to this workspace." });
+      if (scoped.result?.forbiddenRole) return res.status(403).json({ error: "Your workspace role cannot send staff messages." });
+      if (!scoped.result) return res.status(404).json({ error: "Conversation not found." });
+      return res.status(201).json({ message: scoped.result });
+    } catch (error) { return workspaceFailure(res, error, "Veyra staff message failed:"); }
+  });
+
+
   app.get("/api/health", (_req, res) => {
     res.json({
       status: openai && businessFaq ? "ready" : "degraded",

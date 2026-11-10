@@ -132,7 +132,7 @@ test("chat rejects non-array history and safely filters untrusted history", asyn
   const sent = calls[0].messages;
   assert.equal(sent[0].role, "system");
   assert.equal(sent.filter((m) => m.role === "system").length, 1);
-  assert.equal(sent.length, 8); // system + last six valid history entries + current user
+  assert.equal(sent.length, 7); // system + five valid history entries + current user
   assert.match(sent[0].content, /APPROVED BUSINESS INFORMATION/);
 });
 

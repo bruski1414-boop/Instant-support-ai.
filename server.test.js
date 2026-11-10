@@ -312,7 +312,10 @@ test("public website and dashboard pages are served", async (t) => {
   assert.match(await home.text(), /VEYRA AI/);
   const dashboard = await fetch(`${base}/dashboard.html`);
   assert.equal(dashboard.status, 200);
-  assert.match(await dashboard.text(), /Preview mode/);
+  const dashboardHtml = await dashboard.text();
+  assert.match(dashboardHtml, /fetch\\('\/api\/health'/);
+  assert.match(dashboardHtml, /Live service configuration/);
+  assert.doesNotMatch(dashboardHtml, /Alex Morgan|Conversations today<\\/div><div class="metric">146/);
 });
 
 test("inline JavaScript on website and dashboard parses successfully", () => {

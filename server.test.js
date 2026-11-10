@@ -570,9 +570,9 @@ test("website launcher script requires a tenant and an HTTPS referring origin", 
   assert.equal(insecureReferrer.status, 403);
   const stylesheet = await fetch(base + "/widget.css");
   assert.equal(stylesheet.status, 200);
-  assert.match(stylesheet.headers.get("content-type"), /text\\/css/);
+  assert.match(stylesheet.headers.get("content-type"), /text\/css/);
   assert.equal(stylesheet.headers.get("cross-origin-resource-policy"), "cross-origin");
-  assert.match(await stylesheet.text(), /\\.veyra-ai-launcher/);
+  assert.match(await stylesheet.text(), /\.veyra-ai-launcher/);
 });
 
 test("website origin normalisation rejects insecure URLs, paths, credentials, ports and excessive entries", () => {

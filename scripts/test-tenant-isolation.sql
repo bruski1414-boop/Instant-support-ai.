@@ -69,6 +69,7 @@ BEGIN
 
   INSERT INTO user_sessions (user_id, token_hash, csrf_hash, expires_at)
   VALUES ('cccccccc-cccc-4ccc-8ccc-cccccccccccc', decode(repeat('ab', 32), 'hex'), decode(repeat('cd', 32), 'hex'), now() + interval '8 hours');
+  PERFORM set_config('app.user_id', '', true);
   PERFORM set_config('app.session_token_hash', repeat('ab', 32), true);
   IF (SELECT count(*) FROM user_sessions) <> 1 THEN
     RAISE EXCEPTION 'session lookup by presented token hash should return one row';
@@ -77,6 +78,7 @@ BEGIN
   IF (SELECT count(*) FROM user_sessions) <> 0 THEN
     RAISE EXCEPTION 'session lookup must not reveal another token hash';
   END IF;
+  PERFORM set_config('app.user_id', 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', true);
   PERFORM set_config('app.session_token_hash', repeat('ab', 32), true);
   UPDATE user_sessions SET revoked_at = now() WHERE token_hash = decode(repeat('ab', 32), 'hex');
   IF (SELECT count(*) FROM user_sessions) <> 0 THEN

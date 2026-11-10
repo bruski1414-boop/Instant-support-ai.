@@ -45,6 +45,11 @@ Render's free web services may sleep after inactivity and take time to wake up. 
 
 This is a **single-business prototype**, not a multi-company SaaS. Do not connect real customer data or promise service-level guarantees until authentication, tenant isolation, privacy controls, monitoring, and a security review are implemented.
 
+## Health and readiness
+
+- `GET /api/health` checks whether the process is responding and reports whether live AI configuration is present. A `degraded` status means the process is up but not ready to answer guests.
+- `GET /api/ready` returns HTTP 200 only when an AI client and approved business knowledge are configured; otherwise it returns HTTP 503. This is a configuration check, not a proof that the provider is reachable or that answers are accurate.
+
 ## Run tests
 
 Run `npm test` with Node.js 20 or newer. GitHub Actions runs this suite on pushes and pull requests. It covers backend routes, the OpenAI SDK request path using a controlled fake transport, prompt-injection handling, response schema validation, handoff delivery outcomes, frontend script parsing, rate limiting, and blocked access to private source/configuration files.
@@ -66,7 +71,7 @@ Without an API key, the website still displays sample demo responses, but the ba
 
 ## Environment variables
 
-- HANDOFF_WEBHOOK_URL: optional private Slack-compatible incoming webhook for staff alerts. It receives the customer's message when a handoff is triggered; use only with explicit business approval.
+- HANDOFF_WEBHOOK_URL: optional private Slack-compatible incoming webhook for staff alerts. It receives a handoff reason by default, not the guest's message. Guest message forwarding is disabled by default; only enable HANDOFF_INCLUDE_MESSAGE=true after explicit business-owner approval and a privacy review.
 - OPENAI_API_KEY: server-side secret; required for live AI.
 - OPENAI_MODEL: model name, default gpt-4.1-mini.
 - PORT: server port, default 3000.

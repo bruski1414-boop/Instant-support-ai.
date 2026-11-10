@@ -83,6 +83,10 @@ async function main() {
     assert.equal(profile.memberships.length, 1);
     assert.equal(profile.memberships[0].role, "owner");
 
+    const dashboard = await fetch(`${base}/dashboard.html`, { headers: { cookie: cookies }, redirect: "manual" });
+    assert.equal(dashboard.status, 200, "valid session and membership should open the dashboard");
+    assert.match(await dashboard.text(), /Veyra AI command centre/);
+
     const csrf = decodeURIComponent(csrfMatch[1]);
     const logout = await fetch(`${base}/api/auth/logout`, {
       method: "POST",
@@ -91,8 +95,11 @@ async function main() {
     assert.equal(logout.status, 200, "CSRF-protected logout should revoke session");
     const afterLogout = await fetch(`${base}/api/auth/me`, { headers: { cookie: cookies } });
     assert.equal(afterLogout.status, 401, "revoked session must no longer authenticate");
+    const dashboardAfterLogout = await fetch(`${base}/dashboard.html`, { headers: { cookie: cookies }, redirect: "manual" });
+    assert.equal(dashboardAfterLogout.status, 303, "revoked session must not open the dashboard");
+    assert.equal(dashboardAfterLogout.headers.get("location"), "/login.html");
 
-    process.stdout.write("PostgreSQL-backed login, profile, CSRF logout, and session revocation passed.\n");
+    process.stdout.write("PostgreSQL-backed login, dashboard gate, profile, CSRF logout, and session revocation passed.\n");
   } finally {
     if (server) await new Promise((resolve) => server.close(resolve));
     if (runtimePool) await runtimePool.end();

@@ -170,6 +170,20 @@ function createApp(options = {}) {
 
   const requireAuth = createAuthRouter(app, { pool: dbPool, env, logger });
 
+  async function purgeExpiredConversations(client, tenantId) {
+    const removed = await client.query(
+      "WITH expired AS (DELETE FROM conversations WHERE tenant_id = $1 AND started_at < now() - make_interval(days => (SELECT conversation_retention_days FROM organizations WHERE id = $1)) RETURNING id) SELECT count(*)::int AS count FROM expired",
+      [tenantId],
+    );
+    const count = removed.rows[0]?.count || 0;
+    if (count > 0) {
+      await client.query(
+        "INSERT INTO audit_events (tenant_id, action, resource_type, metadata) VALUES ($1, 'conversations.retention_purged', 'conversation', $2::jsonb)",
+        [tenantId, JSON.stringify({ deleted_count: count })],
+      );
+    }
+  }
+
   async function withTenantTransaction(userId, tenantId, callback) {
     if (!dbPool) throw new Error("Database is not configured.");
     const client = await dbPool.connect();
@@ -179,6 +193,7 @@ function createApp(options = {}) {
       await client.query("SELECT set_config('app.tenant_id', $1, true)", [tenantId]);
       const membership = await client.query("SELECT role FROM memberships WHERE tenant_id = $1 AND user_id = $2 LIMIT 1", [tenantId, userId]);
       if (!membership.rows[0]) { await client.query("ROLLBACK"); return { forbidden: true }; }
+      await purgeExpiredConversations(client, tenantId);
       const result = await callback(client, membership.rows[0].role);
       await client.query("COMMIT");
       return { result, role: membership.rows[0].role };
@@ -203,6 +218,7 @@ function createApp(options = {}) {
     try {
       await client.query("BEGIN");
       await client.query("SELECT set_config('app.tenant_id', $1, true)", [tenantId]);
+      await purgeExpiredConversations(client, tenantId);
       const docs = await client.query("SELECT id, title, content, version FROM knowledge_documents WHERE tenant_id = $1 AND approved_at IS NOT NULL ORDER BY updated_at DESC LIMIT 50", [tenantId]);
       if (!docs.rows.length) { await client.query("ROLLBACK"); return { unavailable: true }; }
       const integration = await client.query("SELECT secret_ciphertext, secret_iv, secret_auth_tag, enabled FROM tenant_integrations WHERE tenant_id = $1 AND provider = 'slack' LIMIT 1", [tenantId]);
@@ -457,6 +473,38 @@ function createApp(options = {}) {
 
   // Staff handoff inbox: tenant-scoped, authenticated, and backed by persisted conversations.
   // This is an in-dashboard queue, not an external push notification.
+  app.get("/api/privacy/retention", requireAuth, async (req, res) => {
+    const tenantId = selectedTenant(req, res); if (!tenantId) return;
+    try {
+      const scoped = await withTenantTransaction(req.auth.user.id, tenantId, async (client, role) => {
+        const result = await client.query("SELECT conversation_retention_days FROM organizations WHERE id = $1", [tenantId]);
+        return { days: result.rows[0]?.conversation_retention_days, role };
+      });
+      if (scoped.forbidden) return res.status(403).json({ error: "You do not have access to this workspace." });
+      return res.json({ conversationRetentionDays: scoped.result.days, canManage: ["owner", "admin"].includes(scoped.result.role) });
+    } catch (error) { return workspaceFailure(res, error, "Veyra retention policy read failed:"); }
+  });
+
+  app.patch("/api/privacy/retention", requireAuth, async (req, res) => {
+    const tenantId = selectedTenant(req, res); if (!tenantId) return;
+    const days = req.body?.conversationRetentionDays;
+    if (!Number.isInteger(days) || days < 30 || days > 730) return res.status(400).json({ error: "Choose a retention period between 30 and 730 days." });
+    try {
+      const scoped = await withTenantTransaction(req.auth.user.id, tenantId, async (client, role) => {
+        if (!["owner", "admin"].includes(role)) return { forbiddenRole: true };
+        await client.query("UPDATE organizations SET conversation_retention_days = $2 WHERE id = $1", [tenantId, days]);
+        await client.query(
+          "INSERT INTO audit_events (tenant_id, actor_user_id, action, resource_type, metadata) VALUES ($1, $2, 'privacy.retention_updated', 'organization', $3::jsonb)",
+          [tenantId, req.auth.user.id, JSON.stringify({ conversation_retention_days: days })],
+        );
+        return { days };
+      });
+      if (scoped.forbidden) return res.status(403).json({ error: "You do not have access to this workspace." });
+      if (scoped.result.forbiddenRole) return res.status(403).json({ error: "Only workspace owners and admins can change retention settings." });
+      return res.json({ conversationRetentionDays: scoped.result.days });
+    } catch (error) { return workspaceFailure(res, error, "Veyra retention policy update failed:"); }
+  });
+
   app.get("/api/handoffs", requireAuth, async (req, res) => {
     const tenantId = selectedTenant(req, res); if (!tenantId) return;
     try {

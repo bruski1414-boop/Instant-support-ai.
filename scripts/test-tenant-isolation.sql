@@ -72,4 +72,5 @@ END $$;
 ROLLBACK;
 
 RESET ROLE;
+DROP OWNED BY veyra_runtime_test;
 DROP ROLE veyra_runtime_test;

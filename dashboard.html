@@ -30,6 +30,12 @@
 <textarea id="widgetInstallCode" readonly rows="2" aria-label="Website installation code" style="width:100%;min-height:76px;padding:12px;border:1px solid var(--line);border-radius:9px;background:#080e17;color:#d9e9fb;font:12px/1.5 ui-monospace,monospace;resize:vertical"></textarea>
 <div class="actions" style="margin-top:10px"><button class="btn primary" id="copyWidgetCode" type="button">Copy installation code</button><span id="widgetCopyStatus" class="muted" role="status" aria-live="polite"></span></div>
 <p class="muted" style="font-size:12px;margin-bottom:0">If your website has a strict Content Security Policy, allow your Veyra service origin in <code>script-src</code> and <code>style-src</code>. Test on a staging page before publishing.</p>
+<hr style="border:0;border-top:1px solid var(--line);margin:18px 0">
+<h3>Approved website domains</h3>
+<p class="muted">Add the exact HTTPS origins that may load this hotel's launcher. Use one origin per line, such as https://www.example.com. Paths and wildcard domains are not accepted. Changes are audited.</p>
+<label for="widgetDomains">Authorised website origins</label>
+<textarea id="widgetDomains" rows="3" maxlength="6500" placeholder="https://www.hotel.example&#10;https://hotel.example" style="width:100%;min-height:90px;padding:12px;border:1px solid var(--line);border-radius:9px;background:#080e17;color:#d9e9fb;font:13px/1.5 ui-monospace,monospace"></textarea>
+<div class="actions" style="margin-top:10px"><button class="btn primary" id="saveWidgetDomains" type="button">Save approved domains</button><span id="widgetDomainStatus" class="muted" role="status" aria-live="polite"></span></div>
 </section>
 <section id="overview" class="grid">
 <div class="card"><div class="metriclabel">Backend status</div><div class="metric" id="backendState">Checking…</div><div class="muted" id="backendDetail">Waiting for health response</div></div>
@@ -67,7 +73,7 @@
 let activeWorkspaceId="";
 function apiHeaders(){return {"Content-Type":"application/json","X-Veyra-Workspace":activeWorkspaceId,"X-CSRF-Token":readCookie("veyra_csrf")};}
 function safeText(value){return String(value??"").replace(/[&<>"']/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch]));}
-async function loadWorkspaces(){const response=await fetch("/api/workspaces",{cache:"no-store"});if(!response.ok)throw new Error("Could not load workspaces");const data=await response.json();const select=document.getElementById("workspaceSelect");select.replaceChildren();for(const item of data.workspaces){const option=document.createElement("option");option.value=item.id;option.textContent=item.name+" · "+item.role;select.append(option);}if(!data.workspaces.length){select.add(new Option("No workspace membership",""));return;}activeWorkspaceId=data.workspaces[0].id;select.value=activeWorkspaceId;document.getElementById("guestSupportLink").href="/guest.html?workspace="+encodeURIComponent(activeWorkspaceId);document.getElementById("widgetInstallCode").value='<scr'+'ipt src="'+window.location.origin+'/widget.js" data-workspace="'+activeWorkspaceId+'" defer></scr'+'ipt>';document.getElementById("workspaceName").textContent=data.workspaces[0].name;document.getElementById("workspaceRole").textContent=data.workspaces[0].role;await loadWorkspaceData();}
+async function loadWorkspaces(){const response=await fetch("/api/workspaces",{cache:"no-store"});if(!response.ok)throw new Error("Could not load workspaces");const data=await response.json();const select=document.getElementById("workspaceSelect");select.replaceChildren();for(const item of data.workspaces){const option=document.createElement("option");option.value=item.id;option.textContent=item.name+" · "+item.role;select.append(option);}if(!data.workspaces.length){select.add(new Option("No workspace membership",""));return;}activeWorkspaceId=data.workspaces[0].id;select.value=activeWorkspaceId;document.getElementById("guestSupportLink").href="/guest.html?workspace="+encodeURIComponent(activeWorkspaceId);document.getElementById("widgetInstallCode").value='<scr'+'ipt src="'+window.location.origin+'/widget.js?workspace='+activeWorkspaceId+'" data-workspace="'+activeWorkspaceId+'" referrerpolicy="strict-origin-when-cross-origin" defer></scr'+'ipt>';document.getElementById("workspaceName").textContent=data.workspaces[0].name;document.getElementById("workspaceRole").textContent=data.workspaces[0].role;await loadWorkspaceData();}
 async function loadRetentionSettings(){
   const select=document.getElementById("retentionDays");
   const feedback=document.getElementById("retentionFeedback");
@@ -91,7 +97,16 @@ document.getElementById("saveRetention").addEventListener("click",async()=>{
   }catch(error){feedback.textContent=String(error.message||"Could not save privacy setting");}
   finally{button.disabled=false;}
 });
-async function loadWorkspaceData(){await Promise.all([loadKnowledge(),loadConversations(),loadHandoffs(),loadSlackIntegration() ,loadRetentionSettings()]);}
+async function loadWorkspaceData(){await Promise.all([loadKnowledge(),loadConversations(),loadHandoffs(),loadSlackIntegration(),loadRetentionSettings(),loadWidgetDomains()]);}
+async function loadWidgetDomains(){
+  const field=document.getElementById("widgetDomains"),status=document.getElementById("widgetDomainStatus"),button=document.getElementById("saveWidgetDomains");
+  const response=await fetch("/api/widget/domains",{headers:apiHeaders(),cache:"no-store"});
+  const data=await response.json().catch(()=>({}));
+  if(!response.ok)throw new Error(data.error||"Could not load approved website domains");
+  field.value=(data.origins||[]).join("\n");
+  field.disabled=!data.canManage;button.disabled=!data.canManage;
+  status.textContent=data.canManage?(data.origins?.length?"Approved domains loaded.":"No domains approved yet; the launcher will remain blocked."):"Only workspace owners and admins can manage approved domains.";
+}
 async function loadKnowledge(){const list=document.getElementById("knowledgeList");list.textContent="Loading knowledge…";const response=await fetch("/api/knowledge",{headers:apiHeaders()});if(!response.ok)throw new Error("Could not load knowledge");const data=await response.json();list.replaceChildren();if(!data.documents.length){list.textContent="No knowledge documents yet.";return;}for(const doc of data.documents){const item=document.createElement("div");item.className="alert";const approved=Boolean(doc.approved_at);item.innerHTML='<div style="flex:1;min-width:0"><h3>'+safeText(doc.title)+'</h3><p>'+safeText(doc.content.slice(0,280))+'</p><span class="tag '+(approved?"green":"warn")+'">'+(approved?"Approved":"Draft · not used for answers")+'</span></div>';if(["owner","admin"].includes(data.role)){const edit=document.createElement("button");edit.className="btn";edit.textContent="Edit";edit.addEventListener("click",()=>editKnowledge(doc));item.append(edit);if(!approved){const button=document.createElement("button");button.className="btn";button.textContent="Approve";button.addEventListener("click",()=>approveKnowledge(doc.id));item.append(button);}}list.append(item);}}
 function editKnowledge(doc){document.getElementById("knowledgeId").value=doc.id;document.getElementById("knowledgeVersion").value=doc.version;document.getElementById("knowledgeTitle").value=doc.title;document.getElementById("knowledgeContent").value=doc.content;document.getElementById("knowledgeSave").textContent="Save new draft version";document.getElementById("knowledgeCancel").hidden=false;document.getElementById("knowledgeTitle").focus();}
 document.getElementById("knowledgeCancel").addEventListener("click",()=>{document.getElementById("knowledgeForm").reset();document.getElementById("knowledgeId").value="";document.getElementById("knowledgeSave").textContent="Save as draft";document.getElementById("knowledgeCancel").hidden=true;});
@@ -154,6 +169,19 @@ async function refreshLiveDashboard(){
     if(stamp)stamp.textContent="Automatic refresh paused: "+String(error.message||"connection problem");
   }finally{queueRefreshInProgress=false;}
 }
+document.getElementById("saveWidgetDomains").addEventListener("click",async()=>{
+  const status=document.getElementById("widgetDomainStatus"),button=document.getElementById("saveWidgetDomains");
+  const origins=document.getElementById("widgetDomains").value.split(/\r?\n/).map(value=>value.trim()).filter(Boolean);
+  button.disabled=true;status.textContent="Saving approved domains…";
+  try{
+    const response=await fetch("/api/widget/domains",{method:"PUT",headers:apiHeaders(),body:JSON.stringify({origins})});
+    const data=await response.json().catch(()=>({}));
+    if(!response.ok)throw new Error(data.error||"Could not save approved domains");
+    document.getElementById("widgetDomains").value=data.origins.join("\n");
+    status.textContent=data.origins.length+" approved domain"+(data.origins.length===1?"":"s")+" saved. The launcher is blocked on all other websites.";
+  }catch(error){status.textContent=String(error.message||"Save failed");}
+  finally{button.disabled=false;}
+});
 document.getElementById("copyWidgetCode").addEventListener("click",async()=>{
   const field=document.getElementById("widgetInstallCode"),status=document.getElementById("widgetCopyStatus");
   try{await navigator.clipboard.writeText(field.value);status.textContent="Copied. Paste it before the closing body tag on your staging website.";}

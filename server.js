@@ -218,7 +218,6 @@ function createApp(options = {}) {
     try {
       await client.query("BEGIN");
       await client.query("SELECT set_config('app.tenant_id', $1, true)", [tenantId]);
-      await purgeExpiredConversations(client, tenantId);
       const docs = await client.query("SELECT id, title, content, version FROM knowledge_documents WHERE tenant_id = $1 AND approved_at IS NOT NULL ORDER BY updated_at DESC LIMIT 50", [tenantId]);
       if (!docs.rows.length) { await client.query("ROLLBACK"); return { unavailable: true }; }
       const integration = await client.query("SELECT secret_ciphertext, secret_iv, secret_auth_tag, enabled FROM tenant_integrations WHERE tenant_id = $1 AND provider = 'slack' LIMIT 1", [tenantId]);

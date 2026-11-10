@@ -75,10 +75,15 @@ test("staff-review responses never claim actions are completed", () => {
 });
 
 test("only HTTPS webhook URLs without embedded credentials are accepted", () => {
-  assert.equal(validWebhookUrl("https://hooks.example.com/services/test").startsWith("https://"), true);
-  assert.equal(validWebhookUrl("http://hooks.example.com/test"), null);
+  assert.equal(validWebhookUrl("https://hooks.slack.com/services/test"), "https://hooks.slack.com/services/test");
+  assert.equal(validWebhookUrl("https://hooks.slack-gov.com/services/test"), "https://hooks.slack-gov.com/services/test");
+  assert.equal(validWebhookUrl("http://hooks.slack.com/services/test"), null);
+  assert.equal(validWebhookUrl("https://hooks.slack.com/services/test"), null);
+  assert.equal(validWebhookUrl("https://hooks.slack.com.evil.example/services/test"), null);
+  assert.equal(validWebhookUrl("https://hooks.slack.com:8443/services/test"), null);
+  assert.equal(validWebhookUrl("https://hooks.slack.com/services/test?redirect=1"), null);
+  assert.equal(validWebhookUrl("https://user:pass@hooks.slack.com/services/test"), null);
   assert.equal(validWebhookUrl("not a url"), null);
-  assert.equal(validWebhookUrl("https://user:pass@example.com/hook"), null);
   assert.equal(validWebhookUrl(""), null);
 });
 
@@ -298,7 +303,7 @@ test("successful webhook delivery is reported truthfully", async (t) => {
   const { client } = mockAI(JSON.stringify({ reply: "A staff member will need to review this.", needsHuman: true, handoffReason: "Booking change" }));
   const base = await withServer(t, makeApp({
     openaiClient: client,
-    env: { HANDOFF_WEBHOOK_URL: "https://hooks.example.com/services/test", HANDOFF_INCLUDE_MESSAGE: "true" },
+    env: { HANDOFF_WEBHOOK_URL: "https://hooks.slack.com/services/test", HANDOFF_INCLUDE_MESSAGE: "true" },
     fetchImpl: async (url, options) => {
       sent = { url, options };
       return { ok: true, status: 200 };
@@ -311,6 +316,7 @@ test("successful webhook delivery is reported truthfully", async (t) => {
   const body = await response.json();
   assert.equal(body.handoffStatus, "notified");
   assert.equal(body.handoffConfigured, true);
+  assert.equal(sent.options.redirect, "error");
   assert.match(sent.options.body, /Please change my booking/);
 });
 
@@ -319,7 +325,7 @@ test("webhook omits guest message content by default", async (t) => {
   const { client } = mockAI(JSON.stringify({ reply: "Staff review needed.", needsHuman: true, handoffReason: "Booking change" }));
   const base = await withServer(t, makeApp({
     openaiClient: client,
-    env: { HANDOFF_WEBHOOK_URL: "https://hooks.example.com/services/test" },
+    env: { HANDOFF_WEBHOOK_URL: "https://hooks.slack.com/services/test" },
     fetchImpl: async (_url, options) => { payload = JSON.parse(options.body); return { ok: true }; },
   }));
   const response = await fetch(`${base}/api/chat`, {
@@ -335,7 +341,7 @@ test("failed webhook delivery is never reported as successful", async (t) => {
   const { client } = mockAI(JSON.stringify({ reply: "Staff review is needed.", needsHuman: true }));
   const base = await withServer(t, makeApp({
     openaiClient: client,
-    env: { HANDOFF_WEBHOOK_URL: "https://hooks.example.com/services/test" },
+    env: { HANDOFF_WEBHOOK_URL: "https://hooks.slack.com/services/test" },
     fetchImpl: async () => ({ ok: false, status: 500 }),
   }));
   const response = await fetch(`${base}/api/chat`, {
@@ -350,7 +356,7 @@ test("webhook exceptions are handled without crashing chat", async (t) => {
   const { client } = mockAI(JSON.stringify({ reply: "Staff review is needed.", needsHuman: true }));
   const base = await withServer(t, makeApp({
     openaiClient: client,
-    env: { HANDOFF_WEBHOOK_URL: "https://hooks.example.com/services/test" },
+    env: { HANDOFF_WEBHOOK_URL: "https://hooks.slack.com/services/test" },
     fetchImpl: async () => { throw new Error("network down"); },
   }));
   const response = await fetch(`${base}/api/chat`, {
@@ -379,7 +385,7 @@ test("AI provider failures return safe response and attempt staff notification",
   let notified = false;
   const base = await withServer(t, makeApp({
     openaiClient: client,
-    env: { HANDOFF_WEBHOOK_URL: "https://hooks.example.com/services/test" },
+    env: { HANDOFF_WEBHOOK_URL: "https://hooks.slack.com/services/test" },
     fetchImpl: async () => { notified = true; return { ok: true }; },
   }));
   const response = await fetch(`${base}/api/chat`, {

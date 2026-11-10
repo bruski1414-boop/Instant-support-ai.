@@ -21,7 +21,7 @@ Veyra AI is an early customer-support assistant prototype aimed at hospitality a
 ## Important: prototype, not production SaaS
 
 This is **not yet a complete €5,000/month enterprise product**. It does not yet include:
-- Complete multi-tenant operations (PostgreSQL foundations and initial login/session endpoints are implemented, but owner provisioning, tenant-scoped product routes, dashboard integration, and production security review remain outstanding).
+- Complete multi-tenant operations (PostgreSQL foundations, login/session endpoints, and a protected dashboard shell are implemented; tenant-scoped product routes, live database provisioning, and production security review remain outstanding).
 - Native staff email/SMS/WhatsApp integrations (only a generic optional webhook is available).
 - Booking, CRM, hotel PMS, Shopify, or payment integrations.
 - A secure business-owner dashboard for editing FAQs.
@@ -48,11 +48,11 @@ This is a **single-business prototype**, not a multi-company SaaS. Do not connec
 
 ## Authentication foundation
 
-The backend now has database-backed `POST /api/auth/login`, `GET /api/auth/me`, and `POST /api/auth/logout` endpoints when `DATABASE_URL` is configured. Passwords are verified with Node's scrypt implementation; only opaque random session tokens are sent in HttpOnly cookies and SHA-256 token hashes are stored in PostgreSQL. Sessions expire after eight hours, can be revoked, and logout requires a CSRF token plus same-origin validation. Login attempts have a dedicated rate limit.
+The backend now has database-backed `POST /api/auth/login`, `GET /api/auth/me`, and `POST /api/auth/logout` endpoints when `DATABASE_URL` is configured. The public `/login.html` page submits credentials to the login endpoint, and `/dashboard.html` is served only after the server validates an active session and at least one active workspace membership. The dashboard shows the authenticated email and membership roles and provides CSRF-protected sign-out. Passwords are verified with Node's scrypt implementation; only opaque random session tokens are sent in HttpOnly cookies and SHA-256 token hashes are stored in PostgreSQL. Sessions expire after eight hours, can be revoked, and logout requires a CSRF token plus same-origin validation. Login attempts have a dedicated rate limit.
 
 Apply migrations in order: `001_multi_tenant_foundation.sql`, then `002_authentication.sql`. Set `APP_ORIGIN` to the exact HTTPS site origin in production. Set `DATABASE_SSL=true` only when the database provider supports verified TLS. There is deliberately no public sign-up endpoint. On a completely empty database, a parent/guardian or authorised database administrator can run `npm run provision:owner` from a trusted terminal with `PROVISION_DATABASE_URL` set to a separate privileged connection. The script prompts for the owner email, organisation name, and password without echoing the password; it refuses to run if any organisation or user already exists. Never expose this privileged connection to the running web service. No default credentials are created.
 
-**This is not yet production authentication.** The routes have not been tested against a live hosted database, the first-owner provisioning workflow is not implemented, tenant-scoped hotel data routes are not connected, and the dashboard does not yet require sign-in. Do not use real accounts or guest data until those items and an independent security review are complete.
+**This is not yet production authentication.** The routes have not been tested against a live hosted database, the first-owner provisioning workflow has not been run against a real database, tenant-scoped hotel data routes are not connected, and dashboard access has not been tested against a live hosted database. Do not use real accounts or guest data until those items and an independent security review are complete.
 
 ## Health and readiness
 

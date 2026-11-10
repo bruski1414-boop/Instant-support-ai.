@@ -489,7 +489,10 @@ test("public website and sign-in page are served while dashboard redirects witho
   const home = await fetch(base);
   assert.equal(home.status, 200);
   assert.match(await home.text(), /VEYRA AI/);
-  const guest = await fetch(`${base}/guest.html`);\n  assert.equal(guest.status, 200);\n  assert.match(await guest.text(), /Guest support assistant/);\n  const login = await fetch(`${base}/login.html`);
+  const guest = await fetch(`${base}/guest.html`);
+  assert.equal(guest.status, 200);
+  assert.match(await guest.text(), /Guest support assistant/);
+  const login = await fetch(`${base}/login.html`);
   assert.equal(login.status, 200);
   assert.match(await login.text(), /Sign in securely/);
   const dashboard = await fetch(`${base}/dashboard.html`, { redirect: "manual" });

@@ -22,39 +22,66 @@
 <div class="bottom">Veyra AI · Product preview<br><br>Sample data only. Not connected to a real hotel.</div>
 </aside>
 <main class="main">
-<header class="top"><div><div class="crumb">WORKSPACE / OVERVIEW</div><h1>Good evening. Here's your support overview.</h1><div class="muted">A calmer way to see what needs attention.</div></div><div class="actions"><button class="btn" onclick="toast('This preview uses fictional data; no report was exported.')">Export report</button><button class="btn primary" onclick="toast('Business onboarding is a planned feature—not connected yet.')">＋ Add knowledge</button></div></header>
-<div class="notice"><span class="dot"></span><p><strong>Preview mode.</strong> Every metric and conversation below is fictional. Staff alerts, exports, settings and knowledge editing are not connected.</p></div>
+<header class="top"><div><div class="crumb">WORKSPACE / SYSTEM STATUS</div><h1>Veyra AI command centre</h1><div class="muted">Live service configuration, not invented performance metrics.</div></div><div class="actions"><button class="btn primary" onclick="loadStatus()">↻ Refresh status</button></div></header>
+<div class="notice" role="status" aria-live="polite"><span class="dot" id="statusDot"></span><p id="statusMessage"><strong>Checking service…</strong> Connecting to the Veyra backend.</p></div>
 <section id="overview" class="grid">
-<div class="card"><div class="metriclabel">Conversations today</div><div class="metric">146</div><div class="delta">＋ 18% <span class="muted">vs. sample yesterday</span></div></div>
-<div class="card"><div class="metriclabel">First-response time</div><div class="metric">18 sec</div><div class="delta">Sample target: under 1 min</div></div>
-<div class="card"><div class="metriclabel">Resolved in demo</div><div class="metric">82%</div><div class="muted">Illustrative—not measured</div></div>
-<div class="card"><div class="metriclabel">Staff review queue</div><div class="metric">7</div><div class="tag warn">Needs attention</div></div>
+<div class="card"><div class="metriclabel">Backend status</div><div class="metric" id="backendState">Checking…</div><div class="muted" id="backendDetail">Waiting for health response</div></div>
+<div class="card"><div class="metriclabel">Live AI</div><div class="metric" id="aiState">Checking…</div><div class="muted" id="aiDetail">Checking provider and approved knowledge</div></div>
+<div class="card"><div class="metriclabel">Approved knowledge</div><div class="metric" id="knowledgeState">Checking…</div><div class="muted" id="knowledgeDetail">Checking server configuration</div></div>
+<div class="card"><div class="metriclabel">Staff alerts</div><div class="metric" id="handoffState">Checking…</div><div class="muted" id="handoffDetail">Checking webhook configuration</div></div>
 </section>
-<div class="sectionrow" id="conversations"><h2>Recent conversations</h2><div class="tabbar"><button class="tab active" onclick="filterRows('all',this)">All</button><button class="tab" onclick="filterRows('resolved',this)">Resolved</button><button class="tab" onclick="filterRows('handoff',this)">Needs staff</button></div></div>
+<div class="sectionrow" id="conversations"><h2>Conversation analytics</h2><span>Not connected yet</span></div>
 <div class="contentgrid">
-<div class="card tablewrap"><table class="table"><thead><tr><th>GUEST</th><th>TOPIC</th><th>STATUS</th><th>TIME</th></tr></thead><tbody id="rows">
-<tr data-status="resolved"><td><div class="guest"><span class="avatar">AM</span><div><strong>Alex Morgan</strong><br><small class="muted">Guest · sample</small></div></div></td><td>Airport transfer</td><td><span class="tag green">Resolved</span></td><td>2 min ago</td></tr>
-<tr data-status="handoff"><td><div class="guest"><span class="avatar">JL</span><div><strong>Jamie Lee</strong><br><small class="muted">Guest · sample</small></div></div></td><td>Special request</td><td><span class="tag warn">Staff review</span></td><td>5 min ago</td></tr>
-<tr data-status="resolved"><td><div class="guest"><span class="avatar">SK</span><div><strong>Sam Kim</strong><br><small class="muted">Guest · sample</small></div></div></td><td>Breakfast hours</td><td><span class="tag green">Resolved</span></td><td>11 min ago</td></tr>
-<tr data-status="handoff"><td><div class="guest"><span class="avatar">RT</span><div><strong>Riley Taylor</strong><br><small class="muted">Guest · sample</small></div></div></td><td>Booking change</td><td><span class="tag warn">Staff review</span></td><td>18 min ago</td></tr>
-<tr data-status="resolved"><td><div class="guest"><span class="avatar">MC</span><div><strong>Morgan Chen</strong><br><small class="muted">Guest · sample</small></div></div></td><td>Pool facilities</td><td><span class="tag green">Resolved</span></td><td>24 min ago</td></tr>
-</tbody></table></div>
-<div class="card" id="handoffs"><div class="sectionrow" style="margin:0 0 10px"><h2>Staff attention</h2><span class="tag warn">2 examples</span></div>
-<div class="alert"><div class="alerticon">!</div><div><h3>Booking change request</h3><p>Requires staff confirmation · 18 min ago</p></div></div>
-<div class="alert"><div class="alerticon">↗</div><div><h3>Special guest request</h3><p>Needs human judgement · 5 min ago</p></div></div>
-<div class="alert"><div class="alerticon">?</div><div><h3>Unverified policy question</h3><p>Answer withheld pending confirmation</p></div></div>
-<p class="footnote">In a real deployment, these would be generated from the business’s workflow and delivered to its authorized team. This preview sends no alerts.</p></div>
+<div class="card"><h2>Conversation history</h2><p class="muted">Veyra does not currently store conversations. This area will only show real activity after secure storage, access controls, retention rules, and privacy review are implemented.</p><span class="tag warn">Not implemented</span></div>
+<div class="card" id="handoffs"><h2>Human handoffs</h2><p class="muted" id="handoffExplanation">The backend can send a configured webhook alert, but it does not yet keep a handoff log or confirm that a staff member acted on an alert.</p><span class="tag warn">No handoff history</span></div>
 </div>
-<div class="sectionrow" id="knowledge"><h2>Knowledge coverage</h2><span>Sample category distribution</span></div>
-<div class="card"><div class="barrow"><label>Hotel services</label><div class="bar"><i style="width:88%"></i></div><b>88%</b></div><div class="barrow"><label>Dining & hours</label><div class="bar"><i style="width:72%"></i></div><b>72%</b></div><div class="barrow"><label>Policies</label><div class="bar"><i style="width:56%"></i></div><b>56%</b></div><div class="barrow"><label>Local guide</label><div class="bar"><i style="width:64%"></i></div><b>64%</b></div><div class="footnote">Coverage values are illustrative mock data. The real product should measure approved source coverage and answer quality—not invent percentages.</div></div>
-<div class="sectionrow" id="settings"><h2>What this preview demonstrates</h2><span>Product direction</span></div>
-<div class="grid"><div class="card"><strong>01 · Clarity</strong><p class="muted">See the support workload without drowning in charts.</p></div><div class="card"><strong>02 · Accountability</strong><p class="muted">Keep uncertain or sensitive requests visible for human review.</p></div><div class="card"><strong>03 · Trust</strong><p class="muted">Make sample data, real status, and limitations obvious.</p></div><div class="card"><strong>04 · Control</strong><p class="muted">Businesses should own their knowledge, access, and escalation rules.</p></div></div>
-<p class="footnote">This is a static dashboard concept only. It has no login, database, real customer records, real alerts, billing, or business settings. Do not enter personal or customer information.</p>
+<div class="sectionrow" id="knowledge"><h2>Knowledge base</h2><span>Configuration check only</span></div>
+<div class="card"><p class="muted">The current prototype reads one approved business knowledge text from its server environment. It does not yet support editing, version history, source citations, or separate knowledge bases for multiple hotels.</p><div class="barrow"><label>Server knowledge</label><div class="bar"><i id="knowledgeBar" style="width:0%"></i></div><b id="knowledgePercent">—</b></div><p class="footnote">A configured knowledge base does not prove answer accuracy. Hotel owners must approve the content, and answers need a separate factual evaluation.</p></div>
+<div class="sectionrow" id="settings"><h2>System checks</h2><span id="lastChecked">Not checked yet</span></div>
+<div class="grid"><div class="card"><strong>Service health</strong><p class="muted">Checks whether the backend health endpoint responds.</p></div><div class="card"><strong>AI readiness</strong><p class="muted">Checks whether an AI provider key and approved business knowledge are configured.</p></div><div class="card"><strong>Staff alert setup</strong><p class="muted">Checks whether a valid HTTPS webhook is configured—not whether staff have read or acted on an alert.</p></div><div class="card"><strong>Data status</strong><p class="muted">No guest conversation database or owner login is implemented. Do not enter real guest data.</p></div></div>
+<p class="footnote">Prototype dashboard. It has no login, persistent conversations, guest records, booking integrations, billing, or business knowledge editor. Do not use it as a production hotel control panel.</p>
 </main></div>
 <div id="toast" style="position:fixed;bottom:20px;left:50%;transform:translateX(-50%);padding:12px 18px;border:1px solid #34465b;background:#172536;color:#edf6ff;border-radius:10px;display:none;max-width:90%;z-index:5"></div>
 <script>
-function filterRows(status,button){document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));button.classList.add('active');document.querySelectorAll('#rows tr').forEach(row=>row.classList.toggle('hide',status!=='all'&&row.dataset.status!==status));}
-let toastTimer;function toast(text){const el=document.getElementById('toast');el.textContent=text;el.style.display='block';clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.style.display='none',3200);}
+async function loadStatus(){
+  const backend=document.getElementById('backendState');
+  const ai=document.getElementById('aiState');
+  const knowledge=document.getElementById('knowledgeState');
+  const handoff=document.getElementById('handoffState');
+  const message=document.getElementById('statusMessage');
+  const dot=document.getElementById('statusDot');
+  backend.textContent='Checking…';ai.textContent='Checking…';knowledge.textContent='Checking…';handoff.textContent='Checking…';
+  try{
+    const response=await fetch('/api/health',{cache:'no-store',headers:{'Accept':'application/json'}});
+    if(!response.ok)throw new Error('Health endpoint returned '+response.status);
+    const data=await response.json();
+    backend.textContent='Online';
+    document.getElementById('backendDetail').textContent='Health endpoint responded successfully';
+    ai.textContent=data.liveAIReady?'Ready':'Not ready';
+    document.getElementById('aiDetail').textContent=data.liveAIReady?'AI provider and approved knowledge are configured':'Live AI requires a provider key and approved knowledge';
+    knowledge.textContent=data.businessKnowledgeConfigured?'Configured':'Missing';
+    document.getElementById('knowledgeDetail').textContent=data.businessKnowledgeConfigured?'Server knowledge text is present':'No approved business knowledge is configured';
+    handoff.textContent=data.handoffConfigured?'Configured':'Not connected';
+    document.getElementById('handoffDetail').textContent=data.handoffConfigured?'HTTPS webhook URL is configured; delivery still needs testing':'No valid HTTPS staff webhook is configured';
+    document.getElementById('knowledgeBar').style.width=data.businessKnowledgeConfigured?'100%':'0%';
+    document.getElementById('knowledgePercent').textContent=data.businessKnowledgeConfigured?'Present':'Missing';
+    document.getElementById('handoffExplanation').textContent=data.handoffConfigured?'A webhook URL is configured. The dashboard cannot confirm staff receipt, reading, or action.':'No staff webhook is configured. Handoffs will not notify staff automatically.';
+    message.innerHTML='<strong>Connection successful.</strong> Status below reflects current server configuration.';
+    dot.style.background='var(--green)';
+  }catch(error){
+    backend.textContent='Offline';
+    document.getElementById('backendDetail').textContent='Could not reach /api/health';
+    ai.textContent='Unknown';document.getElementById('aiDetail').textContent='Cannot verify AI readiness while backend is offline';
+    knowledge.textContent='Unknown';document.getElementById('knowledgeDetail').textContent='Cannot verify knowledge configuration';
+    handoff.textContent='Unknown';document.getElementById('handoffDetail').textContent='Cannot verify webhook configuration';
+    document.getElementById('knowledgeBar').style.width='0%';
+    document.getElementById('knowledgePercent').textContent='—';
+    message.innerHTML='<strong>Backend unavailable.</strong> '+String(error.message||'Connection failed');
+    dot.style.background='var(--amber)';
+  }
+  document.getElementById('lastChecked').textContent='Last checked: '+new Date().toLocaleString();
+}
+loadStatus();
 </script>
 </body>
 </html>

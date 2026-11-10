@@ -163,17 +163,17 @@ async function main() {
     assert.match(slackDeliveries[1].payload.text, new RegExp(escalation.conversationId));
     const guestFollowup = await fetch(base + "/api/public/" + TENANT_ID + "/chat", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ conversationId: escalation.conversationId, message: "Thank you, can someone please help me?" }) });
     assert.equal(guestFollowup.status, 200, "guest should be able to continue an existing conversation");
-    const preservedQueue = await runtimePool.query("SELECT status FROM conversations WHERE tenant_id = $1 AND id = $2", [TENANT_ID, escalation.conversationId]);
+    const preservedQueue = await admin.query("SELECT status FROM conversations WHERE tenant_id = $1 AND id = $2", [TENANT_ID, escalation.conversationId]);
     assert.equal(preservedQueue.rows[0].status, "waiting_staff", "a guest follow-up must not silently remove an unresolved conversation from the staff queue");
     const retentionRead = await fetch(base + "/api/privacy/retention", { headers: workspaceHeaders });
     assert.equal((await retentionRead.json()).conversationRetentionDays, 90, "new workspaces should have a 90-day retention default");
     const retentionWrite = await fetch(base + "/api/privacy/retention", { method: "PATCH", headers: workspaceHeaders, body: JSON.stringify({ conversationRetentionDays: 30 }) });
     assert.equal(retentionWrite.status, 200, "workspace owner should be able to set retention");
-    const oldConversation = (await runtimePool.query("INSERT INTO conversations (tenant_id, channel, status, started_at, updated_at) VALUES ($1, 'website', 'resolved', now() - interval '40 days', now() - interval '40 days') RETURNING id", [TENANT_ID])).rows[0].id;
+    const oldConversation = (await admin.query("INSERT INTO conversations (tenant_id, channel, status, started_at, updated_at) VALUES ($1, 'website', 'resolved', now() - interval '40 days', now() - interval '40 days') RETURNING id", [TENANT_ID])).rows[0].id;
     await fetch(base + "/api/handoffs", { headers: workspaceHeaders });
-    const oldConversationCheck = await runtimePool.query("SELECT id FROM conversations WHERE tenant_id = $1 AND id = $2", [TENANT_ID, oldConversation]);
+    const oldConversationCheck = await admin.query("SELECT id FROM conversations WHERE tenant_id = $1 AND id = $2", [TENANT_ID, oldConversation]);
     assert.equal(oldConversationCheck.rowCount, 0, "expired conversations should be purged on workspace access");
-    const retentionAudit = await runtimePool.query("SELECT metadata FROM audit_events WHERE tenant_id = $1 AND action = 'conversations.retention_purged' ORDER BY created_at DESC LIMIT 1", [TENANT_ID]);
+    const retentionAudit = await admin.query("SELECT metadata FROM audit_events WHERE tenant_id = $1 AND action = 'conversations.retention_purged' ORDER BY created_at DESC LIMIT 1", [TENANT_ID]);
     assert.equal(retentionAudit.rows[0].metadata.deleted_count, 1, "retention purge should create an audit record");
 
     const handoffInbox = await fetch(base + "/api/handoffs", { headers: workspaceHeaders });

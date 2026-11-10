@@ -573,3 +573,24 @@ test("public website chat launcher assets are available cross-origin without ope
   assert.equal(stylesheet.headers.get("cross-origin-resource-policy"), "cross-origin");
   assert.match(await stylesheet.text(), /\.veyra-ai-launcher/);
 });
+
+test("public guest chat applies a dedicated per-IP rate limit", async (t) => {
+  const base = await withServer(t, makeApp({ publicChatRateLimit: 2 }));
+  const url = base + "/api/public/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/chat";
+  const init = { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ message: "What time is breakfast?" }) };
+  assert.equal((await fetch(url, init)).status, 503, "first request should reach the unavailable database response");
+  assert.equal((await fetch(url, init)).status, 503, "second request should remain within the test budget");
+  const limited = await fetch(url, init);
+  assert.equal(limited.status, 429, "third request should be rate limited before processing");
+  assert.match((await limited.json()).error, /too quickly/i);
+});
+
+test("guest chat handles unavailable session storage and failed notification honestly", () => {
+  const html = fs.readFileSync(require("node:path").join(__dirname, "guest.html"), "utf8");
+  assert.match(html, /try\s*\{\s*return sessionStorage\.getItem/);
+  assert.match(html, /Session storage may be unavailable/);
+  assert.match(html, /automatic staff alert was not confirmed/i);
+  assert.match(html, /Your message has not been confirmed/i);
+  assert.match(html, /aria-busy/);
+  assert.match(html, /maxlength="2000"/);
+});

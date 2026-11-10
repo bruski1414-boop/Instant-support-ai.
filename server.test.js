@@ -560,18 +560,27 @@ test("tenant integration secrets use authenticated AES-256-GCM encryption", () =
   assert.throws(() => decryptSecret({ ciphertext: altered.ciphertext, iv: altered.iv, authTag: altered.authTag }, key));
 });
 
-test("public website chat launcher assets are available cross-origin without opening the dashboard", async (t) => {
+test("website launcher script requires a tenant and an HTTPS referring origin", async (t) => {
   const base = await withServer(t, makeApp());
-  const script = await fetch(base + "/widget.js");
-  assert.equal(script.status, 200);
-  assert.match(script.headers.get("content-type"), /javascript/);
-  assert.equal(script.headers.get("cross-origin-resource-policy"), "cross-origin");
-  assert.match(await script.text(), /data-workspace/);
+  const missingTenant = await fetch(base + "/widget.js", { headers: { referer: "https://hotel.example/" } });
+  assert.equal(missingTenant.status, 404);
+  const missingReferrer = await fetch(base + "/widget.js?workspace=aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
+  assert.equal(missingReferrer.status, 403);
+  const insecureReferrer = await fetch(base + "/widget.js?workspace=aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", { headers: { referer: "http://hotel.example/" } });
+  assert.equal(insecureReferrer.status, 403);
   const stylesheet = await fetch(base + "/widget.css");
   assert.equal(stylesheet.status, 200);
-  assert.match(stylesheet.headers.get("content-type"), /text\/css/);
+  assert.match(stylesheet.headers.get("content-type"), /text\\/css/);
   assert.equal(stylesheet.headers.get("cross-origin-resource-policy"), "cross-origin");
-  assert.match(await stylesheet.text(), /\.veyra-ai-launcher/);
+  assert.match(await stylesheet.text(), /\\.veyra-ai-launcher/);
+});
+
+test("website origin normalisation rejects insecure URLs, paths, credentials, ports and excessive entries", () => {
+  const source = fs.readFileSync(require("node:path").join(__dirname, "server.js"), "utf8");
+  assert.match(source, /function normaliseWebsiteOrigins/);
+  assert.match(source, /url.protocol !== "https:"/);
+  assert.match(source, /url.pathname !== "\/"/);
+  assert.match(source, /widget.allowed_origins_updated/);
 });
 
 test("public guest chat applies a dedicated per-IP rate limit", async (t) => {

@@ -542,3 +542,17 @@ test("tenant database migration enforces tenant-scoped rows and composite conver
   assert.match(sql, /token_hash bytea NOT NULL UNIQUE/);
   assert.doesNotMatch(sql, /CREATE POLICY .* USING \(true\)/i);
 });
+
+
+test("tenant integration secrets use authenticated AES-256-GCM encryption", () => {
+  const { encryptionKeyFromEnv, encryptSecret, decryptSecret } = require("./integration-secrets");
+  const keyText = Buffer.alloc(32, 9).toString("base64");
+  const key = encryptionKeyFromEnv({ TENANT_INTEGRATION_ENCRYPTION_KEY: keyText });
+  assert.equal(key.length, 32);
+  assert.equal(encryptionKeyFromEnv({ TENANT_INTEGRATION_ENCRYPTION_KEY: "not-a-valid-key" }), null);
+  const encrypted = encryptSecret("https://hooks.slack.com/services/example/secret", key);
+  assert.notEqual(encrypted.ciphertext, Buffer.from("https://hooks.slack.com/services/example/secret").toString("base64"));
+  assert.equal(decryptSecret({ ciphertext: encrypted.ciphertext, iv: encrypted.iv, authTag: encrypted.authTag }, key), "https://hooks.slack.com/services/example/secret");
+  const altered = { ...encrypted, ciphertext: Buffer.from("tampered").toString("base64") };
+  assert.throws(() => decryptSecret({ ciphertext: altered.ciphertext, iv: altered.iv, authTag: altered.authTag }, key));
+});

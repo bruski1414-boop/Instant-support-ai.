@@ -22,6 +22,13 @@ function safeFallback(reason = "I can't verify that from the approved informatio
   };
 }
 
+function safeStaffReviewReply(message) {
+  if (/\\b(fire|smoke|immediate danger|life.?threatening|medical emergency|ambulance|police)\\b/i.test(String(message || ""))) {
+    return "If anyone is in immediate danger, contact local emergency services and alert hotel staff directly now. I cannot dispatch emergency help or confirm that anyone has been notified.";
+  }
+  return "This request needs review by the hotel team. I cannot make or confirm booking changes, refunds, charges, availability, or service resolutions here. Please contact reception directly.";
+}
+
 function validWebhookUrl(raw) {
   if (!raw) return null;
   try {
@@ -159,7 +166,11 @@ ${businessFaq}`,
       if (!validReply) result = safeFallback("I couldn't prepare a reliable answer.");
 
       const needsHuman = shouldEscalate(message) || result.needsHuman === true || !validReply;
-      const reply = result.reply.trim().slice(0, 2500);
+      // Never relay an AI-generated claim of completing a consequential action.
+      // Handoffs use a fixed, truthful response instead of model-authored wording.
+      const reply = needsHuman
+        ? safeStaffReviewReply(message)
+        : result.reply.trim().slice(0, 2500);
       const handoffReason = needsHuman
         ? (typeof result.handoffReason === "string" && result.handoffReason.trim()
           ? result.handoffReason.trim().slice(0, 240)
@@ -218,4 +229,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { app, createApp, shouldEscalate, safeFallback, validWebhookUrl };
+module.exports = { app, createApp, shouldEscalate, safeFallback, safeStaffReviewReply, validWebhookUrl };

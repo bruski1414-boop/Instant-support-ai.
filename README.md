@@ -21,7 +21,7 @@ Veyra AI is an early customer-support assistant prototype aimed at hospitality a
 ## Important: prototype, not production SaaS
 
 This is **not yet a complete €5,000/month enterprise product**. It does not yet include:
-- Live customer accounts and runtime tenant isolation (a reviewed PostgreSQL schema foundation is now included, but authentication and database-backed routes are not yet wired).
+- Complete multi-tenant operations (PostgreSQL foundations and initial login/session endpoints are implemented, but owner provisioning, tenant-scoped product routes, dashboard integration, and production security review remain outstanding).
 - Native staff email/SMS/WhatsApp integrations (only a generic optional webhook is available).
 - Booking, CRM, hotel PMS, Shopify, or payment integrations.
 - A secure business-owner dashboard for editing FAQs.
@@ -46,7 +46,7 @@ Render's free web services may sleep after inactivity and take time to wake up. 
 
 This is a **single-business prototype**, not a multi-company SaaS. Do not connect real customer data or promise service-level guarantees until authentication, tenant isolation, privacy controls, monitoring, and a security review are implemented.
 
-## Health and readiness
+## Authentication foundation\n\nThe backend now has database-backed `POST /api/auth/login`, `GET /api/auth/me`, and `POST /api/auth/logout` endpoints when `DATABASE_URL` is configured. Passwords are verified with Node's scrypt implementation; only opaque random session tokens are sent in HttpOnly cookies and SHA-256 token hashes are stored in PostgreSQL. Sessions expire after eight hours, can be revoked, and logout requires a CSRF token plus same-origin validation. Login attempts have a dedicated rate limit.\n\nApply migrations in order: `001_multi_tenant_foundation.sql`, then `002_authentication.sql`. Set `APP_ORIGIN` to the exact HTTPS site origin in production. Set `DATABASE_SSL=true` only when the database provider supports verified TLS. There is deliberately no public sign-up endpoint. Accounts and memberships must be provisioned through a controlled, reviewed administrative process; no default credentials are created.\n\n**This is not yet production authentication.** The routes have not been tested against a live hosted database, the first-owner provisioning workflow is not implemented, tenant-scoped hotel data routes are not connected, and the dashboard does not yet require sign-in. Do not use real accounts or guest data until those items and an independent security review are complete.\n\n## Health and readiness
 
 - `GET /api/health` checks whether the process is responding and reports whether live AI configuration is present. A `degraded` status means the process is up but not ready to answer guests.
 - `GET /api/ready` returns HTTP 200 only when an AI client and approved business knowledge are configured; otherwise it returns HTTP 503. This is a configuration check, not a proof that the provider is reachable or that answers are accurate.
@@ -73,7 +73,7 @@ Without an API key, the website still displays sample demo responses, but the ba
 ## Environment variables
 
 - HANDOFF_WEBHOOK_URL: optional private Slack incoming webhook URL on `hooks.slack.com` or `hooks.slack-gov.com`. Other hosts and redirects are rejected. It receives a handoff reason by default, not the guest's message. Guest message forwarding is disabled by default; only enable HANDOFF_INCLUDE_MESSAGE=true after explicit business-owner approval and a privacy review.
-- HANDOFF_INCLUDE_MESSAGE: optional privacy-sensitive switch; defaults to false.
+- HANDOFF_INCLUDE_MESSAGE: optional privacy-sensitive switch; defaults to false.\n- DATABASE_URL: private PostgreSQL connection string used by account/session endpoints.\n- DATABASE_SSL: set to true only when verified TLS is required and supported.\n- APP_ORIGIN: exact public origin used to validate login/logout requests in production.
 - OPENAI_API_KEY: server-side secret; required for live AI.
 - OPENAI_MODEL: model name, default gpt-4.1-mini.
 - PORT: server port, default 3000.

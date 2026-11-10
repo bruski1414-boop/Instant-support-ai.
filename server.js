@@ -48,10 +48,16 @@ function createApp(options = {}) {
   const webhookUrl = validWebhookUrl(String(env.HANDOFF_WEBHOOK_URL || "").trim());
   const fetchImpl = options.fetchImpl || globalThis.fetch;
   const logger = options.logger || console;
+  const openaiConfig = {
+    apiKey: env.OPENAI_API_KEY,
+    timeout: 15000,
+    maxRetries: 1,
+    ...(options.openAIFetch ? { fetch: options.openAIFetch } : {}),
+  };
   const openai = options.openaiClient !== undefined
     ? options.openaiClient
     : env.OPENAI_API_KEY
-      ? new OpenAI({ apiKey: env.OPENAI_API_KEY, timeout: 15000, maxRetries: 1 })
+      ? (options.openaiClientFactory || ((config) => new OpenAI(config)))(openaiConfig)
       : null;
 
   const app = express();
@@ -162,7 +168,11 @@ ${businessFaq}`,
       const raw = completion?.choices?.[0]?.message?.content || "";
       let result;
       try { result = JSON.parse(raw); } catch { result = null; }
-      const validReply = result && typeof result.reply === "string" && result.reply.trim();
+      const validReply = result &&
+        typeof result.reply === "string" &&
+        result.reply.trim() &&
+        typeof result.needsHuman === "boolean" &&
+        (result.handoffReason === undefined || typeof result.handoffReason === "string");
       if (!validReply) result = safeFallback("I couldn't prepare a reliable answer.");
 
       const needsHuman = shouldEscalate(message) || result.needsHuman === true || !validReply;

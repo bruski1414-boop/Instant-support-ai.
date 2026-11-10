@@ -42,4 +42,4 @@ jobs:
       - name: Verify row-level tenant isolation as restricted runtime role
         run: psql -v ON_ERROR_STOP=1 -f scripts/test-tenant-isolation.sql
       - name: Verify login and session flows against restricted PostgreSQL role
-        run: node scripts/test-auth-integration.js
+        run: node scripts/auth-integration-check.js

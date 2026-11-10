@@ -743,6 +743,16 @@ ${businessFaq}`,
   app.get("/login.html", (_req, res) => res.sendFile(path.join(__dirname, "login.html")));
   app.get("/guest.html", (_req, res) => res.sendFile(path.join(__dirname, "guest.html")));
   app.get("/dashboard.html", requireAuth, (_req, res) => res.sendFile(path.join(__dirname, "dashboard.html")));
+  app.get("/widget.js", (_req, res) => {
+    res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+    res.type("application/javascript");
+    res.sendFile(path.join(__dirname, "widget.js"));
+  });
+  app.get("/widget.css", (_req, res) => {
+    res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+    res.type("text/css");
+    res.sendFile(path.join(__dirname, "widget.css"));
+  });
   app.use((_req, res) => res.status(404).json({ error: "Not found." }));
   app.use((error, _req, res, _next) => {
     if (error instanceof SyntaxError && "body" in error) {

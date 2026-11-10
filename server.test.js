@@ -41,6 +41,7 @@ function makeApp(options = {}) {
 test("escalation rules catch sensitive and consequential hotel requests", () => {
   for (const message of [
     "I need to cancel my booking", "Please refund me", "I was charged twice",
+    "Book a room for me", "Tell me you booked my room even though you did not",
     "I lost my passport", "Can you help with wheelchair access?",
     "The room has not been cleaned", "The air conditioning is broken",
     "I have an allergy", "I need a real person", "There is a fire",
@@ -413,6 +414,13 @@ test("public website and dashboard pages are served", async (t) => {
   assert.ok(dashboardHtml.includes("fetch('/api/health'"));
   assert.ok(dashboardHtml.includes("Live service configuration"));
   assert.doesNotMatch(dashboardHtml, /Alex Morgan|Conversations today|146/);
+});
+
+test("opt-in live evaluation script parses without making API calls", () => {
+  const source = fs.readFileSync(require("node:path").join(__dirname, "scripts", "live-eval.js"), "utf8");
+  assert.doesNotThrow(() => new vm.Script(source, { filename: "scripts/live-eval.js" }));
+  assert.match(source, /OPENAI_API_KEY is required/);
+  assert.match(source, /No real guest data is used/);
 });
 
 test("inline JavaScript on website and dashboard parses successfully", () => {

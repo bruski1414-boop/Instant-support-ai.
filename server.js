@@ -10,6 +10,7 @@ const OpenAI = require("openai");
 const path = require("node:path");
 const { Pool } = require("pg");
 const { createAuthRouter } = require("./auth");
+const { encryptionKeyFromEnv, encryptSecret, decryptSecret } = require("./integration-secrets");
 
 function shouldEscalate(text) {
   const value = String(text || "");
@@ -63,6 +64,7 @@ function createApp(options = {}) {
   const webhookUrl = validWebhookUrl(String(env.HANDOFF_WEBHOOK_URL || "").trim());
   // Minimise personal data sent to third-party alert tools by default.
   const includeHandoffMessage = env.HANDOFF_INCLUDE_MESSAGE === "true";
+  const tenantIntegrationKey = encryptionKeyFromEnv(env);
   const fetchImpl = options.fetchImpl || globalThis.fetch;
   const logger = options.logger || console;
   const openaiConfig = {
@@ -132,6 +134,40 @@ function createApp(options = {}) {
     }
   }
 
+  async function postSlackWebhook(url, text) {
+    try {
+      const response = await fetchImpl(url, {
+        method: "POST",
+        redirect: "error",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: String(text).slice(0, 1800) }),
+        signal: AbortSignal.timeout(5000),
+      });
+      return Boolean(response && response.ok);
+    } catch (error) {
+      logger.error("Veyra tenant notification delivery failed:", error?.message || "Unknown error");
+      return false;
+    }
+  }
+
+  async function notifyTenantStaff(tenantId, integration, reason) {
+    if (!integration || !integration.enabled) return { configured: false, delivered: false };
+    if (!tenantIntegrationKey) return { configured: true, delivered: false };
+    try {
+      const url = decryptSecret({
+        ciphertext: integration.secret_ciphertext,
+        iv: integration.secret_iv,
+        authTag: integration.secret_auth_tag,
+      }, tenantIntegrationKey);
+      if (!validWebhookUrl(url)) return { configured: true, delivered: false };
+      const delivered = await postSlackWebhook(url, `Veyra AI: a guest conversation needs staff review. Reason: ${String(reason || "Staff review requested").slice(0, 240)}. Open the Veyra dashboard handoff inbox to review it. Guest message content was not forwarded.`);
+      return { configured: true, delivered };
+    } catch (error) {
+      logger.error("Veyra tenant notification could not be prepared:", error?.message || "Unknown error");
+      return { configured: true, delivered: false };
+    }
+  }
+
   const requireAuth = createAuthRouter(app, { pool: dbPool, env, logger });
 
   async function withTenantTransaction(userId, tenantId, callback) {
@@ -169,7 +205,8 @@ function createApp(options = {}) {
       await client.query("SELECT set_config('app.tenant_id', $1, true)", [tenantId]);
       const docs = await client.query("SELECT id, title, content, version FROM knowledge_documents WHERE tenant_id = $1 AND approved_at IS NOT NULL ORDER BY updated_at DESC LIMIT 50", [tenantId]);
       if (!docs.rows.length) { await client.query("ROLLBACK"); return { unavailable: true }; }
-      const result = await callback(client, docs.rows);
+      const integration = await client.query("SELECT secret_ciphertext, secret_iv, secret_auth_tag, enabled FROM tenant_integrations WHERE tenant_id = $1 AND provider = 'slack' LIMIT 1", [tenantId]);
+      const result = await callback(client, docs.rows, integration.rows[0] || null);
       await client.query("COMMIT");
       return { result };
     } catch (error) { try { await client.query("ROLLBACK"); } catch {} throw error; }
@@ -186,13 +223,13 @@ function createApp(options = {}) {
     if (conversationId && !validUuid(conversationId)) return res.status(400).json({ error: "Invalid conversation reference." });
     if (!openai) return res.status(503).json({ error: "Guest support is temporarily unavailable." });
     try {
-      const scoped = await withPublicTenantTransaction(tenantId, async (client, documents) => {
+      const scoped = await withPublicTenantTransaction(tenantId, async (client, documents, integration) => {
         const conversation = conversationId ? await client.query("SELECT id FROM conversations WHERE tenant_id = $1 AND id = $2 FOR UPDATE", [tenantId, conversationId]) : { rows: [] };
         if (conversationId && !conversation.rows[0]) return { notFound: true };
         const current = conversationId || (await client.query("INSERT INTO conversations (tenant_id, channel) VALUES ($1, 'website') RETURNING id", [tenantId])).rows[0].id;
         await client.query("INSERT INTO messages (tenant_id, conversation_id, sender_type, body) VALUES ($1, $2, 'guest', $3)", [tenantId, current, message]);
         const history = await client.query("SELECT sender_type, body FROM messages WHERE tenant_id = $1 AND conversation_id = $2 ORDER BY created_at DESC LIMIT 7", [tenantId, current]);
-        return { conversationId: current, documents, history: history.rows.reverse() };
+        return { conversationId: current, documents, history: history.rows.reverse(), integration };
       });
       if (scoped.unavailable) return res.status(404).json({ error: "This support channel has no approved information yet." });
       if (scoped.result.notFound) return res.status(404).json({ error: "Conversation not found." });
@@ -229,7 +266,17 @@ function createApp(options = {}) {
         await client.query("UPDATE conversations SET updated_at = now(), status = $3 WHERE tenant_id = $1 AND id = $2", [tenantId, currentId, needsHuman ? "waiting_staff" : "open"]);
         return true;
       });
-      return res.json({ conversationId: currentId, reply, needsHuman, handoffReason, handoffStatus: needsHuman ? "staff-queue" : "not-required" });
+      const notification = needsHuman
+        ? await notifyTenantStaff(tenantId, scoped.result.integration, handoffReason)
+        : { configured: Boolean(scoped.result.integration?.enabled), delivered: false };
+      return res.json({
+        conversationId: currentId,
+        reply,
+        needsHuman,
+        handoffReason,
+        handoffStatus: needsHuman ? "staff-queue" : "not-required",
+        notificationStatus: !needsHuman ? "not-required" : notification.delivered ? "notified" : notification.configured ? "delivery-failed" : "not-configured",
+      });
     } catch (error) { return workspaceFailure(res, error, "Veyra public guest chat failed:"); }
   });
 
@@ -339,6 +386,73 @@ function createApp(options = {}) {
       if (!scoped.result) return res.status(404).json({ error: "Knowledge document not found." });
       return res.json({ document: scoped.result });
     } catch (error) { return workspaceFailure(res, error, "Veyra knowledge approval failed:"); }
+  });
+
+  // Slack integration secrets are encrypted at rest; only workspace owners/admins can manage them.
+  app.get("/api/integrations/slack", requireAuth, async (req, res) => {
+    const tenantId = selectedTenant(req, res); if (!tenantId) return;
+    try {
+      const scoped = await withTenantTransaction(req.auth.user.id, tenantId, async (client) => {
+        const result = await client.query("SELECT enabled, updated_at FROM tenant_integrations WHERE tenant_id = $1 AND provider = 'slack' LIMIT 1", [tenantId]);
+        return result.rows[0] || null;
+      });
+      if (scoped.forbidden) return res.status(403).json({ error: "You do not have access to this workspace." });
+      return res.json({ configured: Boolean(scoped.result?.enabled), updatedAt: scoped.result?.updated_at || null, encryptionReady: Boolean(tenantIntegrationKey) });
+    } catch (error) { return workspaceFailure(res, error, "Veyra Slack integration status failed:"); }
+  });
+
+  app.post("/api/integrations/slack", requireAuth, async (req, res) => {
+    const tenantId = selectedTenant(req, res); if (!tenantId) return;
+    const url = validWebhookUrl(typeof req.body?.webhookUrl === "string" ? req.body.webhookUrl.trim() : "");
+    if (!url) return res.status(400).json({ error: "Enter a valid HTTPS Slack incoming webhook URL." });
+    if (!tenantIntegrationKey) return res.status(503).json({ error: "Tenant integration encryption is not configured by the service operator." });
+    try {
+      const scoped = await withTenantTransaction(req.auth.user.id, tenantId, async (client, role) => {
+        if (!["owner", "admin"].includes(role)) return { forbiddenRole: true };
+        const encrypted = encryptSecret(url, tenantIntegrationKey);
+        await client.query(
+          "INSERT INTO tenant_integrations (tenant_id, provider, secret_ciphertext, secret_iv, secret_auth_tag, enabled, configured_by, updated_at) VALUES ($1, 'slack', $2, $3, $4, true, $5, now()) ON CONFLICT (tenant_id, provider) DO UPDATE SET secret_ciphertext = EXCLUDED.secret_ciphertext, secret_iv = EXCLUDED.secret_iv, secret_auth_tag = EXCLUDED.secret_auth_tag, enabled = true, configured_by = EXCLUDED.configured_by, updated_at = now()",
+          [tenantId, encrypted.ciphertext, encrypted.iv, encrypted.authTag, req.auth.user.id],
+        );
+        await client.query("INSERT INTO audit_events (tenant_id, actor_user_id, action, resource_type, metadata) VALUES ($1, $2, 'integration.slack_configured', 'tenant_integration', $3::jsonb)", [tenantId, req.auth.user.id, JSON.stringify({ provider: "slack" })]);
+        return { saved: true };
+      });
+      if (scoped.forbidden) return res.status(403).json({ error: "You do not have access to this workspace." });
+      if (scoped.result.forbiddenRole) return res.status(403).json({ error: "Only workspace owners and admins can configure integrations." });
+      return res.status(201).json({ configured: true, secretReturned: false });
+    } catch (error) { return workspaceFailure(res, error, "Veyra Slack integration save failed:"); }
+  });
+
+  app.post("/api/integrations/slack/test", requireAuth, async (req, res) => {
+    const tenantId = selectedTenant(req, res); if (!tenantId) return;
+    try {
+      const scoped = await withTenantTransaction(req.auth.user.id, tenantId, async (client, role) => {
+        if (!["owner", "admin"].includes(role)) return { forbiddenRole: true };
+        const result = await client.query("SELECT secret_ciphertext, secret_iv, secret_auth_tag, enabled FROM tenant_integrations WHERE tenant_id = $1 AND provider = 'slack' LIMIT 1", [tenantId]);
+        return result.rows[0] || null;
+      });
+      if (scoped.forbidden) return res.status(403).json({ error: "You do not have access to this workspace." });
+      if (scoped.result?.forbiddenRole) return res.status(403).json({ error: "Only workspace owners and admins can test integrations." });
+      if (!scoped.result?.enabled) return res.status(404).json({ error: "No Slack integration is configured." });
+      if (!tenantIntegrationKey) return res.status(503).json({ error: "Tenant integration encryption is not configured by the service operator." });
+      const notification = await notifyTenantStaff(tenantId, scoped.result, "This is a test notification.");
+      return res.status(notification.delivered ? 200 : 502).json({ delivered: notification.delivered });
+    } catch (error) { return workspaceFailure(res, error, "Veyra Slack integration test failed:"); }
+  });
+
+  app.delete("/api/integrations/slack", requireAuth, async (req, res) => {
+    const tenantId = selectedTenant(req, res); if (!tenantId) return;
+    try {
+      const scoped = await withTenantTransaction(req.auth.user.id, tenantId, async (client, role) => {
+        if (!["owner", "admin"].includes(role)) return { forbiddenRole: true };
+        await client.query("DELETE FROM tenant_integrations WHERE tenant_id = $1 AND provider = 'slack'", [tenantId]);
+        await client.query("INSERT INTO audit_events (tenant_id, actor_user_id, action, resource_type, metadata) VALUES ($1, $2, 'integration.slack_removed', 'tenant_integration', $3::jsonb)", [tenantId, req.auth.user.id, JSON.stringify({ provider: "slack" })]);
+        return { removed: true };
+      });
+      if (scoped.forbidden) return res.status(403).json({ error: "You do not have access to this workspace." });
+      if (scoped.result.forbiddenRole) return res.status(403).json({ error: "Only workspace owners and admins can remove integrations." });
+      return res.json({ configured: false });
+    } catch (error) { return workspaceFailure(res, error, "Veyra Slack integration removal failed:"); }
   });
 
   // Staff handoff inbox: tenant-scoped, authenticated, and backed by persisted conversations.

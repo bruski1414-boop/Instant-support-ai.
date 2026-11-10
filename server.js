@@ -115,6 +115,15 @@ function createApp(options = {}) {
     message: { error: "Too many requests. Please wait a moment and try again." },
   }));
 
+  // Public guest chat has a tighter per-IP budget than authenticated workspace APIs.
+  const publicChatLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    limit: options.publicChatRateLimit || 12,
+    standardHeaders: "draft-7",
+    legacyHeaders: false,
+    message: { error: "You're sending messages too quickly. Please wait a moment and try again." },
+  });
+
   async function notifyStaff({ message, reason }) {
     if (!webhookUrl) return { configured: false, delivered: false };
     try {
@@ -228,7 +237,7 @@ function createApp(options = {}) {
     finally { client.release(); }
   }
 
-  app.post("/api/public/:tenantId/chat", async (req, res) => {
+  app.post("/api/public/:tenantId/chat", publicChatLimiter, async (req, res) => {
     const tenantId = req.params.tenantId;
     if (!validUuid(tenantId)) return res.status(404).json({ error: "This support channel is unavailable." });
     const message = typeof req.body?.message === "string" ? req.body.message.trim() : "";

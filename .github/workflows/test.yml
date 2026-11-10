@@ -43,6 +43,8 @@ jobs:
         run: psql -v ON_ERROR_STOP=1 -f migrations/003_tenant_integrations.sql
       - name: Apply privacy and retention schema to disposable PostgreSQL
         run: psql -v ON_ERROR_STOP=1 -f migrations/004_privacy_retention.sql
+      - name: Apply hotel website origin allowlist schema
+        run: psql -v ON_ERROR_STOP=1 -f migrations/005_widget_domains.sql
       - name: Verify row-level tenant isolation as restricted runtime role
         run: psql -v ON_ERROR_STOP=1 -f scripts/test-tenant-isolation.sql
       - name: Verify login and session flows against restricted PostgreSQL role

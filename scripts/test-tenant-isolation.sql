@@ -28,6 +28,10 @@ INSERT INTO conversations (tenant_id, id) VALUES
 INSERT INTO tenant_integrations (tenant_id, provider, secret_ciphertext, secret_iv, secret_auth_tag) VALUES
   ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'slack', 'ciphertext', '1234567890123456', '123456789012345678901234');
 
+INSERT INTO tenant_widget_settings (tenant_id, allowed_origins) VALUES
+  ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', ARRAY['https://hotel-a.example']),
+  ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', ARRAY['https://hotel-b.example']);
+
 SET ROLE veyra_runtime_test;
 
 DO $$
@@ -72,6 +76,16 @@ BEGIN
   IF (SELECT count(*) FROM tenant_integrations) <> 1 THEN
     RAISE EXCEPTION 'tenant A should see only its own integration credentials';
   END IF;
+  IF (SELECT count(*) FROM tenant_widget_settings) <> 1 THEN
+    RAISE EXCEPTION 'tenant A should see only its own website origin settings';
+  END IF;
+  BEGIN
+    INSERT INTO tenant_widget_settings (tenant_id, allowed_origins)
+    VALUES ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', ARRAY['https://attacker.example']);
+    RAISE EXCEPTION 'cross-tenant website origin insert unexpectedly succeeded';
+  EXCEPTION WHEN insufficient_privilege THEN
+    NULL;
+  END;
   BEGIN
     INSERT INTO tenant_integrations (tenant_id, provider, secret_ciphertext, secret_iv, secret_auth_tag)
     VALUES ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 'slack', 'blocked', '1234567890123456', '123456789012345678901234');

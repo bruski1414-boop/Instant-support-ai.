@@ -81,6 +81,7 @@ BEGIN
   PERFORM set_config('app.user_id', 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', true);
   PERFORM set_config('app.session_token_hash', repeat('ab', 32), true);
   UPDATE user_sessions SET revoked_at = now() WHERE token_hash = decode(repeat('ab', 32), 'hex');
+  PERFORM set_config('app.user_id', '', true);
   IF (SELECT count(*) FROM user_sessions) <> 0 THEN
     RAISE EXCEPTION 'revoked session must no longer be visible';
   END IF;

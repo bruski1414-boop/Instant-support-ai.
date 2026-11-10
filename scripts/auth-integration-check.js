@@ -188,7 +188,7 @@ async function main() {
     assert.equal((await deleteConversation.json()).deleted, true);
     const deletedDetail = await fetch(base + "/api/conversations/" + escalation.conversationId, { headers: workspaceHeaders });
     assert.equal(deletedDetail.status, 404, "deleted conversation and its messages must no longer be accessible");
-    const deleteAudit = await runtimePool.query("SELECT action FROM audit_events WHERE tenant_id = $1 AND resource_id = $2 AND action = 'conversation.deleted'", [TENANT_ID, escalation.conversationId]);
+    const deleteAudit = await admin.query("SELECT action FROM audit_events WHERE tenant_id = $1 AND resource_id = $2 AND action = 'conversation.deleted'", [TENANT_ID, escalation.conversationId]);
     assert.equal(deleteAudit.rowCount, 1, "permanent deletion must leave an audit record");
 
     const removeIntegration = await fetch(base + "/api/integrations/slack", { method: "DELETE", headers: workspaceHeaders });

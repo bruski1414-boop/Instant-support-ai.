@@ -97,7 +97,8 @@ async function main() {
     assert.equal(workspaces.workspaces.length, 1, "only the user's own workspace should be listed");
     assert.equal(workspaces.workspaces[0].id, TENANT_ID);
 
-    const workspaceHeaders = { cookie: cookies, "content-type": "application/json", "x-veyra-workspace": TENANT_ID };
+    const csrfToken = decodeURIComponent(csrfMatch[1]);
+    const workspaceHeaders = { cookie: cookies, "content-type": "application/json", "x-veyra-workspace": TENANT_ID, "x-csrf-token": csrfToken, origin };
     const draftResponse = await fetch(base + "/api/knowledge", { method: "POST", headers: workspaceHeaders, body: JSON.stringify({ title: "Breakfast", content: "Breakfast is served from 7 AM to 10 AM." }) });
     assert.equal(draftResponse.status, 201, "owner should be able to create a draft knowledge document");
     const draft = (await draftResponse.json()).document;
@@ -126,6 +127,8 @@ async function main() {
     assert.equal(detail.status, 200);
     assert.equal((await detail.json()).messages.length, 1);
 
+    const missingCsrf = await fetch(base + "/api/integrations/slack", { method: "POST", headers: { cookie: cookies, "content-type": "application/json", "x-veyra-workspace": TENANT_ID, origin }, body: JSON.stringify({ webhookUrl: "https://hooks.slack.com/services/test/tenant/secret" }) });
+    assert.equal(missingCsrf.status, 403, "authenticated mutations must reject requests without CSRF validation");
     const invalidIntegration = await fetch(base + "/api/integrations/slack", { method: "POST", headers: workspaceHeaders, body: JSON.stringify({ webhookUrl: "https://example.com/steal" }) });
     assert.equal(invalidIntegration.status, 400, "only approved Slack webhook hosts should be accepted");
     const saveIntegration = await fetch(base + "/api/integrations/slack", { method: "POST", headers: workspaceHeaders, body: JSON.stringify({ webhookUrl: "https://hooks.slack.com/services/test/tenant/secret" }) });

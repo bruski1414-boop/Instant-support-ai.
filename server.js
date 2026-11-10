@@ -539,6 +539,30 @@ function createApp(options = {}) {
   });
 
 
+  // Permanent conversation deletion is restricted to owners/admins and audited.
+  // Associated messages are removed by the composite foreign-key ON DELETE CASCADE.
+  app.delete("/api/conversations/:id", requireAuth, async (req, res) => {
+    const tenantId = selectedTenant(req, res); if (!tenantId) return;
+    if (!validUuid(req.params.id)) return res.status(400).json({ error: "Invalid conversation ID." });
+    try {
+      const scoped = await withTenantTransaction(req.auth.user.id, tenantId, async (client, role) => {
+        if (!["owner", "admin"].includes(role)) return { forbiddenRole: true };
+        const existing = await client.query("SELECT id FROM conversations WHERE tenant_id = $1 AND id = $2 FOR UPDATE", [tenantId, req.params.id]);
+        if (!existing.rows[0]) return { notFound: true };
+        await client.query("DELETE FROM conversations WHERE tenant_id = $1 AND id = $2", [tenantId, req.params.id]);
+        await client.query(
+          "INSERT INTO audit_events (tenant_id, actor_user_id, action, resource_type, resource_id, metadata) VALUES ($1, $2, 'conversation.deleted', 'conversation', $3, $4::jsonb)",
+          [tenantId, req.auth.user.id, req.params.id, JSON.stringify({ message: "Conversation and associated messages permanently deleted by workspace administrator." })],
+        );
+        return { deleted: true };
+      });
+      if (scoped.forbidden) return res.status(403).json({ error: "You do not have access to this workspace." });
+      if (scoped.result.forbiddenRole) return res.status(403).json({ error: "Only workspace owners and admins can permanently delete conversations." });
+      if (scoped.result.notFound) return res.status(404).json({ error: "Conversation not found." });
+      return res.json({ deleted: true });
+    } catch (error) { return workspaceFailure(res, error, "Veyra conversation deletion failed:"); }
+  });
+
   app.get("/api/health", (_req, res) => {
     res.json({
       status: openai && businessFaq ? "ready" : "degraded",

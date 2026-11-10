@@ -341,6 +341,23 @@ function createApp(options = {}) {
     } catch (error) { return workspaceFailure(res, error, "Veyra knowledge approval failed:"); }
   });
 
+  // Staff handoff inbox: tenant-scoped, authenticated, and backed by persisted conversations.
+  // This is an in-dashboard queue, not an external push notification.
+  app.get("/api/handoffs", requireAuth, async (req, res) => {
+    const tenantId = selectedTenant(req, res); if (!tenantId) return;
+    try {
+      const scoped = await withTenantTransaction(req.auth.user.id, tenantId, async (client) => {
+        const result = await client.query(
+          "SELECT c.id, c.channel, c.status, c.started_at, c.updated_at, (SELECT left(m.body, 240) FROM messages m WHERE m.tenant_id = c.tenant_id AND m.conversation_id = c.id AND m.sender_type = 'guest' ORDER BY m.created_at DESC LIMIT 1) AS latest_guest_message FROM conversations c WHERE c.tenant_id = $1 AND c.status = 'waiting_staff' ORDER BY c.updated_at ASC LIMIT 100",
+          [tenantId],
+        );
+        return result.rows;
+      });
+      if (scoped.forbidden) return res.status(403).json({ error: "You do not have access to this workspace." });
+      return res.json({ handoffs: scoped.result, delivery: "dashboard-queue-only" });
+    } catch (error) { return workspaceFailure(res, error, "Veyra handoff inbox failed:"); }
+  });
+
   app.get("/api/conversations", requireAuth, async (req, res) => {
     const tenantId = selectedTenant(req, res); if (!tenantId) return;
     try {

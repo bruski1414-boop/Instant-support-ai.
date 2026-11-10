@@ -30,9 +30,9 @@ function mockAI(content, options = {}) {
 
 function makeApp(options = {}) {
   return createApp({
-    env: { BUSINESS_NAME: "Northstar Test Hotel", BUSINESS_FAQ: FAQ, ...options.env },
-    logger: silentLogger,
     ...options,
+    env: { BUSINESS_NAME: "Northstar Test Hotel", BUSINESS_FAQ: FAQ, ...(options.env || {}) },
+    logger: options.logger || silentLogger,
   });
 }
 
@@ -236,7 +236,7 @@ test("malformed AI JSON produces a safe handoff instead of an invented answer", 
   });
   const body = await response.json();
   assert.equal(body.needsHuman, true);
-  assert.match(body.reply, /couldn't prepare a reliable answer/i);
+  assert.match(body.reply, /needs review by the hotel team/i);
 });
 
 test("AI provider failures return safe response and attempt staff notification", async (t) => {

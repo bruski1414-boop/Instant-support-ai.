@@ -18,9 +18,6 @@ const BUSINESS_NAME = (process.env.BUSINESS_NAME || "Sample Business").slice(0, 
 const BUSINESS_FAQ = (process.env.BUSINESS_FAQ || "").trim().slice(0, 20000);
 const HANDOFF_WEBHOOK_URL = (process.env.HANDOFF_WEBHOOK_URL || "").trim();
 
-const allowedOrigins = (process.env.ALLOWED_ORIGINS || "http://localhost:3000,http://127.0.0.1:3000")
-  .split(",").map((origin) => origin.trim()).filter(Boolean);
-
 app.disable("x-powered-by");
 app.use((req, res, next) => {
   res.setHeader("X-Content-Type-Options", "nosniff");
@@ -175,11 +172,15 @@ ${BUSINESS_FAQ}`,
     });
   } catch (error) {
     console.error("Veyra chat request failed:", error?.message || "Unknown error");
+    const handoff = await notifyStaff({
+      message: message.trim(),
+      reason: "The AI service failed; staff review is required.",
+    });
     return res.status(502).json({
       ...safeFallback("The assistant is temporarily unavailable."),
       needsHuman: true,
-      handoffConfigured: false,
-      handoffStatus: "not-connected",
+      handoffConfigured: handoff.configured,
+      handoffStatus: handoff.delivered ? "notified" : handoff.configured ? "delivery-failed" : "not-connected",
       mode: "error",
       error: "The assistant is temporarily unavailable. Please contact staff.",
     });
@@ -194,9 +195,6 @@ app.use((_req, res) => res.status(404).json({ error: "Not found." }));
 app.use((error, _req, res, _next) => {
   if (error instanceof SyntaxError && "body" in error) {
     return res.status(400).json({ error: "Invalid JSON request body." });
-  }
-  if (error?.message === "Origin not allowed by CORS") {
-    return res.status(403).json({ error: "Origin not allowed." });
   }
   console.error("Veyra request error:", error?.message || "Unknown error");
   return res.status(500).json({ error: "An unexpected server error occurred." });

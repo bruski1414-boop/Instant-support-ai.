@@ -3,6 +3,7 @@
   const script = document.currentScript;
   if (!script || script.dataset.veyraWidgetLoaded === "true") return;
   script.dataset.veyraWidgetLoaded = "true";
+  if (document.querySelector('[data-veyra-widget="true"]')) return;
 
   const workspace = script.getAttribute("data-workspace") || "";
   const configuredWorkspace = new URL(script.src, document.baseURI).searchParams.get("workspace") || "";

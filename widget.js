@@ -5,6 +5,11 @@
   script.dataset.veyraWidgetLoaded = "true";
 
   const workspace = script.getAttribute("data-workspace") || "";
+  const configuredWorkspace = new URL(script.src, document.baseURI).searchParams.get("workspace") || "";
+  if (configuredWorkspace !== workspace) {
+    console.warn("Veyra AI: the launcher workspace does not match its configured URL.");
+    return;
+  }
   const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
   if (!uuidPattern.test(workspace)) {
     console.warn("Veyra AI: missing or invalid data-workspace value.");

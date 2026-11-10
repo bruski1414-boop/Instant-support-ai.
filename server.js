@@ -245,7 +245,8 @@ function createApp(options = {}) {
         );
         await client.query("COMMIT");
         return res.json({ workspaces: result.rows });
-      } finally { client.release(); }
+      } catch (error) { try { await client.query("ROLLBACK"); } catch {} throw error; }
+      finally { client.release(); }
     } catch (error) { return workspaceFailure(res, error, "Veyra workspace list failed:"); }
   });
 

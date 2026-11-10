@@ -37,5 +37,7 @@ jobs:
       - run: npm test
       - name: Apply tenant schema to disposable PostgreSQL
         run: psql -v ON_ERROR_STOP=1 -f migrations/001_multi_tenant_foundation.sql
+      - name: Apply authentication schema to disposable PostgreSQL
+        run: psql -v ON_ERROR_STOP=1 -f migrations/002_authentication.sql
       - name: Verify row-level tenant isolation as restricted runtime role
         run: psql -v ON_ERROR_STOP=1 -f scripts/test-tenant-isolation.sql

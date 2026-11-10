@@ -20,12 +20,12 @@ Veyra AI is an early customer-support assistant prototype aimed at hospitality a
 
 ## Important: prototype, not production SaaS
 
-This is **not yet a complete €5,000/month enterprise product**. It does not yet include:
+This is an early prototype, not a production-ready enterprise product. It does not yet include:
 - Tenant-scoped workspace discovery, knowledge-document drafts and approvals, conversation storage, staff notes, and a public tenant-specific guest chat endpoint are implemented and covered by disposable-PostgreSQL integration tests. Live database provisioning, service encryption-key configuration, retention/deletion controls, and independent production security review remain outstanding.
 - Native staff email/SMS/WhatsApp integrations; tenant-specific Slack incoming webhooks are implemented, but email/SMS/WhatsApp channels are not.
 - Booking, CRM, hotel PMS, Shopify, or payment integrations.
 - A workspace dashboard for managing knowledge drafts/approvals and viewing stored conversations is implemented; it is not yet connected to PMS, booking, billing, or real-time staff messaging.
-- Billing, subscription management, audit logs, or enterprise SLAs.
+- Billing, subscription management, independently reviewed operational audit processes, or enterprise SLAs.
 - Production monitoring and independent security review.
 
 Do not promise those features to customers until they are implemented and tested. Pricing needs to be justified by proven business value, reliability, support, and integrations—not by the number of AI features listed.
@@ -92,13 +92,13 @@ Without an API key, the website still displays sample demo responses, but the ba
 
 ## Next engineering milestones
 
-1. Build authentication and strict tenant separation before serving multiple companies.
-2. Store each company's knowledge base securely and add owner-approved updates.
-3. Connect tenant-specific staff alerts; Slack webhook configuration, encryption, and test delivery are implemented, while email/SMS and delivery monitoring remain future work.
-4. Add source-grounded answers, confidence checks, and evaluation tests.
-5. Integrate one real business channel at a time (website widget first).
-6. Add usage monitoring, privacy controls, data retention, and billing only after the core service is reliable.
-7. Run security and reliability reviews before handling real customer data.
+1. Build a website chat integration with explicit domain controls and safe embedding rules.
+2. Add automatic conversation retention and deletion policies, export, and documented privacy controls.
+3. Add delivery retries/monitoring and additional staff channels only after the Slack workflow is validated.
+4. Improve source-grounded answers, confidence checks, and broader synthetic evaluation coverage.
+5. Add usage monitoring and explainable operational analytics before any ROI claims.
+6. Provision and validate a hosted database, secrets, backups, restoration, and monitoring with an authorised adult operator.
+7. Complete browser end-to-end testing and an independent security/privacy review before a real hotel pilot.
 
 ## Safety and reliability principles
 

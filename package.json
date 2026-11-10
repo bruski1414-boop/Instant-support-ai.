@@ -7,7 +7,8 @@
     "start": "node server.js",
     "dev": "node --watch server.js",
     "test": "node --test",
-    "test:live": "node scripts/live-eval.js"
+    "test:live": "node scripts/live-eval.js",
+    "provision:owner": "node scripts/provision-first-owner.js"
   },
   "engines": {
     "node": ">=20"

@@ -19,6 +19,8 @@ async function main() {
   });
   let runtimePool;
   let server;
+  const slackDeliveries = [];
+  const encryptionKey = Buffer.alloc(32, 7).toString("base64");
   try {
     await admin.query(`CREATE ROLE ${ROLE} LOGIN PASSWORD '${PASSWORD}' NOSUPERUSER NOBYPASSRLS`);
     await admin.query(`GRANT CONNECT ON DATABASE postgres TO ${ROLE}`);
@@ -48,7 +50,7 @@ async function main() {
       database: process.env.PGDATABASE || "postgres",
       max: 3,
     });
-    const app = createApp({ dbPool: runtimePool, env: { NODE_ENV: "test" }, openaiClient: { chat: { completions: { create: async () => ({ choices: [{ message: { content: JSON.stringify({ reply: "Breakfast is served from 7 AM to 10 AM.", needsHuman: false, handoffReason: "" }) } }] }) } } }, logger: { error() {} } });
+    const app = createApp({ dbPool: runtimePool, env: { NODE_ENV: "test", TENANT_INTEGRATION_ENCRYPTION_KEY: encryptionKey }, fetchImpl: async (url, init) => { slackDeliveries.push({ url, payload: JSON.parse(init.body) }); return { ok: true, status: 200 }; }, openaiClient: { chat: { completions: { create: async () => ({ choices: [{ message: { content: JSON.stringify({ reply: "Breakfast is served from 7 AM to 10 AM.", needsHuman: false, handoffReason: "" }) } }] }) } } }, logger: { error() {} } });
     server = app.listen(0, "127.0.0.1");
     await new Promise((resolve, reject) => {
       server.once("listening", resolve);
@@ -124,6 +126,21 @@ async function main() {
     assert.equal(detail.status, 200);
     assert.equal((await detail.json()).messages.length, 1);
 
+    const invalidIntegration = await fetch(base + "/api/integrations/slack", { method: "POST", headers: workspaceHeaders, body: JSON.stringify({ webhookUrl: "https://example.com/steal" }) });
+    assert.equal(invalidIntegration.status, 400, "only approved Slack webhook hosts should be accepted");
+    const saveIntegration = await fetch(base + "/api/integrations/slack", { method: "POST", headers: workspaceHeaders, body: JSON.stringify({ webhookUrl: "https://hooks.slack.com/services/test/tenant/secret" }) });
+    assert.equal(saveIntegration.status, 201, "workspace owner should be able to save an encrypted Slack integration");
+    assert.equal((await saveIntegration.json()).secretReturned, false, "webhook secret must never be returned to the browser");
+    const integrationStatus = await fetch(base + "/api/integrations/slack", { headers: workspaceHeaders });
+    const integrationInfo = await integrationStatus.json();
+    assert.equal(integrationInfo.configured, true);
+    assert.equal(integrationInfo.encryptionReady, true);
+    assert.equal(JSON.stringify(integrationInfo).includes("secret"), false, "integration status must not expose credentials");
+    const testNotification = await fetch(base + "/api/integrations/slack/test", { method: "POST", headers: workspaceHeaders, body: "{}" });
+    assert.equal(testNotification.status, 200, "owner should be able to send a test notification");
+    assert.equal((await testNotification.json()).delivered, true);
+    assert.equal(slackDeliveries.length, 1, "test endpoint should send one Slack notification");
+
     const guestResponse = await fetch(base + "/api/public/" + TENANT_ID + "/chat", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ message: "What time is breakfast?" }) });
     assert.equal(guestResponse.status, 200, "public guest chat should answer from approved tenant knowledge");
     const guestBody = await guestResponse.json();
@@ -137,6 +154,9 @@ async function main() {
     const escalation = await escalationResponse.json();
     assert.equal(escalation.needsHuman, true);
     assert.equal(escalation.handoffStatus, "staff-queue");
+    assert.equal(escalation.notificationStatus, "notified", "tenant Slack notification should be delivered for a handoff");
+    assert.equal(slackDeliveries.length, 2, "guest escalation should trigger a tenant-specific Slack notification");
+    assert.match(slackDeliveries[1].payload.text, /Guest message content was not forwarded/);
     const handoffInbox = await fetch(base + "/api/handoffs", { headers: workspaceHeaders });
     assert.equal(handoffInbox.status, 200, "authenticated workspace staff should be able to load the handoff inbox");
     const inboxBody = await handoffInbox.json();
@@ -144,6 +164,10 @@ async function main() {
     assert.ok(inboxBody.handoffs.some((item) => item.id === escalation.conversationId), "escalated guest conversation should appear in the staff queue");
     const resolveEscalation = await fetch(base + "/api/conversations/" + escalation.conversationId + "/status", { method: "PATCH", headers: workspaceHeaders, body: JSON.stringify({ status: "resolved" }) });
     assert.equal(resolveEscalation.status, 200, "staff should be able to resolve an escalated handoff");
+    const removeIntegration = await fetch(base + "/api/integrations/slack", { method: "DELETE", headers: workspaceHeaders });
+    assert.equal(removeIntegration.status, 200, "owner should be able to remove the Slack integration");
+    const disabledStatus = await fetch(base + "/api/integrations/slack", { headers: workspaceHeaders });
+    assert.equal((await disabledStatus.json()).configured, false);
     const emptyInbox = await fetch(base + "/api/handoffs", { headers: workspaceHeaders });
     assert.equal((await emptyInbox.json()).handoffs.some((item) => item.id === escalation.conversationId), false, "resolved handoffs should leave the active queue");
 

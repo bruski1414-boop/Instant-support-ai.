@@ -168,6 +168,14 @@ async function main() {
     assert.ok(inboxBody.handoffs.some((item) => item.id === escalation.conversationId), "escalated guest conversation should appear in the staff queue");
     const resolveEscalation = await fetch(base + "/api/conversations/" + escalation.conversationId + "/status", { method: "PATCH", headers: workspaceHeaders, body: JSON.stringify({ status: "resolved" }) });
     assert.equal(resolveEscalation.status, 200, "staff should be able to resolve an escalated handoff");
+    const deleteConversation = await fetch(base + "/api/conversations/" + escalation.conversationId, { method: "DELETE", headers: workspaceHeaders });
+    assert.equal(deleteConversation.status, 200, "workspace owner should be able to permanently delete a conversation");
+    assert.equal((await deleteConversation.json()).deleted, true);
+    const deletedDetail = await fetch(base + "/api/conversations/" + escalation.conversationId, { headers: workspaceHeaders });
+    assert.equal(deletedDetail.status, 404, "deleted conversation and its messages must no longer be accessible");
+    const deleteAudit = await runtimePool.query("SELECT action FROM audit_events WHERE tenant_id = $1 AND resource_id = $2 AND action = 'conversation.deleted'", [TENANT_ID, escalation.conversationId]);
+    assert.equal(deleteAudit.rowCount, 1, "permanent deletion must leave an audit record");
+
     const removeIntegration = await fetch(base + "/api/integrations/slack", { method: "DELETE", headers: workspaceHeaders });
     assert.equal(removeIntegration.status, 200, "owner should be able to remove the Slack integration");
     const disabledStatus = await fetch(base + "/api/integrations/slack", { headers: workspaceHeaders });

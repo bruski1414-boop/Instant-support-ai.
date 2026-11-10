@@ -8,6 +8,36 @@ test("sensitive requests are marked for staff review", () => {
   assert.equal(shouldEscalate("What time is breakfast?"), false);
 });
 
+test("routine hotel FAQs stay eligible for automated handling", () => {
+  for (const message of [
+    "What time is breakfast?",
+    "Is there a swimming pool?",
+    "What is the Wi-Fi name?",
+    "Where is the gym?",
+    "What time is check-in?",
+    "Do you have airport transfers?",
+    "What attractions are nearby?",
+  ]) {
+    assert.equal(shouldEscalate(message), false, message);
+  }
+});
+
+test("consequential, sensitive, and service-failure requests are escalated", () => {
+  for (const message of [
+    "I want to cancel my reservation",
+    "I was charged twice",
+    "I lost my passport in the room",
+    "Can you help with wheelchair access?",
+    "The room has not been cleaned",
+    "The air conditioning is broken",
+    "I have an allergy",
+    "I need a real person",
+    "There is a fire",
+  ]) {
+    assert.equal(shouldEscalate(message), true, message);
+  }
+});
+
 test("fallback never claims that staff were contacted", () => {
   const result = safeFallback();
   assert.equal(result.needsHuman, true);

@@ -130,6 +130,14 @@ function createAuthRouter(app, { pool, env = process.env, logger = console }) {
     try {
       const session = await getSession(req);
       if (!session) return req.path.startsWith("/api/") ? res.status(401).json({ error: "Sign in required." }) : res.redirect(303, "/login.html");
+      if (["POST", "PUT", "PATCH", "DELETE"].includes(req.method)) {
+        const headerToken = req.get("x-csrf-token") || "";
+        const csrfMatches = session.csrfCookie && safeEqual(session.csrfCookie, headerToken) &&
+          safeEqual(hashToken(session.csrfCookie), session.csrf_hash);
+        if (!originAllowed(req, env.APP_ORIGIN, secure) || !csrfMatches) {
+          return res.status(403).json({ error: "CSRF validation failed." });
+        }
+      }
       const profile = await inTransaction(pool, async (client) => {
         await client.query("SELECT set_config('app.user_id', $1, true)", [session.user_id]);
         const user = await client.query("SELECT id, email FROM users WHERE id = $1 AND disabled_at IS NULL LIMIT 1", [session.user_id]);

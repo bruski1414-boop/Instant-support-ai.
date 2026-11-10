@@ -24,6 +24,13 @@
 <main class="main">
 <header class="top"><div><div class="crumb">WORKSPACE / SYSTEM STATUS</div><h1>Veyra AI command centre</h1><div class="muted">Live service configuration, not invented performance metrics.</div></div><div class="actions"><select id="workspaceSelect" aria-label="Select workspace" class="btn" style="max-width:220px"><option value="">Loading workspaces…</option></select><a class="btn" id="guestSupportLink" target="_blank" rel="noopener">Guest support preview ↗</a><span class="muted" id="accountEmail"></span><button class="btn" onclick="signOut()">Sign out</button><button class="btn primary" onclick="loadStatus()">↻ Refresh status</button></div></header>
 <div class="notice" role="status" aria-live="polite"><span class="dot" id="statusDot"></span><p id="statusMessage"><strong>Checking service…</strong> Connecting to the Veyra backend.</p></div>
+<section class="card" id="websiteWidget" style="margin:18px 0">
+<h2>Website chat launcher</h2>
+<p class="muted">Add this script to your hotel's website to show a floating Veyra support button. It opens the secure hosted guest chat in a new tab; it does not embed a third-party frame.</p>
+<textarea id="widgetInstallCode" readonly rows="2" aria-label="Website installation code" style="width:100%;min-height:76px;padding:12px;border:1px solid var(--line);border-radius:9px;background:#080e17;color:#d9e9fb;font:12px/1.5 ui-monospace,monospace;resize:vertical"></textarea>
+<div class="actions" style="margin-top:10px"><button class="btn primary" id="copyWidgetCode" type="button">Copy installation code</button><span id="widgetCopyStatus" class="muted" role="status" aria-live="polite"></span></div>
+<p class="muted" style="font-size:12px;margin-bottom:0">If your website has a strict Content Security Policy, allow your Veyra service origin in <code>script-src</code> and <code>style-src</code>. Test on a staging page before publishing.</p>
+</section>
 <section id="overview" class="grid">
 <div class="card"><div class="metriclabel">Backend status</div><div class="metric" id="backendState">Checking…</div><div class="muted" id="backendDetail">Waiting for health response</div></div>
 <div class="card"><div class="metriclabel">Live AI</div><div class="metric" id="aiState">Checking…</div><div class="muted" id="aiDetail">Checking provider and approved knowledge</div></div>
@@ -60,7 +67,7 @@
 let activeWorkspaceId="";
 function apiHeaders(){return {"Content-Type":"application/json","X-Veyra-Workspace":activeWorkspaceId,"X-CSRF-Token":readCookie("veyra_csrf")};}
 function safeText(value){return String(value??"").replace(/[&<>"']/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch]));}
-async function loadWorkspaces(){const response=await fetch("/api/workspaces",{cache:"no-store"});if(!response.ok)throw new Error("Could not load workspaces");const data=await response.json();const select=document.getElementById("workspaceSelect");select.replaceChildren();for(const item of data.workspaces){const option=document.createElement("option");option.value=item.id;option.textContent=item.name+" · "+item.role;select.append(option);}if(!data.workspaces.length){select.add(new Option("No workspace membership",""));return;}activeWorkspaceId=data.workspaces[0].id;select.value=activeWorkspaceId;document.getElementById("guestSupportLink").href="/guest.html?workspace="+encodeURIComponent(activeWorkspaceId);document.getElementById("workspaceName").textContent=data.workspaces[0].name;document.getElementById("workspaceRole").textContent=data.workspaces[0].role;await loadWorkspaceData();}
+async function loadWorkspaces(){const response=await fetch("/api/workspaces",{cache:"no-store"});if(!response.ok)throw new Error("Could not load workspaces");const data=await response.json();const select=document.getElementById("workspaceSelect");select.replaceChildren();for(const item of data.workspaces){const option=document.createElement("option");option.value=item.id;option.textContent=item.name+" · "+item.role;select.append(option);}if(!data.workspaces.length){select.add(new Option("No workspace membership",""));return;}activeWorkspaceId=data.workspaces[0].id;select.value=activeWorkspaceId;document.getElementById("guestSupportLink").href="/guest.html?workspace="+encodeURIComponent(activeWorkspaceId);document.getElementById("widgetInstallCode").value='<scr'+'ipt src="'+window.location.origin+'/widget.js" data-workspace="'+activeWorkspaceId+'" defer></scr'+'ipt>';document.getElementById("workspaceName").textContent=data.workspaces[0].name;document.getElementById("workspaceRole").textContent=data.workspaces[0].role;await loadWorkspaceData();}
 async function loadRetentionSettings(){
   const select=document.getElementById("retentionDays");
   const feedback=document.getElementById("retentionFeedback");
@@ -147,6 +154,11 @@ async function refreshLiveDashboard(){
     if(stamp)stamp.textContent="Automatic refresh paused: "+String(error.message||"connection problem");
   }finally{queueRefreshInProgress=false;}
 }
+document.getElementById("copyWidgetCode").addEventListener("click",async()=>{
+  const field=document.getElementById("widgetInstallCode"),status=document.getElementById("widgetCopyStatus");
+  try{await navigator.clipboard.writeText(field.value);status.textContent="Copied. Paste it before the closing body tag on your staging website.";}
+  catch{field.focus();field.select();status.textContent="Select and copy the code above, then paste it into your staging website.";}
+});
 document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible")refreshLiveDashboard();});
 window.setInterval(refreshLiveDashboard,15000);
 loadAccount().then(()=>loadWorkspaces()).then(()=>loadStatus()).catch(error=>{document.getElementById("statusMessage").textContent=error.message;});

@@ -8,6 +8,8 @@ const express = require("express");
 const rateLimit = require("express-rate-limit");
 const OpenAI = require("openai");
 const path = require("node:path");
+const { Pool } = require("pg");
+const { createAuthRouter } = require("./auth");
 
 function shouldEscalate(text) {
   const value = String(text || "");
@@ -76,6 +78,13 @@ function createApp(options = {}) {
       : null;
 
   const app = express();
+  const dbPool = options.dbPool || (env.DATABASE_URL ? new Pool({
+    connectionString: env.DATABASE_URL,
+    max: 10,
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 5000,
+    ...(env.DATABASE_SSL === "true" ? { ssl: { rejectUnauthorized: true } } : {}),
+  }) : null);
   app.disable("x-powered-by");
   app.use((req, res, next) => {
     res.setHeader("X-Content-Type-Options", "nosniff");
@@ -89,6 +98,13 @@ function createApp(options = {}) {
     next();
   });
   app.use(express.json({ limit: "12kb", strict: true }));
+  app.use("/api/auth/login", rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: 5,
+    standardHeaders: "draft-7",
+    legacyHeaders: false,
+    message: { error: "Too many sign-in attempts. Please wait before trying again." },
+  }));
   app.use("/api/", rateLimit({
     windowMs: 60 * 1000,
     limit: options.rateLimitLimit || 30,
@@ -115,6 +131,8 @@ function createApp(options = {}) {
       return { configured: true, delivered: false };
     }
   }
+
+  createAuthRouter(app, { pool: dbPool, env, logger });
 
   app.get("/api/health", (_req, res) => {
     res.json({

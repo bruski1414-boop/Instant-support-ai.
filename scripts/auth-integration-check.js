@@ -50,7 +50,7 @@ async function main() {
       database: process.env.PGDATABASE || "postgres",
       max: 3,
     });
-    const app = createApp({ dbPool: runtimePool, env: { NODE_ENV: "test", TENANT_INTEGRATION_ENCRYPTION_KEY: encryptionKey }, fetchImpl: async (url, init) => { slackDeliveries.push({ url, payload: JSON.parse(init.body) }); return { ok: true, status: 200 }; }, openaiClient: { chat: { completions: { create: async () => ({ choices: [{ message: { content: JSON.stringify({ reply: "Breakfast is served from 7 AM to 10 AM.", needsHuman: false, handoffReason: "" }) } }] }) } } }, logger: { error() {} } });
+    const app = createApp({ dbPool: runtimePool, rateLimitLimit: 1000, env: { NODE_ENV: "test", TENANT_INTEGRATION_ENCRYPTION_KEY: encryptionKey }, fetchImpl: async (url, init) => { slackDeliveries.push({ url, payload: JSON.parse(init.body) }); return { ok: true, status: 200 }; }, openaiClient: { chat: { completions: { create: async () => ({ choices: [{ message: { content: JSON.stringify({ reply: "Breakfast is served from 7 AM to 10 AM.", needsHuman: false, handoffReason: "" }) } }] }) } } }, logger: { error() {} } });
     server = app.listen(0, "127.0.0.1");
     await new Promise((resolve, reject) => {
       server.once("listening", resolve);

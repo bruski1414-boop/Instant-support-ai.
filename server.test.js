@@ -493,9 +493,10 @@ test("rate limiter returns 429 after configured request budget", async (t) => {
 test("tenant database migration enforces tenant-scoped rows and composite conversation references", () => {
   const sql = fs.readFileSync(require("node:path").join(__dirname, "migrations", "001_multi_tenant_foundation.sql"), "utf8");
   for (const table of ["knowledge_documents", "conversations", "messages", "audit_events"]) {
-    assert.match(sql, new RegExp(`ALTER TABLE ${table} ENABLE ROW LEVEL SECURITY`));
-    assert.match(sql, new RegExp(`ALTER TABLE ${table} FORCE ROW LEVEL SECURITY`));
+    assert.match(sql, new RegExp(`'${table}'`));
   }
+  assert.match(sql, /ALTER TABLE %I ENABLE ROW LEVEL SECURITY/);
+  assert.match(sql, /ALTER TABLE %I FORCE ROW LEVEL SECURITY/);
   assert.match(sql, /tenant_id = app_current_tenant_id\(\)/);
   assert.match(sql, /FOREIGN KEY \(tenant_id, conversation_id\)/);
   assert.match(sql, /REFERENCES conversations\(tenant_id, id\)/);

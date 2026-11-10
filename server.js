@@ -46,6 +46,8 @@ function createApp(options = {}) {
   const businessName = String(env.BUSINESS_NAME || "Sample Business").slice(0, 120);
   const businessFaq = String(env.BUSINESS_FAQ || "").trim().slice(0, 20000);
   const webhookUrl = validWebhookUrl(String(env.HANDOFF_WEBHOOK_URL || "").trim());
+  // Minimise personal data sent to third-party alert tools by default.
+  const includeHandoffMessage = env.HANDOFF_INCLUDE_MESSAGE === "true";
   const fetchImpl = options.fetchImpl || globalThis.fetch;
   const logger = options.logger || console;
   const openaiConfig = {
@@ -86,7 +88,7 @@ function createApp(options = {}) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          text: `Veyra AI staff review needed for ${businessName}. Reason: ${String(reason || "Staff review requested").slice(0, 240)}. Customer message: ${String(message || "").slice(0, 700)}`,
+          text: `Veyra AI staff review needed for ${businessName}. Reason: ${String(reason || "Staff review requested").slice(0, 240)}.` + (includeHandoffMessage ? ` Customer message (owner-approved sharing): ${String(message || "").slice(0, 700)}` : " Please contact the guest through the hotel-approved channel; message content was not forwarded."),
         }),
         signal: AbortSignal.timeout(5000),
       });
@@ -99,12 +101,24 @@ function createApp(options = {}) {
 
   app.get("/api/health", (_req, res) => {
     res.json({
-      status: "ok",
+      status: openai && businessFaq ? "ready" : "degraded",
       service: "Veyra AI",
       mode: openai && businessFaq ? "ai-configured" : "demo-no-live-knowledge",
       liveAIReady: Boolean(openai && businessFaq),
       businessKnowledgeConfigured: Boolean(businessFaq),
       handoffConfigured: Boolean(webhookUrl),
+    });
+  });
+
+  // A running process can be live but not ready to answer guest questions.
+  app.get("/api/ready", (_req, res) => {
+    const ready = Boolean(openai && businessFaq);
+    res.status(ready ? 200 : 503).json({
+      ready,
+      checks: {
+        aiProviderConfigured: Boolean(openai),
+        approvedBusinessKnowledgeConfigured: Boolean(businessFaq),
+      },
     });
   });
 

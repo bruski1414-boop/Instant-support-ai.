@@ -43,7 +43,7 @@ function makeApp(options = {}) {
 test("password hashes use scrypt and verify without storing plaintext", async () => {
   const password = "correct-horse-battery-staple";
   const encoded = await hashPassword(password);
-  assert.match(encoded, /^scrypt\\$32768\\$8\\$1\\$/);
+  assert.match(encoded, /^scrypt\$32768\$8\$1\$/);
   assert.equal(encoded.includes(password), false);
   assert.equal(await verifyPassword(password, encoded), true);
   assert.equal(await verifyPassword("wrong-password", encoded), false);

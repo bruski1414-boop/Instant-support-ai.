@@ -160,6 +160,7 @@ async function main() {
     assert.equal(escalation.notificationStatus, "notified", "tenant Slack notification should be delivered for a handoff");
     assert.equal(slackDeliveries.length, 2, "guest escalation should trigger a tenant-specific Slack notification");
     assert.match(slackDeliveries[1].payload.text, /Guest message content was not forwarded/);
+    assert.match(slackDeliveries[1].payload.text, new RegExp(escalation.conversationId));
     const handoffInbox = await fetch(base + "/api/handoffs", { headers: workspaceHeaders });
     assert.equal(handoffInbox.status, 200, "authenticated workspace staff should be able to load the handoff inbox");
     const inboxBody = await handoffInbox.json();

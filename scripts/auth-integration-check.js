@@ -99,6 +99,17 @@ async function main() {
 
     const csrfToken = decodeURIComponent(csrfMatch[1]);
     const workspaceHeaders = { cookie: cookies, "content-type": "application/json", "x-veyra-workspace": TENANT_ID, "x-csrf-token": csrfToken, origin };
+    const invalidDomains = await fetch(base + "/api/widget/domains", { method: "PUT", headers: workspaceHeaders, body: JSON.stringify({ origins: ["http://hotel.example"] }) });
+    assert.equal(invalidDomains.status, 400, "website allowlist must reject non-HTTPS origins");
+    const saveDomains = await fetch(base + "/api/widget/domains", { method: "PUT", headers: workspaceHeaders, body: JSON.stringify({ origins: ["https://www.hotel.example", "https://hotel.example"] }) });
+    assert.equal(saveDomains.status, 200, "workspace owner should save approved website origins");
+    const domainStatus = await fetch(base + "/api/widget/domains", { headers: workspaceHeaders });
+    assert.deepEqual((await domainStatus.json()).origins, ["https://www.hotel.example", "https://hotel.example"]);
+    const widgetAllowed = await fetch(base + "/widget.js?workspace=" + TENANT_ID, { headers: { referer: "https://www.hotel.example/" } });
+    assert.equal(widgetAllowed.status, 200, "approved website origin should load the tenant launcher");
+    assert.equal(widgetAllowed.headers.get("cache-control"), "no-store", "origin checks should not be bypassed by a shared cache");
+    const widgetDenied = await fetch(base + "/widget.js?workspace=" + TENANT_ID, { headers: { referer: "https://attacker.example/" } });
+    assert.equal(widgetDenied.status, 403, "unapproved website origin must be denied");
     const draftResponse = await fetch(base + "/api/knowledge", { method: "POST", headers: workspaceHeaders, body: JSON.stringify({ title: "Breakfast", content: "Breakfast is served from 7 AM to 10 AM." }) });
     assert.equal(draftResponse.status, 201, "owner should be able to create a draft knowledge document");
     const draft = (await draftResponse.json()).document;

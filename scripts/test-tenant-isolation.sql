@@ -7,6 +7,7 @@ GRANT CONNECT ON DATABASE postgres TO veyra_runtime_test;
 GRANT USAGE ON SCHEMA public TO veyra_runtime_test;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO veyra_runtime_test;
 
+BEGIN;
 INSERT INTO organizations (id, name) VALUES
   ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'Hotel A'),
   ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 'Hotel B');
@@ -38,7 +39,6 @@ BEGIN
   END IF;
 END $$;
 
-BEGIN;
 SELECT set_config('app.login_email', 'owner@example.test', true);
 DO $$
 BEGIN

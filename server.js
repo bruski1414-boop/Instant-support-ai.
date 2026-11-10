@@ -23,7 +23,7 @@ function safeFallback(reason = "I can't verify that from the approved informatio
 }
 
 function safeStaffReviewReply(message) {
-  if (/\\b(fire|smoke|immediate danger|life.?threatening|medical emergency|ambulance|police)\\b/i.test(String(message || ""))) {
+  if (/\b(fire|smoke|immediate danger|life.?threatening|medical emergency|ambulance|police)\b/i.test(String(message || ""))) {
     return "If anyone is in immediate danger, contact local emergency services and alert hotel staff directly now. I cannot dispatch emergency help or confirm that anyone has been notified.";
   }
   return "This request needs review by the hotel team. I cannot make or confirm booking changes, refunds, charges, availability, or service resolutions here. Please contact reception directly.";

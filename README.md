@@ -13,7 +13,8 @@ Veyra AI is an early customer-support assistant prototype aimed at hospitality a
 - Optional Slack-compatible incoming-webhook alerts for staff handoffs.
 - Explicit delivery status: notified, delivery failed, or not connected.
 - Security headers, bounded request/history sizes, API timeout, and restricted public routes.
-- Built-in Node test suite (`npm test`).
+- Built-in Node test suite (`npm test`) with GitHub Actions CI.
+- Opt-in live-model evaluation (`npm run test:live`) using fictional hotel facts and synthetic questions.
 - Demo responses when the live backend is not configured.
 
 ## Important: prototype, not production SaaS
@@ -46,7 +47,9 @@ This is a **single-business prototype**, not a multi-company SaaS. Do not connec
 
 ## Run tests
 
-Run `npm test` with Node.js 20 or newer. The tests cover escalation rules, safe fallback wording, health status, input validation, and blocked access to private source/configuration files. These tests still need to be executed in a real Node environment before any release.
+Run `npm test` with Node.js 20 or newer. GitHub Actions runs this suite on pushes and pull requests. It covers backend routes, the OpenAI SDK request path using a controlled fake transport, prompt-injection handling, response schema validation, handoff delivery outcomes, frontend script parsing, rate limiting, and blocked access to private source/configuration files.
+
+For a separate real-model check, run `npm run test:live` only after a parent/guardian has approved the API account and any usage charges, and after setting `OPENAI_API_KEY`. This sends ten synthetic questions about a fictional hotel through the live model. It does not use real guest data, is not run automatically in CI, and may incur API charges. A passing live evaluation is still not proof of production readiness.
 
 ## Run locally
 

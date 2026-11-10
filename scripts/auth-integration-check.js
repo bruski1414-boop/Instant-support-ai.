@@ -102,6 +102,13 @@ async function main() {
     assert.equal(draft.approved_at, null, "new knowledge must start as a draft");
     const approveResponse = await fetch(base + "/api/knowledge/" + draft.id + "/approve", { method: "POST", headers: workspaceHeaders, body: "{}" });
     assert.equal(approveResponse.status, 200, "owner should be able to approve knowledge");
+    const editResponse = await fetch(base + "/api/knowledge/" + draft.id, { method: "PUT", headers: workspaceHeaders, body: JSON.stringify({ title: "Breakfast", content: "Breakfast is served from 7 AM to 10 AM.", version: 1 }) });
+    assert.equal(editResponse.status, 200, "owner should be able to edit knowledge");
+    const edited = (await editResponse.json()).document;
+    assert.equal(edited.version, 2, "knowledge edit should increment version");
+    assert.equal(edited.approved_at, null, "editing approved facts must revoke approval");
+    const reapproveResponse = await fetch(base + "/api/knowledge/" + draft.id + "/approve", { method: "POST", headers: workspaceHeaders, body: "{}" });
+    assert.equal(reapproveResponse.status, 200, "edited knowledge should be approvable again");
 
     const otherTenantResponse = await fetch(base + "/api/knowledge", { headers: { cookie: cookies, "x-veyra-workspace": OTHER_TENANT_ID } });
     assert.equal(otherTenantResponse.status, 403, "membership check must block another hotel's data");
@@ -111,6 +118,8 @@ async function main() {
     const conversation = (await conversationResponse.json()).conversation;
     const staffMessage = await fetch(base + "/api/conversations/" + conversation.id + "/messages", { method: "POST", headers: workspaceHeaders, body: JSON.stringify({ body: "Our team will review this request." }) });
     assert.equal(staffMessage.status, 201, "staff message should be stored");
+    const statusResponse = await fetch(base + "/api/conversations/" + conversation.id + "/status", { method: "PATCH", headers: workspaceHeaders, body: JSON.stringify({ status: "resolved" }) });
+    assert.equal(statusResponse.status, 200, "staff should be able to resolve a conversation");
     const detail = await fetch(base + "/api/conversations/" + conversation.id, { headers: workspaceHeaders });
     assert.equal(detail.status, 200);
     assert.equal((await detail.json()).messages.length, 1);

@@ -17,6 +17,7 @@ const PORT = Number(process.env.PORT || 3000);
 const MODEL = process.env.OPENAI_MODEL || "gpt-4.1-mini";
 const BUSINESS_NAME = (process.env.BUSINESS_NAME || "Sample Business").slice(0, 120);
 const BUSINESS_FAQ = (process.env.BUSINESS_FAQ || "").trim().slice(0, 20000);
+const HANDOFF_WEBHOOK_URL = (process.env.HANDOFF_WEBHOOK_URL || "").trim();
 
 const allowedOrigins = (process.env.ALLOWED_ORIGINS || "http://localhost:3000,http://127.0.0.1:3000")
   .split(",").map((origin) => origin.trim()).filter(Boolean);
@@ -58,7 +59,7 @@ app.get("/api/health", (_req, res) => {
     mode: openai && BUSINESS_FAQ ? "ai-configured" : "demo-no-live-knowledge",
     liveAIReady: Boolean(openai && BUSINESS_FAQ),
     businessKnowledgeConfigured: Boolean(BUSINESS_FAQ),
-    handoffConfigured: false,
+    handoffConfigured: Boolean(HANDOFF_WEBHOOK_URL),
   });
 });
 
@@ -67,6 +68,23 @@ function shouldEscalate(text) {
   return /\b(refund|cancel|cancellation|booking change|change my booking|complaint|manager|human|real person|staff member|supervisor|urgent|emergency|allerg(?:y|ic)|medical|injury|unsafe|harassment|discrimination|lost child|security|fire|police|ambulance|payment dispute|chargeback)\b/i.test(text);
 }
 
+async function notifyStaff({ message, reason }) {
+  if (!HANDOFF_WEBHOOK_URL) return { configured: false, delivered: false };
+  try {
+    const response = await fetch(HANDOFF_WEBHOOK_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        text: `Veyra AI staff review needed for ${BUSINESS_NAME}. Reason: ${String(reason || "Staff review requested").slice(0, 240)}. Customer message: ${String(message || "").slice(0, 700)}`,
+      }),
+      signal: AbortSignal.timeout(5000),
+    });
+    return { configured: true, delivered: response.ok };
+  } catch (error) {
+    console.error("Veyra staff handoff failed:", error?.message || "Unknown error");
+    return { configured: true, delivered: false };
+  }
+}
 function safeFallback(reason = "I can't verify that from the approved information.") {
   return {
     reply: `I'm sorry, but I can't confirm that accurately. ${reason} Please contact the business team for confirmation.`,
@@ -149,13 +167,17 @@ ${BUSINESS_FAQ}`,
         : "This request needs staff review.")
       : "";
 
+    const handoff = needsHuman
+      ? await notifyStaff({ message: message.trim(), reason: handoffReason })
+      : { configured: Boolean(HANDOFF_WEBHOOK_URL), delivered: false };
+
     res.setHeader("Cache-Control", "no-store");
     return res.json({
       reply,
       needsHuman,
       handoffReason,
-      handoffConfigured: false,
-      handoffStatus: needsHuman ? "flagged-not-notified" : "not-required",
+      handoffConfigured: handoff.configured,
+      handoffStatus: !needsHuman ? "not-required" : handoff.delivered ? "notified" : handoff.configured ? "delivery-failed" : "not-connected",
       mode: "live-ai",
     });
   } catch (error) {

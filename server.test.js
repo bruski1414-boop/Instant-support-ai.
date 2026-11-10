@@ -1,5 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const vm = require("node:vm");
 const { createApp, shouldEscalate, safeFallback, safeStaffReviewReply, validWebhookUrl } = require("./server");
 
 const FAQ = "Check-in is 3:00 PM. Breakfast is served 7:00 AM to 10:30 AM at Ocean Terrace. Never invent room rates or availability.";
@@ -311,6 +313,20 @@ test("public website and dashboard pages are served", async (t) => {
   const dashboard = await fetch(`${base}/dashboard.html`);
   assert.equal(dashboard.status, 200);
   assert.match(await dashboard.text(), /Preview mode/);
+});
+
+test("inline JavaScript on website and dashboard parses successfully", () => {
+  for (const file of ["index.html", "dashboard.html"]) {
+    const html = fs.readFileSync(require("node:path").join(__dirname, file), "utf8");
+    const scripts = [...html.matchAll(/<script(?:\\s[^>]*)?>([\\s\\S]*?)<\\/script>/gi)];
+    assert.ok(scripts.length > 0, `${file} should contain its page script`);
+    scripts.forEach((match, index) => {
+      assert.doesNotThrow(
+        () => new vm.Script(match[1], { filename: `${file}:script-${index + 1}` }),
+        `${file} script ${index + 1} should parse`,
+      );
+    });
+  }
 });
 
 test("rate limiter returns 429 after configured request budget", async (t) => {

@@ -48,7 +48,7 @@ test("password hashes use scrypt and verify without storing plaintext", async ()
   assert.equal(await verifyPassword(password, encoded), true);
   assert.equal(await verifyPassword("wrong-password", encoded), false);
   assert.equal(await verifyPassword(password, "not-a-valid-hash"), false);
-  await assert.rejects(() => hashPassword("short"), /12 and 128/);
+  assert.throws(() => hashPassword("short"), /12 and 128/);
 });
 
 test("cookie parser handles multiple cookies and malformed values safely", () => {

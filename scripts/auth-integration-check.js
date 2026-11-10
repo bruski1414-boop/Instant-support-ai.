@@ -5,6 +5,7 @@ const { hashPassword } = require("../auth");
 
 const USER_ID = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
 const TENANT_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+const OTHER_TENANT_ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const ROLE = "veyra_auth_test";
 const PASSWORD = "ci-only-test-password";
 
@@ -25,7 +26,7 @@ async function main() {
     await admin.query(`GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO ${ROLE}`);
 
     const passwordHash = await hashPassword("a-ci-only-long-password");
-    await admin.query("INSERT INTO organizations (id, name) VALUES ($1, 'Auth Test Hotel')", [TENANT_ID]);
+    await admin.query("INSERT INTO organizations (id, name) VALUES ($1, 'Auth Test Hotel'), ($2, 'Other Test Hotel')", [TENANT_ID, OTHER_TENANT_ID]);
     await admin.query(
       "INSERT INTO users (id, email, password_hash) VALUES ($1, 'auth-test@example.test', $2)",
       [USER_ID, passwordHash]
@@ -47,7 +48,7 @@ async function main() {
       database: process.env.PGDATABASE || "postgres",
       max: 3,
     });
-    const app = createApp({ dbPool: runtimePool, env: { NODE_ENV: "test" }, logger: { error() {} } });
+    const app = createApp({ dbPool: runtimePool, env: { NODE_ENV: "test" }, openaiClient: { chat: { completions: { create: async () => ({ choices: [{ message: { content: JSON.stringify({ reply: "Breakfast is served from 7 AM to 10 AM.", needsHuman: false, handoffReason: "" }) } }] }) } } }, logger: { error() {} } });
     server = app.listen(0, "127.0.0.1");
     await new Promise((resolve, reject) => {
       server.once("listening", resolve);
@@ -87,6 +88,41 @@ async function main() {
     assert.equal(dashboard.status, 200, "valid session and membership should open the dashboard");
     assert.match(await dashboard.text(), /Veyra AI command centre/);
 
+
+    const workspacesResponse = await fetch(base + "/api/workspaces", { headers: { cookie: cookies } });
+    assert.equal(workspacesResponse.status, 200);
+    const workspaces = await workspacesResponse.json();
+    assert.equal(workspaces.workspaces.length, 1, "only the user's own workspace should be listed");
+    assert.equal(workspaces.workspaces[0].id, TENANT_ID);
+
+    const workspaceHeaders = { cookie: cookies, "content-type": "application/json", "x-veyra-workspace": TENANT_ID };
+    const draftResponse = await fetch(base + "/api/knowledge", { method: "POST", headers: workspaceHeaders, body: JSON.stringify({ title: "Breakfast", content: "Breakfast is served from 7 AM to 10 AM." }) });
+    assert.equal(draftResponse.status, 201, "owner should be able to create a draft knowledge document");
+    const draft = (await draftResponse.json()).document;
+    assert.equal(draft.approved_at, null, "new knowledge must start as a draft");
+    const approveResponse = await fetch(base + "/api/knowledge/" + draft.id + "/approve", { method: "POST", headers: workspaceHeaders, body: "{}" });
+    assert.equal(approveResponse.status, 200, "owner should be able to approve knowledge");
+
+    const otherTenantResponse = await fetch(base + "/api/knowledge", { headers: { cookie: cookies, "x-veyra-workspace": OTHER_TENANT_ID } });
+    assert.equal(otherTenantResponse.status, 403, "membership check must block another hotel's data");
+
+    const conversationResponse = await fetch(base + "/api/conversations", { method: "POST", headers: workspaceHeaders, body: JSON.stringify({ channel: "website" }) });
+    assert.equal(conversationResponse.status, 201, "staff should be able to create a conversation");
+    const conversation = (await conversationResponse.json()).conversation;
+    const staffMessage = await fetch(base + "/api/conversations/" + conversation.id + "/messages", { method: "POST", headers: workspaceHeaders, body: JSON.stringify({ body: "Our team will review this request." }) });
+    assert.equal(staffMessage.status, 201, "staff message should be stored");
+    const detail = await fetch(base + "/api/conversations/" + conversation.id, { headers: workspaceHeaders });
+    assert.equal(detail.status, 200);
+    assert.equal((await detail.json()).messages.length, 1);
+
+    const guestResponse = await fetch(base + "/api/public/" + TENANT_ID + "/chat", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ message: "What time is breakfast?" }) });
+    assert.equal(guestResponse.status, 200, "public guest chat should answer from approved tenant knowledge");
+    const guestBody = await guestResponse.json();
+    assert.match(guestBody.reply, /7 AM to 10 AM/);
+    assert.ok(guestBody.conversationId);
+    const guestHistory = await fetch(base + "/api/conversations/" + guestBody.conversationId, { headers: workspaceHeaders });
+    assert.equal((await guestHistory.json()).messages.length, 2, "guest and assistant messages should be persisted");
+
     const csrf = decodeURIComponent(csrfMatch[1]);
     const logout = await fetch(`${base}/api/auth/logout`, {
       method: "POST",
@@ -99,12 +135,12 @@ async function main() {
     assert.equal(dashboardAfterLogout.status, 303, "revoked session must not open the dashboard");
     assert.equal(dashboardAfterLogout.headers.get("location"), "/login.html");
 
-    process.stdout.write("PostgreSQL-backed login, dashboard gate, profile, CSRF logout, and session revocation passed.\n");
+    process.stdout.write("PostgreSQL-backed login, tenant-scoped knowledge, conversations, guest chat, cross-tenant denial, dashboard gate, CSRF logout, and session revocation passed.\n");
   } finally {
     if (server) await new Promise((resolve) => server.close(resolve));
     if (runtimePool) await runtimePool.end();
     try {
-      await admin.query("DELETE FROM organizations WHERE id = $1", [TENANT_ID]);
+      await admin.query("DELETE FROM organizations WHERE id = ANY($1::uuid[])", [[TENANT_ID, OTHER_TENANT_ID]]);
       await admin.query("DELETE FROM users WHERE id = $1", [USER_ID]);
       await admin.query(`DROP OWNED BY ${ROLE}`);
       await admin.query(`DROP ROLE IF EXISTS ${ROLE}`);

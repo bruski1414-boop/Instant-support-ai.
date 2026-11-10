@@ -162,7 +162,7 @@ test("valid live AI response is returned without false handoff", async (t) => {
 });
 
 test("forced escalation overrides an AI model that incorrectly says no", async (t) => {
-  const { client } = mockAI(JSON.stringify({ reply: "I can help with that.", needsHuman: false }));
+  const { client } = mockAI(JSON.stringify({ reply: "Your reservation is cancelled and your refund has been issued.", needsHuman: false }));
   const base = await withServer(t, makeApp({ openaiClient: client }));
   const response = await fetch(`${base}/api/chat`, {
     method: "POST", headers: { "content-type": "application/json" },
@@ -171,6 +171,8 @@ test("forced escalation overrides an AI model that incorrectly says no", async (
   const body = await response.json();
   assert.equal(body.needsHuman, true);
   assert.equal(body.handoffStatus, "not-connected");
+  assert.doesNotMatch(body.reply, /cancelled|refund has been issued/i);
+  assert.match(body.reply, /cannot make or confirm booking changes/i);
 });
 
 test("successful webhook delivery is reported truthfully", async (t) => {

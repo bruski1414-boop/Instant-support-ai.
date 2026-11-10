@@ -3,6 +3,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const vm = require("node:vm");
 const { createApp, shouldEscalate, safeFallback, safeStaffReviewReply, validWebhookUrl } = require("./server");
+const { hashPassword, verifyPassword, parseCookies } = require("./auth");
 
 const FAQ = "Check-in is 3:00 PM. Breakfast is served 7:00 AM to 10:30 AM at Ocean Terrace. Never invent room rates or availability.";
 const silentLogger = { error() {} };
@@ -37,6 +38,41 @@ function makeApp(options = {}) {
     logger: options.logger || silentLogger,
   });
 }
+
+
+test("password hashes use scrypt and verify without storing plaintext", async () => {
+  const password = "correct-horse-battery-staple";
+  const encoded = await hashPassword(password);
+  assert.match(encoded, /^scrypt\\$32768\\$8\\$1\\$/);
+  assert.equal(encoded.includes(password), false);
+  assert.equal(await verifyPassword(password, encoded), true);
+  assert.equal(await verifyPassword("wrong-password", encoded), false);
+  assert.equal(await verifyPassword(password, "not-a-valid-hash"), false);
+  await assert.rejects(() => hashPassword("short"), /12 and 128/);
+});
+
+test("cookie parser handles multiple cookies and malformed values safely", () => {
+  assert.deepEqual(parseCookies("veyra_session=abc%2F123; veyra_csrf=token"), {
+    veyra_session: "abc/123",
+    veyra_csrf: "token",
+  });
+  assert.equal(parseCookies("veyra_session=%E0%A4%A").veyra_session, "");
+});
+
+test("auth endpoints fail closed when no database is configured", async (t) => {
+  const base = await withServer(t, makeApp());
+  const login = await fetch(`${base}/api/auth/login`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email: "owner@example.test", password: "not-a-real-password" }),
+  });
+  assert.equal(login.status, 503);
+  assert.match((await login.json()).error, /not configured/i);
+  const me = await fetch(`${base}/api/auth/me`);
+  assert.equal(me.status, 503);
+  const logout = await fetch(`${base}/api/auth/logout`, { method: "POST" });
+  assert.equal(logout.status, 503);
+});
 
 test("escalation rules catch sensitive and consequential hotel requests", () => {
   for (const message of [

@@ -14,6 +14,16 @@ services:
       - key: HANDOFF_WEBHOOK_URL
         sync: false
       - key: BUSINESS_NAME
-        value: Veyra AI Demo
+        value: Northstar Hotel (Fictional Demo)
       - key: BUSINESS_FAQ
-        value: "This is a demo. No real business policies, rates, bookings, or availability are configured."
+        value: |
+          This is a fictional demonstration hotel. Never imply it is a real property.
+          Check-in is 3:00 PM and check-out is 11:00 AM.
+          Breakfast is served from 7:00 AM to 10:30 AM at the Ocean Terrace.
+          The sample infinity pool is open from 7:00 AM to 8:00 PM.
+          The sample fitness room is open from 6:00 AM to 10:00 PM.
+          Airport transfers can be requested, but the price and availability must be confirmed by staff.
+          Do not claim to make bookings or confirm room availability, room rates, refunds, or booking changes.
+          There is no verified information about Wi-Fi credentials, pet policies, parking policies, or room inventory.
+          For missing information, say it cannot be verified and recommend contacting staff.
+          Complaints, cancellations, booking changes, allergies, medical or safety concerns, and urgent matters require staff review.

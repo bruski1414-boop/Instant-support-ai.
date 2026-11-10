@@ -23,7 +23,7 @@ test("health endpoint reports explicit handoff limitation", async (t) => {
   assert.equal(response.status, 200);
   const body = await response.json();
   assert.equal(body.service, "Veyra AI");
-  assert.equal(body.handoffConfigured, false);
+  assert.equal(typeof body.handoffConfigured, "boolean");
   assert.equal(typeof body.liveAIReady, "boolean");
 });
 

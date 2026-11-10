@@ -97,6 +97,10 @@ test("health reports readiness without exposing secrets", async (t) => {
   assert.equal(body.service, "Veyra AI");
   assert.equal(JSON.stringify(body).includes("secret"), false);
   assert.equal(response.headers.get("cache-control"), "no-store");
+  assert.match(response.headers.get("content-security-policy"), /default-src 'self'/);
+  assert.match(response.headers.get("content-security-policy"), /object-src 'none'/);
+  assert.equal(response.headers.get("cross-origin-opener-policy"), "same-origin");
+  assert.equal(response.headers.get("cross-origin-resource-policy"), "same-origin");
 });
 
 test("readiness endpoint returns 503 when live AI is not configured", async (t) => {

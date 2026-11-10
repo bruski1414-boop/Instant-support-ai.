@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { createApp, shouldEscalate, safeFallback, validWebhookUrl } = require("./server");
+const { createApp, shouldEscalate, safeFallback, safeStaffReviewReply, validWebhookUrl } = require("./server");
 
 const FAQ = "Check-in is 3:00 PM. Breakfast is served 7:00 AM to 10:30 AM at Ocean Terrace. Never invent room rates or availability.";
 const silentLogger = { error() {} };
@@ -60,6 +60,15 @@ test("fallback is honest and never claims staff were contacted", () => {
   assert.equal(result.needsHuman, true);
   assert.match(result.reply, /can't verify/i);
   assert.doesNotMatch(result.reply, /staff have been notified/i);
+});
+
+test("staff-review responses never claim actions are completed", () => {
+  const routine = safeStaffReviewReply("Please cancel my booking.");
+  assert.match(routine, /cannot make or confirm booking changes/i);
+  assert.doesNotMatch(routine, /booking has been cancelled|refund issued|staff notified/i);
+  const emergency = safeStaffReviewReply("There is a fire in the lobby.");
+  assert.match(emergency, /contact local emergency services/i);
+  assert.match(emergency, /cannot dispatch emergency help/i);
 });
 
 test("only HTTPS webhook URLs without embedded credentials are accepted", () => {

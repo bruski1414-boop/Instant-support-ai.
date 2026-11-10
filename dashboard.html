@@ -16,13 +16,13 @@
 <div class="shell">
 <aside class="side">
 <a class="brand" href="index.html"><span class="logo">V</span> VEYRA AI</a>
-<div class="workspace"><small>WORKSPACE · DEMO</small><strong>Northstar Hospitality</strong><small>Sample workspace ▾</small></div>
+<div class="workspace"><small>AUTHENTICATED WORKSPACE</small><strong id="workspaceName">Loading…</strong><small id="workspaceRole">Verifying membership</small></div>
 <div class="navlabel">WORKSPACE</div><nav class="nav"><a class="active" href="#overview">◫ Overview</a><a href="#conversations">☷ Conversations</a><a href="#knowledge">✧ Knowledge base</a><a href="#handoffs">↗ Human handoffs</a><a href="#settings">⚙ Settings</a></nav>
 <div class="navlabel">ACCOUNT</div><nav class="nav"><a href="index.html">↖ Back to website</a></nav>
 <div class="bottom">Veyra AI · Product preview<br><br>Sample data only. Not connected to a real hotel.</div>
 </aside>
 <main class="main">
-<header class="top"><div><div class="crumb">WORKSPACE / SYSTEM STATUS</div><h1>Veyra AI command centre</h1><div class="muted">Live service configuration, not invented performance metrics.</div></div><div class="actions"><button class="btn primary" onclick="loadStatus()">↻ Refresh status</button></div></header>
+<header class="top"><div><div class="crumb">WORKSPACE / SYSTEM STATUS</div><h1>Veyra AI command centre</h1><div class="muted">Live service configuration, not invented performance metrics.</div></div><div class="actions"><span class="muted" id="accountEmail"></span><button class="btn" onclick="signOut()">Sign out</button><button class="btn primary" onclick="loadStatus()">↻ Refresh status</button></div></header>
 <div class="notice" role="status" aria-live="polite"><span class="dot" id="statusDot"></span><p id="statusMessage"><strong>Checking service…</strong> Connecting to the Veyra backend.</p></div>
 <section id="overview" class="grid">
 <div class="card"><div class="metriclabel">Backend status</div><div class="metric" id="backendState">Checking…</div><div class="muted" id="backendDetail">Waiting for health response</div></div>
@@ -38,11 +38,14 @@
 <div class="sectionrow" id="knowledge"><h2>Knowledge base</h2><span>Configuration check only</span></div>
 <div class="card"><p class="muted">The current prototype reads one approved business knowledge text from its server environment. It does not yet support editing, version history, source citations, or separate knowledge bases for multiple hotels.</p><div class="barrow"><label>Server knowledge</label><div class="bar"><i id="knowledgeBar" style="width:0%"></i></div><b id="knowledgePercent">—</b></div><p class="footnote">A configured knowledge base does not prove answer accuracy. Hotel owners must approve the content, and answers need a separate factual evaluation.</p></div>
 <div class="sectionrow" id="settings"><h2>System checks</h2><span id="lastChecked">Not checked yet</span></div>
-<div class="grid"><div class="card"><strong>Service health</strong><p class="muted">Checks whether the backend health endpoint responds.</p></div><div class="card"><strong>AI readiness</strong><p class="muted">Checks whether an AI provider key and approved business knowledge are configured.</p></div><div class="card"><strong>Staff alert setup</strong><p class="muted">Checks whether a valid HTTPS webhook is configured—not whether staff have read or acted on an alert.</p></div><div class="card"><strong>Data status</strong><p class="muted">No guest conversation database or owner login is implemented. Do not enter real guest data.</p></div></div>
-<p class="footnote">Prototype dashboard. It has no login, persistent conversations, guest records, booking integrations, billing, or business knowledge editor. Do not use it as a production hotel control panel.</p>
+<div class="grid"><div class="card"><strong>Service health</strong><p class="muted">Checks whether the backend health endpoint responds.</p></div><div class="card"><strong>AI readiness</strong><p class="muted">Checks whether an AI provider key and approved business knowledge are configured.</p></div><div class="card"><strong>Staff alert setup</strong><p class="muted">Checks whether a valid HTTPS webhook is configured—not whether staff have read or acted on an alert.</p></div><div class="card"><strong>Data status</strong><p class="muted">No guest conversation database is connected. Do not enter real guest data.</p></div></div>
+<p class="footnote">Authenticated prototype dashboard. Persistent conversations, guest records, booking integrations, billing, and a business knowledge editor are not implemented. Do not use it as a production hotel control panel.</p>
 </main></div>
 <div id="toast" style="position:fixed;bottom:20px;left:50%;transform:translateX(-50%);padding:12px 18px;border:1px solid #34465b;background:#172536;color:#edf6ff;border-radius:10px;display:none;max-width:90%;z-index:5"></div>
 <script>
+function readCookie(name){const item=document.cookie.split("; ").find(part=>part.startsWith(name+"="));return item?decodeURIComponent(item.slice(name.length+1)):"";}
+async function signOut(){try{await fetch("/api/auth/logout",{method:"POST",credentials:"same-origin",headers:{"X-CSRF-Token":readCookie("veyra_csrf")}});}finally{window.location.replace("/login.html");}}
+async function loadAccount(){const response=await fetch("/api/auth/me",{cache:"no-store",credentials:"same-origin"});if(!response.ok){window.location.replace("/login.html");return;}const data=await response.json();document.getElementById("accountEmail").textContent=data.user.email;document.getElementById("workspaceName").textContent=data.memberships.length+" workspace membership"+(data.memberships.length===1?"":"s");document.getElementById("workspaceRole").textContent=data.memberships.map(item=>item.role).join(", ");}
 async function loadStatus(){
   const backend=document.getElementById('backendState');
   const ai=document.getElementById('aiState');
@@ -81,7 +84,7 @@ async function loadStatus(){
   }
   document.getElementById('lastChecked').textContent='Last checked: '+new Date().toLocaleString();
 }
-loadStatus();
+loadAccount().then(()=>loadStatus()).catch(()=>window.location.replace("/login.html"));
 </script>
 </body>
 </html>

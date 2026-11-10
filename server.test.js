@@ -78,7 +78,7 @@ test("only HTTPS webhook URLs without embedded credentials are accepted", () => 
   assert.equal(validWebhookUrl("https://hooks.slack.com/services/test"), "https://hooks.slack.com/services/test");
   assert.equal(validWebhookUrl("https://hooks.slack-gov.com/services/test"), "https://hooks.slack-gov.com/services/test");
   assert.equal(validWebhookUrl("http://hooks.slack.com/services/test"), null);
-  assert.equal(validWebhookUrl("https://hooks.slack.com/services/test"), null);
+  assert.equal(validWebhookUrl("https://hooks.example.com/services/test"), null);
   assert.equal(validWebhookUrl("https://hooks.slack.com.evil.example/services/test"), null);
   assert.equal(validWebhookUrl("https://hooks.slack.com:8443/services/test"), null);
   assert.equal(validWebhookUrl("https://hooks.slack.com/services/test?redirect=1"), null);

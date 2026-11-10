@@ -263,7 +263,7 @@ function createApp(options = {}) {
       }
       await withPublicTenantTransaction(tenantId, async (client) => {
         await client.query("INSERT INTO messages (tenant_id, conversation_id, sender_type, body) VALUES ($1, $2, 'assistant', $3)", [tenantId, currentId, reply]);
-        await client.query("UPDATE conversations SET updated_at = now(), status = $3 WHERE tenant_id = $1 AND id = $2", [tenantId, currentId, needsHuman ? "waiting_staff" : "open"]);
+        await client.query("UPDATE conversations SET updated_at = now(), status = CASE WHEN status = 'waiting_staff' THEN 'waiting_staff' WHEN $3 = 'waiting_staff' THEN 'waiting_staff' ELSE 'open' END WHERE tenant_id = $1 AND id = $2", [tenantId, currentId, needsHuman ? "waiting_staff" : "open"]);
         return true;
       });
       const notification = needsHuman

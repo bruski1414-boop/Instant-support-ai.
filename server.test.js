@@ -531,7 +531,7 @@ test("rate limiter returns 429 after configured request budget", async (t) => {
 
 test("tenant database migration enforces tenant-scoped rows and composite conversation references", () => {
   const sql = fs.readFileSync(require("node:path").join(__dirname, "migrations", "001_multi_tenant_foundation.sql"), "utf8");
-  for (const table of ["knowledge_documents", "conversations", "messages", "audit_events", "tenant_integrations"]) {
+  for (const table of ["knowledge_documents", "conversations", "messages", "audit_events"]) {
     assert.match(sql, new RegExp(`'${table}'`));
   }
   assert.match(sql, /ALTER TABLE %I ENABLE ROW LEVEL SECURITY/);
@@ -541,6 +541,9 @@ test("tenant database migration enforces tenant-scoped rows and composite conver
   assert.match(sql, /REFERENCES conversations\(tenant_id, id\)/);
   assert.match(sql, /token_hash bytea NOT NULL UNIQUE/);
   assert.doesNotMatch(sql, /CREATE POLICY .* USING \(true\)/i);
+  const integrations = fs.readFileSync(require("node:path").join(__dirname, "migrations", "003_tenant_integrations.sql"), "utf8");
+  assert.match(integrations, /ALTER TABLE tenant_integrations ENABLE ROW LEVEL SECURITY/);
+  assert.match(integrations, /tenant_id = app_current_tenant_id\(\)/);
 });
 
 

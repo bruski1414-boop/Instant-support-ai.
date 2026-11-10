@@ -21,7 +21,7 @@ Veyra AI is an early customer-support assistant prototype aimed at hospitality a
 ## Important: prototype, not production SaaS
 
 This is **not yet a complete €5,000/month enterprise product**. It does not yet include:
-- Customer accounts, organization isolation, or a secure multi-tenant database.
+- Live customer accounts and runtime tenant isolation (a reviewed PostgreSQL schema foundation is now included, but authentication and database-backed routes are not yet wired).
 - Native staff email/SMS/WhatsApp integrations (only a generic optional webhook is available).
 - Booking, CRM, hotel PMS, Shopify, or payment integrations.
 - A secure business-owner dashboard for editing FAQs.

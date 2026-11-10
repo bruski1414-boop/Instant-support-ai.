@@ -559,3 +559,17 @@ test("tenant integration secrets use authenticated AES-256-GCM encryption", () =
   const altered = { ...encrypted, ciphertext: Buffer.from("tampered").toString("base64") };
   assert.throws(() => decryptSecret({ ciphertext: altered.ciphertext, iv: altered.iv, authTag: altered.authTag }, key));
 });
+
+test("public website chat launcher assets are available cross-origin without opening the dashboard", async (t) => {
+  const base = await withServer(t, makeApp());
+  const script = await fetch(base + "/widget.js");
+  assert.equal(script.status, 200);
+  assert.match(script.headers.get("content-type"), /javascript/);
+  assert.equal(script.headers.get("cross-origin-resource-policy"), "cross-origin");
+  assert.match(await script.text(), /data-workspace/);
+  const stylesheet = await fetch(base + "/widget.css");
+  assert.equal(stylesheet.status, 200);
+  assert.match(stylesheet.headers.get("content-type"), /text\/css/);
+  assert.equal(stylesheet.headers.get("cross-origin-resource-policy"), "cross-origin");
+  assert.match(await stylesheet.text(), /\.veyra-ai-launcher/);
+});

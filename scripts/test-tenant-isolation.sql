@@ -14,6 +14,9 @@ INSERT INTO organizations (id, name) VALUES
 INSERT INTO users (id, email, password_hash) VALUES
   ('cccccccc-cccc-4ccc-8ccc-cccccccccccc', 'owner@example.test', repeat('x', 60));
 
+INSERT INTO auth_credentials (user_id, email, password_hash) VALUES
+  ('cccccccc-cccc-4ccc-8ccc-cccccccccccc', 'owner@example.test', 'scrypt$32768$8$1$synthetic$synthetic-test-hash');
+
 INSERT INTO memberships (tenant_id, user_id, role) VALUES
   ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', 'owner');
 
@@ -36,6 +39,14 @@ BEGIN
 END $$;
 
 BEGIN;
+SELECT set_config('app.login_email', 'owner@example.test', true);
+DO $
+BEGIN
+  IF (SELECT count(*) FROM auth_credentials) <> 1 THEN
+    RAISE EXCEPTION 'email-scoped credential lookup should return exactly one row';
+  END IF;
+END $;
+SELECT set_config('app.login_email', '', true);
 SELECT set_config('app.user_id', 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', true);
 SELECT set_config('app.tenant_id', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', true);
 
@@ -54,6 +65,22 @@ BEGIN
   END IF;
   IF (SELECT count(*) FROM users) <> 1 THEN
     RAISE EXCEPTION 'user should see their own account';
+  END IF;
+
+  INSERT INTO user_sessions (user_id, token_hash, csrf_hash, expires_at)
+  VALUES ('cccccccc-cccc-4ccc-8ccc-cccccccccccc', decode(repeat('ab', 32), 'hex'), decode(repeat('cd', 32), 'hex'), now() + interval '8 hours');
+  PERFORM set_config('app.session_token_hash', repeat('ab', 32), true);
+  IF (SELECT count(*) FROM user_sessions) <> 1 THEN
+    RAISE EXCEPTION 'session lookup by presented token hash should return one row';
+  END IF;
+  PERFORM set_config('app.session_token_hash', repeat('ef', 32), true);
+  IF (SELECT count(*) FROM user_sessions) <> 0 THEN
+    RAISE EXCEPTION 'session lookup must not reveal another token hash';
+  END IF;
+  PERFORM set_config('app.session_token_hash', repeat('ab', 32), true);
+  UPDATE user_sessions SET revoked_at = now() WHERE token_hash = decode(repeat('ab', 32), 'hex');
+  IF (SELECT count(*) FROM user_sessions) <> 0 THEN
+    RAISE EXCEPTION 'revoked session must no longer be visible';
   END IF;
 
   INSERT INTO messages (tenant_id, conversation_id, sender_type, body)

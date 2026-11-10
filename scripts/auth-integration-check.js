@@ -132,6 +132,21 @@ async function main() {
     const guestHistory = await fetch(base + "/api/conversations/" + guestBody.conversationId, { headers: workspaceHeaders });
     assert.equal((await guestHistory.json()).messages.length, 2, "guest and assistant messages should be persisted");
 
+    const escalationResponse = await fetch(base + "/api/public/" + TENANT_ID + "/chat", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ message: "I need a refund for my booking." }) });
+    assert.equal(escalationResponse.status, 200, "sensitive guest requests should be safely escalated");
+    const escalation = await escalationResponse.json();
+    assert.equal(escalation.needsHuman, true);
+    assert.equal(escalation.handoffStatus, "staff-queue");
+    const handoffInbox = await fetch(base + "/api/handoffs", { headers: workspaceHeaders });
+    assert.equal(handoffInbox.status, 200, "authenticated workspace staff should be able to load the handoff inbox");
+    const inboxBody = await handoffInbox.json();
+    assert.equal(inboxBody.delivery, "dashboard-queue-only", "the API must not imply external notification delivery");
+    assert.ok(inboxBody.handoffs.some((item) => item.id === escalation.conversationId), "escalated guest conversation should appear in the staff queue");
+    const resolveEscalation = await fetch(base + "/api/conversations/" + escalation.conversationId + "/status", { method: "PATCH", headers: workspaceHeaders, body: JSON.stringify({ status: "resolved" }) });
+    assert.equal(resolveEscalation.status, 200, "staff should be able to resolve an escalated handoff");
+    const emptyInbox = await fetch(base + "/api/handoffs", { headers: workspaceHeaders });
+    assert.equal((await emptyInbox.json()).handoffs.some((item) => item.id === escalation.conversationId), false, "resolved handoffs should leave the active queue");
+
     const csrf = decodeURIComponent(csrfMatch[1]);
     const logout = await fetch(`${base}/api/auth/logout`, {
       method: "POST",

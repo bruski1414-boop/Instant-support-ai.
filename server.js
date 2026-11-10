@@ -2,7 +2,7 @@
  * Veyra AI — safer single-business support prototype.
  * Node.js 20+. API keys remain server-side.
  *
- * IMPORTANT: This prototype flags handoffs but does not notify staff.
+ * Optional staff alerts are sent only when an approved webhook is configured and delivery succeeds.
  */
 require("dotenv").config();
 

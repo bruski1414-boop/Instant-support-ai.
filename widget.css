@@ -1,0 +1,25 @@
+.veyra-ai-launcher {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 2147483000;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  max-width: calc(100vw - 32px);
+  padding: 14px 20px;
+  border: 1px solid rgba(255,255,255,.22);
+  border-radius: 999px;
+  background: linear-gradient(110deg,#e7f2ff,#aebeff);
+  color: #08111b !important;
+  box-shadow: 0 12px 34px rgba(0,0,0,.28);
+  font: 700 14px/1.2 Inter,system-ui,-apple-system,"Segoe UI",sans-serif;
+  letter-spacing: .01em;
+  text-decoration: none !important;
+  cursor: pointer;
+}
+.veyra-ai-launcher:hover { filter: brightness(1.04); transform: translateY(-1px); }
+.veyra-ai-launcher:focus-visible { outline: 3px solid #4b9fff; outline-offset: 4px; }
+@media (max-width: 480px) {
+  .veyra-ai-launcher { right: 16px; bottom: 16px; padding: 13px 17px; }
+}

@@ -10,7 +10,7 @@ Veyra AI is an early customer-support assistant prototype aimed at hospitality a
 - Business-specific FAQ/context injected into the AI system prompt.
 - Basic request validation and API rate limiting.
 - Conservative escalation rules for sensitive or uncertain requests.
-- Legacy single-business optional Slack-compatible webhook alerts; tenant-specific webhook delivery is not connected.
+- Tenant-specific Slack handoff notifications with AES-256-GCM encrypted webhook storage, owner/admin setup, test delivery, and disconnect controls.
 - Tenant-scoped staff handoff inbox in the authenticated dashboard, with queue refresh, conversation review, staff replies, and resolution.
 - Security headers, bounded request/history sizes, API timeout, and restricted public routes.
 - Staff webhook destinations restricted to Slack's official incoming-webhook hosts; redirects are blocked to reduce SSRF risk.
@@ -21,7 +21,7 @@ Veyra AI is an early customer-support assistant prototype aimed at hospitality a
 ## Important: prototype, not production SaaS
 
 This is **not yet a complete €5,000/month enterprise product**. It does not yet include:
-- Tenant-scoped workspace discovery, knowledge-document drafts and approvals, conversation storage, staff notes, and a public tenant-specific guest chat endpoint are implemented and covered by disposable-PostgreSQL integration tests. Live database provisioning, tenant-specific webhook delivery, and independent production security review remain outstanding.
+- Tenant-scoped workspace discovery, knowledge-document drafts and approvals, conversation storage, staff notes, and a public tenant-specific guest chat endpoint are implemented and covered by disposable-PostgreSQL integration tests. Live database provisioning, service encryption-key configuration, retention/deletion controls, and independent production security review remain outstanding.
 - Native staff email/SMS/WhatsApp integrations (only a generic optional webhook is available).
 - Booking, CRM, hotel PMS, Shopify, or payment integrations.
 - A workspace dashboard for managing knowledge drafts/approvals and viewing stored conversations is implemented; it is not yet connected to PMS, booking, billing, or real-time staff messaging.
@@ -38,7 +38,7 @@ This repository includes a Render Blueprint in `render.yaml`.
 2. Open Render and choose **New → Blueprint** (or connect the GitHub repository and create a Blueprint).
 3. Select this repository and review the service settings in `render.yaml`.
 4. In the Render service's Environment settings, add `OPENAI_API_KEY` as a secret. Never paste it into GitHub, website JavaScript, chat messages, or screenshots.
-5. Optionally set `HANDOFF_WEBHOOK_URL` to a private, business-approved Slack incoming webhook hosted on `hooks.slack.com` or `hooks.slack-gov.com`. Staff alerts exclude the guest's message by default. Enable message forwarding only after explicit owner approval and a privacy review. Test delivery with a non-sensitive message.
+5. Set `TENANT_INTEGRATION_ENCRYPTION_KEY` to a randomly generated 32-byte key encoded as base64 in the hosting provider's secret environment settings. Keep it backed up securely: losing it makes stored tenant webhook credentials undecryptable. A parent/guardian or authorised operator should manage this key. Hotel owners/admins can then configure their own Slack incoming webhook in the dashboard; Veyra accepts only HTTPS Slack incoming-webhook hosts and never forwards guest message content.
 6. Add the real business's approved FAQ and business name only after receiving permission.
 7. Deploy, then open the service's `/api/health` endpoint and test the chat with non-sensitive sample questions.
 
@@ -50,9 +50,9 @@ This is a **single-business prototype**, not a multi-company SaaS. Do not connec
 
 The backend now has database-backed `POST /api/auth/login`, `GET /api/auth/me`, and `POST /api/auth/logout` endpoints when `DATABASE_URL` is configured. Authenticated workspace APIs expose `GET /api/workspaces`, `GET/POST /api/knowledge`, `POST /api/knowledge/:id/approve`, and tenant-scoped conversation list/create/detail/staff-message routes. Each dashboard data request validates the selected workspace against the signed-in user's membership and applies transaction-local tenant context for PostgreSQL row-level security. The public `POST /api/public/:tenantId/chat` endpoint uses only approved knowledge for that tenant, persists guest and assistant messages, and queues conversations requiring human review in the dashboard. The public `/login.html` page submits credentials to the login endpoint, and `/dashboard.html` is served only after the server validates an active session and at least one active workspace membership. The dashboard shows the authenticated email and membership roles and provides CSRF-protected sign-out. Passwords are verified with Node's scrypt implementation; only opaque random session tokens are sent in HttpOnly cookies and SHA-256 token hashes are stored in PostgreSQL. Sessions expire after eight hours, can be revoked, and logout requires a CSRF token plus same-origin validation. Login attempts have a dedicated rate limit.
 
-Apply migrations in order: `001_multi_tenant_foundation.sql`, then `002_authentication.sql`. Set `APP_ORIGIN` to the exact HTTPS site origin in production. Set `DATABASE_SSL=true` only when the database provider supports verified TLS. There is deliberately no public sign-up endpoint. On a completely empty database, a parent/guardian or authorised database administrator can run `npm run provision:owner` from a trusted terminal with `PROVISION_DATABASE_URL` set to a separate privileged connection. The script prompts for the owner email, organisation name, and password without echoing the password; it refuses to run if any organisation or user already exists. Never expose this privileged connection to the running web service. No default credentials are created.
+Apply migrations in order: `001_multi_tenant_foundation.sql`, `002_authentication.sql`, then `003_tenant_integrations.sql`. Set `APP_ORIGIN` to the exact HTTPS site origin in production. Set `DATABASE_SSL=true` only when the database provider supports verified TLS. There is deliberately no public sign-up endpoint. On a completely empty database, a parent/guardian or authorised database administrator can run `npm run provision:owner` from a trusted terminal with `PROVISION_DATABASE_URL` set to a separate privileged connection. The script prompts for the owner email, organisation name, and password without echoing the password; it refuses to run if any organisation or user already exists. Never expose this privileged connection to the running web service. No default credentials are created.
 
-**This is not yet production authentication.** The routes have not been tested against a live hosted database, the first-owner provisioning workflow has not been run against a real database, the live database has not been provisioned or tested on a hosted environment, tenant-specific staff notification delivery is not connected, and public guest chat has not been deployed or tested with a real hotel. Do not use real accounts or guest data until those items and an independent security review are complete.
+**This is not yet production authentication.** The routes have not been tested against a live hosted database, the first-owner provisioning workflow has not been run against a real database, the live database has not been provisioned or tested on a hosted environment, tenant-specific Slack notifications are implemented but require a service encryption key and an owner/admin-configured webhook, and public guest chat has not been deployed or tested with a real hotel. Do not use real accounts or guest data until those items and an independent security review are complete.
 
 ## Health and readiness
 
@@ -80,8 +80,7 @@ Without an API key, the website still displays sample demo responses, but the ba
 
 ## Environment variables
 
-- HANDOFF_WEBHOOK_URL: optional private Slack incoming webhook URL on `hooks.slack.com` or `hooks.slack-gov.com`. Other hosts and redirects are rejected. It receives a handoff reason by default, not the guest's message. Guest message forwarding is disabled by default; only enable HANDOFF_INCLUDE_MESSAGE=true after explicit business-owner approval and a privacy review.
-- HANDOFF_INCLUDE_MESSAGE: optional privacy-sensitive switch; defaults to false.
+- TENANT_INTEGRATION_ENCRYPTION_KEY: required 32-byte base64-encoded key used to encrypt tenant-specific Slack webhook credentials with AES-256-GCM. Configure only as a hosting-provider secret; do not commit it. Losing the key prevents decryption of saved credentials.
 - DATABASE_URL: private PostgreSQL connection string used by account/session endpoints.
 - DATABASE_SSL: set to true only when verified TLS is required and supported.
 - APP_ORIGIN: exact public origin used to validate login/logout requests in production.
@@ -95,7 +94,7 @@ Without an API key, the website still displays sample demo responses, but the ba
 
 1. Build authentication and strict tenant separation before serving multiple companies.
 2. Store each company's knowledge base securely and add owner-approved updates.
-3. Add reliable human handoff notifications and staff response tracking.
+3. Connect tenant-specific staff alerts; Slack webhook configuration, encryption, and test delivery are implemented, while email/SMS and delivery monitoring remain future work.
 4. Add source-grounded answers, confidence checks, and evaluation tests.
 5. Integrate one real business channel at a time (website widget first).
 6. Add usage monitoring, privacy controls, data retention, and billing only after the core service is reliable.

@@ -161,6 +161,10 @@ async function main() {
     assert.equal(slackDeliveries.length, 2, "guest escalation should trigger a tenant-specific Slack notification");
     assert.match(slackDeliveries[1].payload.text, /Guest message content was not forwarded/);
     assert.match(slackDeliveries[1].payload.text, new RegExp(escalation.conversationId));
+    const guestFollowup = await fetch(base + "/api/public/" + TENANT_ID + "/chat", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ conversationId: escalation.conversationId, message: "Thank you, can someone please help me?" }) });
+    assert.equal(guestFollowup.status, 200, "guest should be able to continue an existing conversation");
+    const preservedQueue = await runtimePool.query("SELECT status FROM conversations WHERE tenant_id = $1 AND id = $2", [TENANT_ID, escalation.conversationId]);
+    assert.equal(preservedQueue.rows[0].status, "waiting_staff", "a guest follow-up must not silently remove an unresolved conversation from the staff queue");
     const handoffInbox = await fetch(base + "/api/handoffs", { headers: workspaceHeaders });
     assert.equal(handoffInbox.status, 200, "authenticated workspace staff should be able to load the handoff inbox");
     const inboxBody = await handoffInbox.json();

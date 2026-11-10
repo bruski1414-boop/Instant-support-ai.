@@ -99,6 +99,21 @@ async function loadStatus(){
   }
   document.getElementById('lastChecked').textContent='Last checked: '+new Date().toLocaleString();
 }
+let queueRefreshInProgress=false;
+async function refreshLiveDashboard(){
+  if(queueRefreshInProgress||document.visibilityState==="hidden"||!activeWorkspaceId)return;
+  queueRefreshInProgress=true;
+  try{
+    await Promise.all([loadHandoffs(),loadStatus()]);
+    const stamp=document.getElementById("handoffRefreshStatus");
+    if(stamp)stamp.textContent="Queue checked "+new Date().toLocaleTimeString()+" · refreshes every 15 seconds while this tab is open";
+  }catch(error){
+    const stamp=document.getElementById("handoffRefreshStatus");
+    if(stamp)stamp.textContent="Automatic refresh paused: "+String(error.message||"connection problem");
+  }finally{queueRefreshInProgress=false;}
+}
+document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible")refreshLiveDashboard();});
+window.setInterval(refreshLiveDashboard,15000);
 loadAccount().then(()=>loadWorkspaces()).then(()=>loadStatus()).catch(error=>{document.getElementById("statusMessage").textContent=error.message;});
 </script>
 </body>

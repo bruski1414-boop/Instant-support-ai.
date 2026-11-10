@@ -132,7 +132,7 @@ function createApp(options = {}) {
     }
   }
 
-  createAuthRouter(app, { pool: dbPool, env, logger });
+  const requireAuth = createAuthRouter(app, { pool: dbPool, env, logger });
 
   app.get("/api/health", (_req, res) => {
     res.json({
@@ -264,7 +264,8 @@ ${businessFaq}`,
   });
 
   app.get("/", (_req, res) => res.sendFile(path.join(__dirname, "index.html")));
-  app.get("/dashboard.html", (_req, res) => res.sendFile(path.join(__dirname, "dashboard.html")));
+  app.get("/login.html", (_req, res) => res.sendFile(path.join(__dirname, "login.html")));
+  app.get("/dashboard.html", requireAuth, (_req, res) => res.sendFile(path.join(__dirname, "dashboard.html")));
   app.use((_req, res) => res.status(404).json({ error: "Not found." }));
   app.use((error, _req, res, _next) => {
     if (error instanceof SyntaxError && "body" in error) {

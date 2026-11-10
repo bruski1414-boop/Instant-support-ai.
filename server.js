@@ -33,7 +33,20 @@ function validWebhookUrl(raw) {
   if (!raw) return null;
   try {
     const url = new URL(raw);
-    if (url.protocol !== "https:" || url.username || url.password) return null;
+    // The webhook is intentionally restricted to Slack's documented incoming
+    // webhook hosts. Never allow arbitrary URLs or redirects from this server.
+    const allowedHosts = new Set(["hooks.slack.com", "hooks.slack-gov.com"]);
+    if (
+      url.protocol !== "https:" ||
+      !allowedHosts.has(url.hostname.toLowerCase()) ||
+      url.username ||
+      url.password ||
+      url.port ||
+      url.search ||
+      url.hash ||
+      !url.pathname.startsWith("/services/") ||
+      url.pathname.length > 500
+    ) return null;
     return url.toString();
   } catch {
     return null;
@@ -86,6 +99,7 @@ function createApp(options = {}) {
     try {
       const response = await fetchImpl(webhookUrl, {
         method: "POST",
+        redirect: "error",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           text: `Veyra AI staff review needed for ${businessName}. Reason: ${String(reason || "Staff review requested").slice(0, 240)}.` + (includeHandoffMessage ? ` Customer message (owner-approved sharing): ${String(message || "").slice(0, 700)}` : " Please contact the guest through the hotel-approved channel; message content was not forwarded."),

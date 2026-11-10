@@ -94,6 +94,24 @@ test("health reports readiness without exposing secrets", async (t) => {
   assert.equal(response.headers.get("cache-control"), "no-store");
 });
 
+test("readiness endpoint returns 503 when live AI is not configured", async (t) => {
+  const base = await withServer(t, makeApp());
+  const response = await fetch(`${base}/api/ready`);
+  const body = await response.json();
+  assert.equal(response.status, 503);
+  assert.equal(body.ready, false);
+  assert.equal(body.checks.aiProviderConfigured, false);
+  assert.equal(body.checks.approvedBusinessKnowledgeConfigured, true);
+});
+
+test("readiness endpoint returns 200 when AI and approved knowledge are configured", async (t) => {
+  const base = await withServer(t, makeApp({ openaiClient: mockAI("{}").client }));
+  const response = await fetch(`${base}/api/ready`);
+  const body = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(body.ready, true);
+});
+
 test("health reports live AI unavailable when knowledge is missing", async (t) => {
   const base = await withServer(t, createApp({
     env: { OPENAI_API_KEY: "not-used", BUSINESS_FAQ: "" },
@@ -280,7 +298,7 @@ test("successful webhook delivery is reported truthfully", async (t) => {
   const { client } = mockAI(JSON.stringify({ reply: "A staff member will need to review this.", needsHuman: true, handoffReason: "Booking change" }));
   const base = await withServer(t, makeApp({
     openaiClient: client,
-    env: { HANDOFF_WEBHOOK_URL: "https://hooks.example.com/services/test" },
+    env: { HANDOFF_WEBHOOK_URL: "https://hooks.example.com/services/test", HANDOFF_INCLUDE_MESSAGE: "true" },
     fetchImpl: async (url, options) => {
       sent = { url, options };
       return { ok: true, status: 200 };
@@ -294,6 +312,23 @@ test("successful webhook delivery is reported truthfully", async (t) => {
   assert.equal(body.handoffStatus, "notified");
   assert.equal(body.handoffConfigured, true);
   assert.match(sent.options.body, /Please change my booking/);
+});
+
+test("webhook omits guest message content by default", async (t) => {
+  let payload;
+  const { client } = mockAI(JSON.stringify({ reply: "Staff review needed.", needsHuman: true, handoffReason: "Booking change" }));
+  const base = await withServer(t, makeApp({
+    openaiClient: client,
+    env: { HANDOFF_WEBHOOK_URL: "https://hooks.example.com/services/test" },
+    fetchImpl: async (_url, options) => { payload = JSON.parse(options.body); return { ok: true }; },
+  }));
+  const response = await fetch(`${base}/api/chat`, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ message: "My name is Alex and my booking reference is ABC123." }),
+  });
+  assert.equal(response.status, 200);
+  assert.doesNotMatch(payload.text, /Alex|ABC123/);
+  assert.match(payload.text, /message content was not forwarded/i);
 });
 
 test("failed webhook delivery is never reported as successful", async (t) => {

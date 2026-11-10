@@ -55,7 +55,9 @@ app.get("/api/health", (_req, res) => {
 
 // This is deliberately conservative. A flag is not a staff notification.
 function shouldEscalate(text) {
-  return /\b(refund|cancel|cancellation|booking change|change my booking|complaint|manager|human|real person|staff member|supervisor|urgent|emergency|allerg(?:y|ic)|medical|injury|unsafe|harassment|discrimination|lost child|security|fire|police|ambulance|payment dispute|chargeback)\b/i.test(text);
+  // Deterministic safety net; the model may escalate additional ambiguous cases.
+  // Keep routine FAQs automated, but route decisions and consequential requests to staff.
+  return /\b(refund|refunds|cancel|cancellation|cancelling|cancelled|booking change|change my booking|modify my reservation|change reservation|complaint|complain|unhappy|disappointed|manager|human|real person|staff member|supervisor|urgent|emergency|allerg(?:y|ic)|medical|injur(?:y|ed)|unsafe|harassment|discrimination|lost child|missing child|security|fire|police|ambulance|payment dispute|chargeback|charged twice|overcharged|wrong charge|billing error|lost passport|lost property|stolen|theft|accessibility|wheelchair|service animal|data breach|privacy request|personal data|noise complaint|dirty room|room not cleaned|broken (?:air ?conditioning|ac|shower|lock)|locked out)\b/i.test(text);
 }
 
 async function notifyStaff({ message, reason }) {

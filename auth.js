@@ -149,13 +149,20 @@ function createAuthRouter(app, { pool, env = process.env, logger = console }) {
       const csrfToken = crypto.randomBytes(32).toString("base64url");
       const tokenHash = hashToken(sessionToken);
       const csrfHash = hashToken(csrfToken);
-      await inTransaction(pool, async (client) => {
+      const sessionCreated = await inTransaction(pool, async (client) => {
         await client.query("SELECT set_config('app.user_id', $1, true)", [credential.user_id]);
+        const activeUser = await client.query(
+          "SELECT id FROM users WHERE id = $1 AND disabled_at IS NULL LIMIT 1",
+          [credential.user_id]
+        );
+        if (!activeUser.rows[0]) return false;
         await client.query(
           "INSERT INTO user_sessions (user_id, token_hash, csrf_hash, expires_at) VALUES ($1, $2, $3, now() + interval '8 hours')",
           [credential.user_id, tokenHash, csrfHash]
         );
+        return true;
       });
+      if (!sessionCreated) return res.status(401).json({ error: "Email or password is incorrect." });
       appendCookie(res, SESSION_COOKIE, sessionToken, { ...cookieOptions, httpOnly: true, maxAge: 8 * 60 * 60 });
       appendCookie(res, CSRF_COOKIE, csrfToken, { ...cookieOptions, maxAge: 8 * 60 * 60 });
       return res.json({ authenticated: true });

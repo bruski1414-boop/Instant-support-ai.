@@ -495,6 +495,7 @@ ${businessFaq}`,
 
   app.get("/", (_req, res) => res.sendFile(path.join(__dirname, "index.html")));
   app.get("/login.html", (_req, res) => res.sendFile(path.join(__dirname, "login.html")));
+  app.get("/guest.html", (_req, res) => res.sendFile(path.join(__dirname, "guest.html")));
   app.get("/dashboard.html", requireAuth, (_req, res) => res.sendFile(path.join(__dirname, "dashboard.html")));
   app.use((_req, res) => res.status(404).json({ error: "Not found." }));
   app.use((error, _req, res, _next) => {

@@ -15,7 +15,7 @@ INSERT INTO users (id, email, password_hash) VALUES
   ('cccccccc-cccc-4ccc-8ccc-cccccccccccc', 'owner@example.test', repeat('x', 60));
 
 INSERT INTO auth_credentials (user_id, email, password_hash) VALUES
-  ('cccccccc-cccc-4ccc-8ccc-cccccccccccc', 'owner@example.test', 'scrypt$32768$8$1$synthetic$synthetic-test-hash');
+  ('cccccccc-cccc-4ccc-8ccc-cccccccccccc', 'owner@example.test', repeat('x', 60));
 
 INSERT INTO memberships (tenant_id, user_id, role) VALUES
   ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', 'owner');

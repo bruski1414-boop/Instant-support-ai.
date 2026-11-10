@@ -9,6 +9,25 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: postgres
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -16,3 +35,7 @@ jobs:
           node-version: 20
       - run: npm install
       - run: npm test
+      - name: Apply tenant schema to disposable PostgreSQL
+        run: psql -v ON_ERROR_STOP=1 -f migrations/001_multi_tenant_foundation.sql
+      - name: Verify row-level tenant isolation as restricted runtime role
+        run: psql -v ON_ERROR_STOP=1 -f scripts/test-tenant-isolation.sql

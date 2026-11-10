@@ -46,7 +46,15 @@ Render's free web services may sleep after inactivity and take time to wake up. 
 
 This is a **single-business prototype**, not a multi-company SaaS. Do not connect real customer data or promise service-level guarantees until authentication, tenant isolation, privacy controls, monitoring, and a security review are implemented.
 
-## Authentication foundation\n\nThe backend now has database-backed `POST /api/auth/login`, `GET /api/auth/me`, and `POST /api/auth/logout` endpoints when `DATABASE_URL` is configured. Passwords are verified with Node's scrypt implementation; only opaque random session tokens are sent in HttpOnly cookies and SHA-256 token hashes are stored in PostgreSQL. Sessions expire after eight hours, can be revoked, and logout requires a CSRF token plus same-origin validation. Login attempts have a dedicated rate limit.\n\nApply migrations in order: `001_multi_tenant_foundation.sql`, then `002_authentication.sql`. Set `APP_ORIGIN` to the exact HTTPS site origin in production. Set `DATABASE_SSL=true` only when the database provider supports verified TLS. There is deliberately no public sign-up endpoint. On a completely empty database, a parent/guardian or authorised database administrator can run `npm run provision:owner` from a trusted terminal with `PROVISION_DATABASE_URL` set to a separate privileged connection. The script prompts for the owner email, organisation name, and password without echoing the password; it refuses to run if any organisation or user already exists. Never expose this privileged connection to the running web service. No default credentials are created.\n\n**This is not yet production authentication.** The routes have not been tested against a live hosted database, the first-owner provisioning workflow is not implemented, tenant-scoped hotel data routes are not connected, and the dashboard does not yet require sign-in. Do not use real accounts or guest data until those items and an independent security review are complete.\n\n## Health and readiness
+## Authentication foundation
+
+The backend now has database-backed `POST /api/auth/login`, `GET /api/auth/me`, and `POST /api/auth/logout` endpoints when `DATABASE_URL` is configured. Passwords are verified with Node's scrypt implementation; only opaque random session tokens are sent in HttpOnly cookies and SHA-256 token hashes are stored in PostgreSQL. Sessions expire after eight hours, can be revoked, and logout requires a CSRF token plus same-origin validation. Login attempts have a dedicated rate limit.
+
+Apply migrations in order: `001_multi_tenant_foundation.sql`, then `002_authentication.sql`. Set `APP_ORIGIN` to the exact HTTPS site origin in production. Set `DATABASE_SSL=true` only when the database provider supports verified TLS. There is deliberately no public sign-up endpoint. On a completely empty database, a parent/guardian or authorised database administrator can run `npm run provision:owner` from a trusted terminal with `PROVISION_DATABASE_URL` set to a separate privileged connection. The script prompts for the owner email, organisation name, and password without echoing the password; it refuses to run if any organisation or user already exists. Never expose this privileged connection to the running web service. No default credentials are created.
+
+**This is not yet production authentication.** The routes have not been tested against a live hosted database, the first-owner provisioning workflow is not implemented, tenant-scoped hotel data routes are not connected, and the dashboard does not yet require sign-in. Do not use real accounts or guest data until those items and an independent security review are complete.
+
+## Health and readiness
 
 - `GET /api/health` checks whether the process is responding and reports whether live AI configuration is present. A `degraded` status means the process is up but not ready to answer guests.
 - `GET /api/ready` returns HTTP 200 only when an AI client and approved business knowledge are configured; otherwise it returns HTTP 503. This is a configuration check, not a proof that the provider is reachable or that answers are accurate.
@@ -73,7 +81,10 @@ Without an API key, the website still displays sample demo responses, but the ba
 ## Environment variables
 
 - HANDOFF_WEBHOOK_URL: optional private Slack incoming webhook URL on `hooks.slack.com` or `hooks.slack-gov.com`. Other hosts and redirects are rejected. It receives a handoff reason by default, not the guest's message. Guest message forwarding is disabled by default; only enable HANDOFF_INCLUDE_MESSAGE=true after explicit business-owner approval and a privacy review.
-- HANDOFF_INCLUDE_MESSAGE: optional privacy-sensitive switch; defaults to false.\n- DATABASE_URL: private PostgreSQL connection string used by account/session endpoints.\n- DATABASE_SSL: set to true only when verified TLS is required and supported.\n- APP_ORIGIN: exact public origin used to validate login/logout requests in production.
+- HANDOFF_INCLUDE_MESSAGE: optional privacy-sensitive switch; defaults to false.
+- DATABASE_URL: private PostgreSQL connection string used by account/session endpoints.
+- DATABASE_SSL: set to true only when verified TLS is required and supported.
+- APP_ORIGIN: exact public origin used to validate login/logout requests in production.
 - OPENAI_API_KEY: server-side secret; required for live AI.
 - OPENAI_MODEL: model name, default gpt-4.1-mini.
 - PORT: server port, default 3000.

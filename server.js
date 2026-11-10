@@ -162,11 +162,17 @@ function createApp(options = {}) {
 
   app.get("/api/workspaces", requireAuth, async (req, res) => {
     try {
-      const result = await dbPool.query(
-        "SELECT o.id, o.name, m.role FROM memberships m JOIN organizations o ON o.id = m.tenant_id WHERE m.user_id = $1 ORDER BY o.name",
-        [req.auth.user.id],
-      );
-      return res.json({ workspaces: result.rows });
+      const client = await dbPool.connect();
+      try {
+        await client.query("BEGIN");
+        await client.query("SELECT set_config('app.user_id', $1, true)", [req.auth.user.id]);
+        const result = await client.query(
+          "SELECT o.id, o.name, m.role FROM memberships m JOIN organizations o ON o.id = m.tenant_id WHERE m.user_id = $1 ORDER BY o.name",
+          [req.auth.user.id],
+        );
+        await client.query("COMMIT");
+        return res.json({ workspaces: result.rows });
+      } finally { client.release(); }
     } catch (error) { return workspaceFailure(res, error, "Veyra workspace list failed:"); }
   });
 

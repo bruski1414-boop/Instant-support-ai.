@@ -489,7 +489,7 @@ test("public website and sign-in page are served while dashboard redirects witho
   const home = await fetch(base);
   assert.equal(home.status, 200);
   assert.match(await home.text(), /VEYRA AI/);
-  const login = await fetch(`${base}/login.html`);
+  const guest = await fetch(`${base}/guest.html`);\n  assert.equal(guest.status, 200);\n  assert.match(await guest.text(), /Guest support assistant/);\n  const login = await fetch(`${base}/login.html`);
   assert.equal(login.status, 200);
   assert.match(await login.text(), /Sign in securely/);
   const dashboard = await fetch(`${base}/dashboard.html`, { redirect: "manual" });
@@ -505,7 +505,7 @@ test("opt-in live evaluation script parses without making API calls", () => {
 });
 
 test("inline JavaScript on website and dashboard parses successfully", () => {
-  for (const file of ["index.html", "dashboard.html", "login.html"]) {
+  for (const file of ["index.html", "dashboard.html", "login.html", "guest.html"]) {
     const html = fs.readFileSync(require("node:path").join(__dirname, file), "utf8");
     const scripts = [...html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/gi)];
     assert.ok(scripts.length > 0, `${file} should contain its page script`);

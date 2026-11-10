@@ -484,17 +484,17 @@ test("unknown routes and private configuration/source files are not served", asy
   }
 });
 
-test("public website and dashboard pages are served", async (t) => {
+test("public website and sign-in page are served while dashboard redirects without authentication", async (t) => {
   const base = await withServer(t, makeApp({ openaiClient: mockAI("{}").client }));
   const home = await fetch(base);
   assert.equal(home.status, 200);
   assert.match(await home.text(), /VEYRA AI/);
-  const dashboard = await fetch(`${base}/dashboard.html`);
-  assert.equal(dashboard.status, 200);
-  const dashboardHtml = await dashboard.text();
-  assert.ok(dashboardHtml.includes("fetch('/api/health'"));
-  assert.ok(dashboardHtml.includes("Live service configuration"));
-  assert.doesNotMatch(dashboardHtml, /Alex Morgan|Conversations today|146/);
+  const login = await fetch(`${base}/login.html`);
+  assert.equal(login.status, 200);
+  assert.match(await login.text(), /Sign in securely/);
+  const dashboard = await fetch(`${base}/dashboard.html`, { redirect: "manual" });
+  assert.equal(dashboard.status, 303);
+  assert.equal(dashboard.headers.get("location"), "/login.html");
 });
 
 test("opt-in live evaluation script parses without making API calls", () => {
@@ -505,7 +505,7 @@ test("opt-in live evaluation script parses without making API calls", () => {
 });
 
 test("inline JavaScript on website and dashboard parses successfully", () => {
-  for (const file of ["index.html", "dashboard.html"]) {
+  for (const file of ["index.html", "dashboard.html", "login.html"]) {
     const html = fs.readFileSync(require("node:path").join(__dirname, file), "utf8");
     const scripts = [...html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/gi)];
     assert.ok(scripts.length > 0, `${file} should contain its page script`);

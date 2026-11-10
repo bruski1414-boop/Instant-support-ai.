@@ -318,7 +318,7 @@ test("public website and dashboard pages are served", async (t) => {
 test("inline JavaScript on website and dashboard parses successfully", () => {
   for (const file of ["index.html", "dashboard.html"]) {
     const html = fs.readFileSync(require("node:path").join(__dirname, file), "utf8");
-    const scripts = [...html.matchAll(/<script(?:\\s[^>]*)?>([\\s\\S]*?)<\\/script>/gi)];
+    const scripts = [...html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/gi)];
     assert.ok(scripts.length > 0, `${file} should contain its page script`);
     scripts.forEach((match, index) => {
       assert.doesNotThrow(

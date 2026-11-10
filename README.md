@@ -67,7 +67,6 @@ Without an API key, the website still displays sample demo responses, but the ba
 - OPENAI_API_KEY: server-side secret; required for live AI.
 - OPENAI_MODEL: model name, default gpt-4.1-mini.
 - PORT: server port, default 3000.
-- ALLOWED_ORIGINS: comma-separated origins allowed to call the API. Defaults to localhost only.
 - BUSINESS_NAME: business name used by the assistant.
 - BUSINESS_FAQ: approved facts and policies for the business.
 

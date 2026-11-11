@@ -40,7 +40,7 @@ The Render service has a connected PostgreSQL database. Confirm the following va
 - OPENAI_API_KEY: provider secret, server-side only.
 - OPENAI_MODEL=gpt-4.1-mini
 - BOOTSTRAP_TOKEN: long random one-time setup secret; remove after owner setup.
-- ALLOWED_ORIGINS: exact trusted hotel website origins, comma-separated.
+- ALLOWED_ORIGINS: exact trusted platform/dashboard origins, comma-separated. Public guest-chat CORS is checked separately against the requested hotel's saved HTTPS website origin; a globally allowed origin cannot call another hotel's guest-chat route.
 - NODE_ENV=production
 - GUEST_DATA_STORAGE_ENABLED=false until platform privacy review, separate written approval for each hotel, durable backups and verified automated retention/deletion are in place.
 - STAFF_WEBHOOK_URL and STAFF_WEBHOOK_SECRET: optional signed staff-notification receiver.
@@ -59,7 +59,7 @@ Without OPENAI_API_KEY, live AI responses are unavailable. Without both webhook 
 3. Remove BOOTSTRAP_TOKEN from the Render service environment and redeploy.
 4. Sign in at /dashboard.html.
 5. Add hotel knowledge as unapproved and have the hotel manager verify every fact before approval.
-6. Set ALLOWED_ORIGINS to the exact hotel website origin.
+6. Set ALLOWED_ORIGINS to the exact platform/dashboard origin(s), then save each hotel's exact HTTPS website origin in that hotel's own workspace settings. Public guest chat only allows the matching hotel's saved origin.
 7. Verify the hotel's staff notification endpoint and test its fallback process.
 8. Do not enable guest-data storage until privacy notice, data-processing terms and retention period are approved and durable storage/backups are ready.
 

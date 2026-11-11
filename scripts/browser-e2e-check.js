@@ -214,7 +214,7 @@ test("authenticated dashboard loads and saves knowledge, privacy, and website se
   await page.locator("#knowledgeContent").fill("Check-in begins at 3:00 PM.");
   await page.locator("#knowledgeSave").click();
   await page.getByText("Draft · not used for answers").waitFor();
-  await page.getByRole("button", { name: "Approve" }).click();
+  await page.getByRole("button", { name: "Approve", exact: true }).click();
   await page.getByText("Approved", { exact: true }).waitFor();
 
   await page.locator("#retentionDays").selectOption("180");

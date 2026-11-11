@@ -11,6 +11,7 @@ test("sensitive and urgent guest requests require staff escalation", () => {
     "I have a severe allergy",
     "I want to complain to the manager",
     "I need to change my booking",
+    "Please modify my reservation",
   ]) {
     assert.equal(requiresStaffEscalation(message), true, message);
   }

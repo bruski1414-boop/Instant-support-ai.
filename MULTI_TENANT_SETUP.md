@@ -22,7 +22,7 @@ A parent or guardian must manage hosting accounts, any paid upgrades and API-pro
 - Conservative escalation for sensitive/uncertain requests.
 - Optional signed webhook; delivery status and attempt count are persisted on each escalation, and failed notifications can be retried from the dashboard (maximum five attempts).
 - Separate rate limits protect public guest chat and initial workspace bootstrap.
-- Embeddable guest chat widget with multi-turn conversation continuity and bounded history.
+- Embeddable guest chat widget with multi-turn conversation continuity, bounded history and a per-conversation access token stored only as a hash server-side.
 - Public file allowlist and baseline browser security headers.
 - Tenant-scoped owner/admin conversation deletion from active database records (backup/provider retention may differ) with an audit record.
 - Guest-data storage gate is disabled unless explicitly enabled after hotel privacy and retention approval.

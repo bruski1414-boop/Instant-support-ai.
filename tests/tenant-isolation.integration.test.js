@@ -84,12 +84,19 @@ test("two hotel workspaces remain isolated across live API resources", { skip: !
       NODE_ENV: "test",
       DATABASE_URL: databaseUrl,
       DATABASE_SSL: "false",
-      OPENAI_API_KEY: "",
+      OPENAI_API_KEY: "synthetic-integration-test-key",
       BOOTSTRAP_TOKEN: bootstrapToken,
       PLATFORM_PROVISIONING_TOKEN: provisioningToken,
       STAFF_WEBHOOK_URL: webhookUrl,
       STAFF_WEBHOOK_SECRET: webhookSecret,
-      GUEST_DATA_STORAGE_ENABLED: "false",
+      GUEST_DATA_STORAGE_ENABLED: "true",
+      DURABLE_BACKUPS_VERIFIED: "true",
+      TENANT_ISOLATION_TESTS_PASSED: "true",
+      PROVIDER_OAUTH_TESTED: "true",
+      PLATFORM_PRIVACY_REVIEWED: "true",
+      RETENTION_ENFORCEMENT_VERIFIED: "true",
+      STAFF_HANDOFF_TESTED: "true",
+      PILOT_RELEASE_APPROVED: "true",
       ALLOWED_ORIGINS: "http://localhost:3000"
     },
     stdio: "ignore"
@@ -184,9 +191,26 @@ test("two hotel workspaces remain isolated across live API resources", { skip: !
     "INSERT INTO storage_connections(organization_id,provider,account_email,encrypted_tokens,status) VALUES($1,'google','storage@alpha.test','encrypted-alpha-placeholder','connected'),($2,'microsoft','storage@beta.test','encrypted-beta-placeholder','connected')",
     [alphaId, betaId]
   );
+  await pool.query(
+    "INSERT INTO organization_integration_checks(organization_id,integration,verified_by) VALUES($1,'ai_provider',$2),($3,'ai_provider',$4)",
+    [alphaId, alphaUser.rows[0].id, betaId, betaUser.rows[0].id]
+  );
 
   const alphaSession = await login("hotel-alpha", "owner@alpha.test");
   const betaSession = await login("hotel-beta", "owner@beta.test");
+  const alphaApproval = await request("/api/platform/organizations/hotel-alpha/privacy-approval", {
+    method: "POST",
+    headers: { "content-type": "application/json", "X-Platform-Provisioning-Token": provisioningToken },
+    body: JSON.stringify({ approvalReference: "ALPHA-PRIVACY-APPROVAL-TEST", retentionDays: 90 })
+  });
+  assert.equal(alphaApproval.status, 201, "platform operator can record one hotel's written approval");
+  const unauthorizedBetaApproval = await request("/api/platform/organizations/hotel-beta/privacy-approval", {
+    method: "POST",
+    headers: { "content-type": "application/json", "X-Platform-Provisioning-Token": "wrong-token" },
+    body: JSON.stringify({ approvalReference: "BETA-PRIVACY-APPROVAL-TEST", retentionDays: 90 })
+  });
+  assert.equal(unauthorizedBetaApproval.status, 403, "hotel privacy approvals cannot be self-issued without the platform operator token");
+
   for (const [session, ownProvider, otherProvider] of [
     [alphaSession, "google", "microsoft"],
     [betaSession, "microsoft", "google"]
@@ -198,6 +222,11 @@ test("two hotel workspaces remain isolated across live API resources", { skip: !
     assert.equal(storageCheck.done, true, "the hotel's own connected OAuth account should satisfy storage readiness");
     assert.match(storageCheck.detail, new RegExp(ownProvider));
     assert.doesNotMatch(storageCheck.detail, new RegExp(otherProvider), "another hotel's storage provider must not leak into this workspace");
+    const privacyCheck = onboarding.checks.find((check) => check.key === "privacy");
+    const isAlpha = session === alphaSession;
+    assert.equal(privacyCheck.done, isAlpha, "privacy approval must be recorded separately for each hotel");
+    if (isAlpha) assert.match(privacyCheck.detail, /90-day retention target/);
+    else assert.match(privacyCheck.detail, /platform operator must record this hotel's written privacy approval/i);
   }
 
 
@@ -351,4 +380,20 @@ test("two hotel workspaces remain isolated across live API resources", { skip: !
   assert.match((await alphaTranscript.text()), /Private Alpha guest message/);
   const betaTranscript = await request(`/api/admin/conversations/${alphaConversation.rows[0].id}`, {}, betaSession);
   assert.equal(betaTranscript.status, 404);
+  const betaGuestChat = await request("/api/public/hotel-beta/chat", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ message: "What time is breakfast?" })
+  });
+  assert.equal(betaGuestChat.status, 503);
+  assert.match((await betaGuestChat.json()).error, /privacy and retention approval/i, "a different hotel's approval must not unlock Beta guest chat");
+
+  await pool.query("DELETE FROM knowledge_documents WHERE organization_id=$1", [alphaId]);
+  const alphaGuestChat = await request("/api/public/hotel-alpha/chat", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ message: "What time is breakfast?" })
+  });
+  assert.equal(alphaGuestChat.status, 503);
+  assert.match((await alphaGuestChat.json()).error, /No hotel information has been approved/i, "Alpha should pass its own privacy gate and stop at the next missing prerequisite");
 });

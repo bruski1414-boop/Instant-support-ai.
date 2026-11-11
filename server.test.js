@@ -548,7 +548,7 @@ test("opt-in live evaluation script parses without making API calls", () => {
   const source = fs.readFileSync(require("node:path").join(__dirname, "scripts", "live-eval.js"), "utf8");
   assert.doesNotThrow(() => new vm.Script(source, { filename: "scripts/live-eval.js" }));
   assert.match(source, /OPENAI_API_KEY is required/);
-  assert.match(source, /No real guest data is used/);
+  assert.match(source, /no real guest data is used/i);
 });
 
 test("inline JavaScript on website and dashboard parses successfully", () => {

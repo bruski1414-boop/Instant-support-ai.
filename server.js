@@ -21,15 +21,17 @@ const prod=process.env.NODE_ENV==="production";
 const cookie=prod?"__Host-veyra_session":"veyra_session";
 app.disable("x-powered-by");
 app.use((_q,r,n)=>{r.setHeader("X-Content-Type-Options","nosniff");r.setHeader("X-Frame-Options","DENY");r.setHeader("Referrer-Policy","strict-origin-when-cross-origin");r.setHeader("Permissions-Policy","camera=(),microphone=(),geolocation=()");n();});
-app.use(cors({origin(o,cb){if(!o||origins.includes(o))return cb(null,true);cb(new Error("Origin not allowed"));},credentials:true,allowedHeaders:["Content-Type","X-CSRF-Token","X-Bootstrap-Token"],methods:["GET","POST","PATCH","DELETE","OPTIONS"]}));
+app.use(cors({origin(o,cb){if(!o||origins.includes(o))return cb(null,true);cb(new Error("Origin not allowed"));},credentials:true,allowedHeaders:["Content-Type","X-CSRF-Token","X-Bootstrap-Token","X-Platform-Provisioning-Token"],methods:["GET","POST","PATCH","DELETE","OPTIONS"]}));
 app.use(express.json({limit:"20kb"}));
 app.use("/api/",rateLimit({windowMs:60000,limit:60,standardHeaders:"draft-7",legacyHeaders:false}));
 app.use("/api/auth/",rateLimit({windowMs:900000,limit:10,standardHeaders:"draft-7",legacyHeaders:false}));
 const setupLimiter=rateLimit({windowMs:3600000,limit:5,standardHeaders:"draft-7",legacyHeaders:false});
+const platformProvisionLimiter=rateLimit({windowMs:3600000,limit:10,standardHeaders:"draft-7",legacyHeaders:false});
 const publicChatLimiter=rateLimit({windowMs:300000,limit:10,standardHeaders:"draft-7",legacyHeaders:false});
 const invitationAcceptLimiter=rateLimit({windowMs:3600000,limit:5,standardHeaders:"draft-7",legacyHeaders:false});
 app.use("/api/invitations/accept",invitationAcceptLimiter);
 app.use("/api/setup/organization",setupLimiter);
+app.use("/api/platform/organizations",platformProvisionLimiter);
 app.use("/api/public/",publicChatLimiter);
 const schema=[
 "CREATE EXTENSION IF NOT EXISTS pgcrypto",
@@ -107,6 +109,29 @@ app.post("/api/setup/organization",requireDb,async(q,r,n)=>{
    await c.query("INSERT INTO audit_logs(organization_id,action,target_type) VALUES($1,'organization.created','organization')",[o.rows[0].id]);await c.query("COMMIT");
    r.status(201).json({organization:{name:o.rows[0].name,slug:o.rows[0].slug},owner:{email:u.rows[0].email},message:"Owner created. Remove BOOTSTRAP_TOKEN and sign in."});
   }catch(e){await c.query("ROLLBACK");throw e;}finally{c.release();}
+ }catch(e){n(e);}
+});
+app.post("/api/platform/organizations",requireDb,async(q,r,n)=>{
+ try{
+  const secret=process.env.PLATFORM_PROVISIONING_TOKEN;
+  if(!secret||!equal(q.get("X-Platform-Provisioning-Token"),secret))return r.status(403).json({error:"Platform provisioning is not authorized."});
+  const b=q.body||{};
+  if(typeof b.organizationName!=="string"||b.organizationName.trim().length<2||b.organizationName.length>100)return r.status(400).json({error:"Valid organization name required."});
+  if(typeof b.email!=="string"||!/^[-.+\\w]+@[-.\\w]+\\.[A-Za-z]{2,}$/.test(b.email)||b.email.length>254)return r.status(400).json({error:"Valid owner email required."});
+  if(typeof b.password!=="string"||b.password.length<12||b.password.length>200)return r.status(400).json({error:"Owner password must be 12–200 characters."});
+  const organizationSlug=slug(b.organizationName);
+  const c=await db.connect();
+  try{
+   await c.query("BEGIN");
+   await c.query("SELECT pg_advisory_xact_lock(20261112)");
+   const exists=await c.query("SELECT id FROM organizations WHERE slug=$1",[organizationSlug]);
+   if(exists.rowCount){await c.query("ROLLBACK");return r.status(409).json({error:"A hotel workspace with that name already exists. Choose a distinct hotel name."});}
+   const o=await c.query("INSERT INTO organizations(name,slug) VALUES($1,$2) RETURNING id,name,slug",[b.organizationName.trim(),organizationSlug]);
+   const u=await c.query("INSERT INTO users(organization_id,email,password_hash,role) VALUES($1,lower($2),$3,'owner') RETURNING email",[o.rows[0].id,b.email,await pwHash(b.password)]);
+   await c.query("INSERT INTO audit_logs(organization_id,action,target_type) VALUES($1,'organization.created','organization')",[o.rows[0].id]);
+   await c.query("COMMIT");
+   r.status(201).json({organization:{name:o.rows[0].name,slug:o.rows[0].slug},owner:{email:u.rows[0].email},message:"Hotel workspace created. Its owner can now sign in using this workspace slug."});
+  }catch(e){await c.query("ROLLBACK");if(e.code==="23505")return r.status(409).json({error:"That hotel workspace or owner email already exists."});throw e;}finally{c.release();}
  }catch(e){n(e);}
 });
 app.post("/api/auth/login",requireDb,async(q,r,n)=>{

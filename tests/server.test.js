@@ -26,25 +26,17 @@ before(async () => {
   if (!ready) throw new Error("Veyra server did not become ready");
 });
 after(() => { if (child && child.exitCode === null) child.kill("SIGTERM"); });
-test("health endpoint reports demo mode when no API key is configured", async () => {
+test("health endpoint exposes only minimal process liveness", async () => {
   const response = await fetch(`${baseUrl}/api/health`);
   const body = await response.json();
   assert.equal(response.status, 200);
-  assert.equal(body.status, "degraded");
-  assert.equal(body.readyForPilot, false);
-  assert.equal(body.checks.databaseConnected, false);
-  assert.equal(body.checks.aiConfigured, false);
-  assert.equal(body.mode, "demo-no-api-key");
-  assert.equal(body.humanHandoff, "not-configured");
-  assert.equal(body.guestDataStorage, false);
-  assert.equal(body.database, "not-configured");
+  assert.deepEqual(body, { status: "ok" });
 });
-test("pilot readiness remains blocked separately from process health", async () => {
+test("public readiness exposes only a minimal release status", async () => {
   const response = await fetch(`${baseUrl}/api/readiness`);
   const body = await response.json();
   assert.equal(response.status, 503);
-  assert.equal(body.status, "not-ready");
-  assert.equal(body.readyForPilot, false);
+  assert.deepEqual(body, { status: "not-ready", readyForPilot: false });
 });
 test("chat rejects an empty message", async () => {
   const response = await fetch(`${baseUrl}/api/chat`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ message: "   " }) });
@@ -194,22 +186,15 @@ test("editing approved hotel knowledge requires reapproval", () => {
   assert.match(server, /body\.content\.length>12000/);
 });
 
-test("health endpoint cannot report pilot readiness with missing prerequisites", async () => {
-  const response = await fetch(`${baseUrl}/api/health`);
-  const body = await response.json();
-  assert.equal(body.readyForPilot, false);
-  assert.deepEqual(body.checks, {
-    databaseConnected: false,
-    aiConfigured: false,
-    guestDataStorageEnabled: false,
-    staffWebhookConfigured: false,
-    durableBackupsVerified: false,
-    tenantIsolationTestsPassed: false,
-    providerOAuthTested: false,
-    hotelPrivacyApproved: false,
-    staffHandoffTested: false,
-    pilotReleaseApproved: false,
-  });
+test("process health stays live while public pilot readiness remains closed", async () => {
+  const [healthResponse, readinessResponse] = await Promise.all([
+    fetch(`${baseUrl}/api/health`),
+    fetch(`${baseUrl}/api/readiness`)
+  ]);
+  assert.equal(healthResponse.status, 200, "process liveness must remain separate from pilot readiness");
+  assert.deepEqual(await healthResponse.json(), { status: "ok" }, "health must not disclose internal tenant or release-gate configuration");
+  assert.equal(readinessResponse.status, 503, "missing production prerequisites must keep the public readiness gate closed");
+  assert.deepEqual(await readinessResponse.json(), { status: "not-ready", readyForPilot: false });
 });
 
 test("knowledge documents retain tenant-scoped version history", () => {
@@ -248,9 +233,17 @@ test("public guest chat requires fresh tenant-specific AI, staff and storage ver
   assert.match(server, /verified_at>now\(\)-interval '30 days'/);
   assert.match(server, /verifiedForHotel\.has\("ai_provider"\)/);
   assert.match(server, /verifiedForHotel\.has\("staff_webhook"\)/);
-  assert.match(server, /FROM organization_storage_connections WHERE organization_id=\$1 AND status='connected'/);
+  assert.match(server, /FROM storage_connections WHERE organization_id=\$1 AND status='connected' AND last_sync_at>now\(\)-interval '30 days' AND last_error IS NULL LIMIT 1/);
+  assert.match(server, /FROM organization_privacy_approvals p LEFT JOIN retention_purge_runs r ON r.organization_id=p.organization_id WHERE p.organization_id=\$1 AND p.revoked_at IS NULL/);
+  assert.match(server, /SELECT status,provider,last_sync_at,last_error,\(last_sync_at>now\(\)-interval '30 days' AND last_error IS NULL\) AS verified FROM storage_connections WHERE organization_id=\$1 AND status='connected'/);
+  assert.match(server, /storage\.rows\[0\]\.verified===true/);
+  assert.doesNotMatch(server, /FROM organization_storage_connections WHERE organization_id=\$1 AND status='connected'/);
+  const storage = fs.readFileSync("storage-integrations.js", "utf8");
+  const dashboard = fs.readFileSync("dashboard.html", "utf8");
+  assert.match(storage, /INSERT INTO storage_connections/);
+  assert.match(dashboard, /api\("\/api\/admin\/storage\/connections"\)/);
   assert.match(server, /This hotel's AI and staff notification integrations must be verified/);
-  assert.match(server, /This hotel must connect and authorize its own storage provider/);
+  assert.match(server, /This hotel needs a successful storage file listing within the last 30 days/);
 });
 
 test("AI and staff integrations require live verification before onboarding marks them complete", () => {

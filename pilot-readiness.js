@@ -6,7 +6,9 @@ const REQUIRED_PILOT_CHECKS = Object.freeze([
   "durableBackupsVerified",
   "tenantIsolationTestsPassed",
   "providerOAuthTested",
-  "hotelPrivacyApproved",
+  "clientIpRateLimitVerified",
+  "platformPrivacyReviewPassed",
+  "retentionEnforcementVerified",
   "staffHandoffTested",
   "pilotReleaseApproved",
 ]);

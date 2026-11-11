@@ -14,8 +14,12 @@ test("two hotel workspaces remain isolated across live API resources", { skip: !
   let webhookServer;
   let webhookUrl;
   const webhookEvents = [];
+  const modelRequests = [];
   const webhookSecret = "integration-test-webhook-secret";
   const password = "test-password-for-hotel-owner";
+  let openAiServer;
+  let openAiBaseUrl;
+  let failNextModelRequest = false;
 
   async function freePort() {
     const server = net.createServer();
@@ -56,6 +60,7 @@ test("two hotel workspaces remain isolated across live API resources", { skip: !
   t.after(async () => {
     if (child && child.exitCode === null) child.kill("SIGTERM");
     if (webhookServer) await new Promise((resolve) => webhookServer.close(resolve));
+    if (openAiServer) await new Promise((resolve) => openAiServer.close(resolve));
     await pool.end();
   });
 
@@ -72,6 +77,39 @@ test("two hotel workspaces remain isolated across live API resources", { skip: !
   await new Promise((resolve) => webhookServer.listen(0, "127.0.0.1", resolve));
   webhookUrl = `http://127.0.0.1:${webhookServer.address().port}/staff-handoff`;
 
+  openAiServer = http.createServer((req, res) => {
+    let raw = "";
+    req.setEncoding("utf8");
+    req.on("data", (chunk) => { raw += chunk; });
+    req.on("end", () => {
+      modelRequests.push(JSON.parse(raw));
+      if (failNextModelRequest) {
+        failNextModelRequest = false;
+        res.writeHead(401, { "content-type": "application/json" });
+        res.end(JSON.stringify({ error: { message: "Synthetic provider outage", type: "authentication_error" } }));
+        return;
+      }
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({
+        id: "chatcmpl-synthetic",
+        object: "chat.completion",
+        created: 1,
+        model: "gpt-4.1-mini",
+        choices: [{
+          index: 0,
+          message: {
+            role: "assistant",
+            content: JSON.stringify({ reply: "Breakfast is served at 7am.", needsHuman: false, handoffReason: "" })
+          },
+          finish_reason: "stop"
+        }],
+        usage: { prompt_tokens: 10, completion_tokens: 10, total_tokens: 20 }
+      }));
+    });
+  });
+  await new Promise((resolve) => openAiServer.listen(0, "127.0.0.1", resolve));
+  openAiBaseUrl = `http://127.0.0.1:${openAiServer.address().port}/v1`;
+
   const port = await freePort();
   baseUrl = `http://127.0.0.1:${port}`;
   const bootstrapToken = crypto.randomBytes(24).toString("hex");
@@ -82,6 +120,8 @@ test("two hotel workspaces remain isolated across live API resources", { skip: !
       ...process.env,
       PORT: String(port),
       NODE_ENV: "test",
+      TRUST_PROXY_HOPS: "1",
+      CLIENT_IP_RATE_LIMIT_VERIFIED: "true",
       DATABASE_URL: databaseUrl,
       DATABASE_SSL: "false",
       OPENAI_API_KEY: "",
@@ -89,8 +129,17 @@ test("two hotel workspaces remain isolated across live API resources", { skip: !
       PLATFORM_PROVISIONING_TOKEN: provisioningToken,
       STAFF_WEBHOOK_URL: webhookUrl,
       STAFF_WEBHOOK_SECRET: webhookSecret,
-      GUEST_DATA_STORAGE_ENABLED: "false",
-      ALLOWED_ORIGINS: "http://localhost:3000"
+      GUEST_DATA_STORAGE_ENABLED: "true",
+      DURABLE_BACKUPS_VERIFIED: "true",
+      TENANT_ISOLATION_TESTS_PASSED: "true",
+      PROVIDER_OAUTH_TESTED: "true",
+      PLATFORM_PRIVACY_REVIEWED: "true",
+      RETENTION_ENFORCEMENT_VERIFIED: "false",
+      RETENTION_WORKER_ENABLED: "false",
+      STAFF_HANDOFF_TESTED: "true",
+      PILOT_RELEASE_APPROVED: "true",
+      // Deliberately include both hotel domains: the public guest API must still enforce the matching tenant's saved website origin.
+      ALLOWED_ORIGINS: "https://alpha.test,https://beta.test,http://localhost:3000"
     },
     stdio: "ignore"
   });
@@ -105,6 +154,18 @@ test("two hotel workspaces remain isolated across live API resources", { skip: !
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
   assert.ok(ready, "database-backed server should initialize its schema");
+
+  const proxyIpCheck = await request("/__test/client-ip", {
+    headers: { "X-Forwarded-For": "198.51.100.99, 203.0.113.10" }
+  });
+  assert.equal(proxyIpCheck.status, 200);
+  const firstResolvedIp = (await proxyIpCheck.json()).ip;
+  assert.equal(firstResolvedIp, "203.0.113.10", "the configured proxy hop must ignore a forged left-most X-Forwarded-For value");
+  const secondProxyIpCheck = await request("/__test/client-ip", {
+    headers: { "X-Forwarded-For": "198.51.100.99, 203.0.113.11" }
+  });
+  assert.equal((await secondProxyIpCheck.json()).ip, "203.0.113.11");
+  assert.notEqual(firstResolvedIp, "203.0.113.11", "different visitor IPs must remain distinguishable for rate limiting");
 
   const firstSetup = await request("/api/setup/organization", {
     method: "POST",
@@ -153,7 +214,7 @@ test("two hotel workspaces remain isolated across live API resources", { skip: !
     [alphaId, alphaDoc.rows[0].id, alphaUser.rows[0].id]
   );
   await pool.query(
-    "INSERT INTO organization_settings(organization_id,website_url,support_email) VALUES($1,'https://alpha.test','alpha@alpha.test'),($2,'https://beta.test','beta@beta.test')",
+    "INSERT INTO organization_settings(organization_id,website_url,support_email,language,fallback_instructions) VALUES($1,'https://alpha.test','alpha@alpha.test','th','Use the Alpha front desk only.'),($2,'https://beta.test','beta@beta.test','fr','Use the Beta reception only.')",
     [alphaId, betaId]
   );
   const alphaConversation = await pool.query(
@@ -181,21 +242,77 @@ test("two hotel workspaces remain isolated across live API resources", { skip: !
     [alphaId, alphaUser.rows[0].id, betaId, betaUser.rows[0].id]
   );
   await pool.query(
-    "INSERT INTO organization_storage_connections(organization_id,provider,workspace_reference,status) VALUES($1,'google_drive','alpha-drive','connected'),($2,'microsoft_sharepoint','beta-sharepoint','connected')",
+    "INSERT INTO storage_connections(organization_id,provider,account_email,encrypted_tokens,status) VALUES($1,'google','storage@alpha.test','encrypted-alpha-placeholder','connected'),($2,'microsoft','storage@beta.test','encrypted-beta-placeholder','connected')",
     [alphaId, betaId]
   );
   await pool.query(
-    "INSERT INTO storage_connections(organization_id,provider,account_email,encrypted_tokens,status) VALUES($1,'google','storage@alpha.test','encrypted-alpha-placeholder','connected'),($2,'microsoft','storage@beta.test','encrypted-beta-placeholder','connected')",
-    [alphaId, betaId]
+    "INSERT INTO organization_integration_checks(organization_id,integration,verified_by) VALUES($1,'ai_provider',$2),($3,'ai_provider',$4)",
+    [alphaId, alphaUser.rows[0].id, betaId, betaUser.rows[0].id]
   );
 
   const alphaSession = await login("hotel-alpha", "owner@alpha.test");
   const betaSession = await login("hotel-beta", "owner@beta.test");
 
+  const invalidKnowledgeApproval = await request("/api/admin/knowledge", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ title: "Unverified input type", content: "This should not be saved as approved knowledge.", approved: "false" })
+  }, alphaSession);
+  assert.equal(invalidKnowledgeApproval.status, 400, "a string value such as 'false' must not be coerced into approved=true");
+  assert.match((await invalidKnowledgeApproval.json()).error, /Approval must be a boolean/i);
+  const alphaApproval = await request("/api/platform/organizations/hotel-alpha/privacy-approval", {
+    method: "POST",
+    headers: { "content-type": "application/json", "X-Platform-Provisioning-Token": provisioningToken },
+    body: JSON.stringify({ approvalReference: "ALPHA-PRIVACY-APPROVAL-TEST", retentionDays: 90 })
+  });
+  assert.equal(alphaApproval.status, 201, "platform operator can record one hotel's written approval");
+  const unauthorizedBetaApproval = await request("/api/platform/organizations/hotel-beta/privacy-approval", {
+    method: "POST",
+    headers: { "content-type": "application/json", "X-Platform-Provisioning-Token": "wrong-token" },
+    body: JSON.stringify({ approvalReference: "BETA-PRIVACY-APPROVAL-TEST", retentionDays: 90 })
+  });
+  assert.equal(unauthorizedBetaApproval.status, 403, "hotel privacy approvals cannot be self-issued without the platform operator token");
+
+  for (const [session, ownProvider, otherProvider] of [
+    [alphaSession, "google", "microsoft"],
+    [betaSession, "microsoft", "google"]
+  ]) {
+    const onboardingResponse = await request("/api/admin/onboarding", {}, session);
+    assert.equal(onboardingResponse.status, 200);
+    const onboarding = await onboardingResponse.json();
+    assert.equal(onboarding.platformReady, false, "missing live AI configuration must keep the platform release gate closed");
+    assert.equal(onboarding.readyForPilot, false, "hotel checks alone must not mark the pilot ready");
+    const storageCheck = onboarding.checks.find((check) => check.key === "hotel_storage");
+    assert.equal(storageCheck.done, false, "an OAuth token without a successful file listing must not satisfy storage readiness");
+    assert.match(storageCheck.detail, /successful file listing is required/i);
+    assert.match(storageCheck.detail, new RegExp(ownProvider));
+    assert.doesNotMatch(storageCheck.detail, new RegExp(otherProvider), "another hotel's storage provider must not leak into this workspace");
+    const privacyCheck = onboarding.checks.find((check) => check.key === "privacy");
+    const isAlpha = session === alphaSession;
+    assert.equal(privacyCheck.done, false, "the first server has no verified retention worker");
+    if (isAlpha) assert.match(privacyCheck.detail, /retention worker has not completed a recent successful run/i);
+    else assert.match(privacyCheck.detail, /platform operator must record this hotel's written privacy approval/i);
+  }
+
+  await pool.query("UPDATE storage_connections SET last_sync_at=now(),last_error=NULL WHERE organization_id IN ($1,$2)", [alphaId, betaId]);
+  for (const [session, ownProvider, otherProvider] of [
+    [alphaSession, "google", "microsoft"],
+    [betaSession, "microsoft", "google"]
+  ]) {
+    const onboarding = await request("/api/admin/onboarding", {}, session);
+    assert.equal(onboarding.status, 200);
+    const state = await onboarding.json();
+    const storageCheck = state.checks.find((check) => check.key === "hotel_storage");
+    assert.equal(storageCheck.done, true, "a recent successful file listing should verify only the hotel's own storage connection");
+    assert.match(storageCheck.detail, new RegExp(ownProvider));
+    assert.doesNotMatch(storageCheck.detail, new RegExp(otherProvider));
+  }
+
+
   const normalizedAlphaSettings = await request("/api/admin/settings", {
     method: "PUT",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ website_url: "https://alpha.test/", support_email: "alpha@alpha.test", timezone: "UTC", language: "en" })
+    body: JSON.stringify({ website_url: "https://alpha.test/", support_email: "alpha@alpha.test", timezone: "UTC", language: "th", fallback_instructions: "Use the Alpha front desk only." })
   }, alphaSession);
   assert.equal(normalizedAlphaSettings.status, 200, "hotel profile should accept and normalize a trailing slash on the website origin: " + await normalizedAlphaSettings.clone().text());
 
@@ -342,4 +459,175 @@ test("two hotel workspaces remain isolated across live API resources", { skip: !
   assert.match((await alphaTranscript.text()), /Private Alpha guest message/);
   const betaTranscript = await request(`/api/admin/conversations/${alphaConversation.rows[0].id}`, {}, betaSession);
   assert.equal(betaTranscript.status, 404);
+  await pool.query("UPDATE organization_privacy_approvals SET retention_days=1 WHERE organization_id=$1", [alphaId]);
+  const oldAlphaConversation = await pool.query(
+    "INSERT INTO conversations(organization_id,channel,status,started_at,last_message_at) VALUES($1,'website','open',now()-interval '2 days',now()-interval '2 days') RETURNING id",
+    [alphaId]
+  );
+  const oldBetaConversation = await pool.query(
+    "INSERT INTO conversations(organization_id,channel,status,started_at,last_message_at) VALUES($1,'website','open',now()-interval '2 days',now()-interval '2 days') RETURNING id",
+    [betaId]
+  );
+  await pool.query(
+    "INSERT INTO messages(conversation_id,role,content,created_at) VALUES($1,'guest','expired Alpha test message',now()-interval '2 days'),($2,'guest','unapproved Beta test message',now()-interval '2 days')",
+    [oldAlphaConversation.rows[0].id, oldBetaConversation.rows[0].id]
+  );
+
+  if (child && child.exitCode === null) {
+    const originalChild = child;
+    originalChild.kill("SIGTERM");
+    await new Promise((resolve) => originalChild.once("exit", resolve));
+  }
+  const privacyPort = await freePort();
+  baseUrl = `http://127.0.0.1:${privacyPort}`;
+  child = spawn(process.execPath, ["server.js"], {
+    cwd: process.cwd(),
+    env: {
+      ...process.env,
+      PORT: String(privacyPort),
+      NODE_ENV: "test",
+      TRUST_PROXY_HOPS: "1",
+      CLIENT_IP_RATE_LIMIT_VERIFIED: "true",
+      DATABASE_URL: databaseUrl,
+      DATABASE_SSL: "false",
+      OPENAI_API_KEY: "synthetic-integration-test-key",
+      OPENAI_BASE_URL: openAiBaseUrl,
+      BOOTSTRAP_TOKEN: bootstrapToken,
+      PLATFORM_PROVISIONING_TOKEN: provisioningToken,
+      STAFF_WEBHOOK_URL: webhookUrl,
+      STAFF_WEBHOOK_SECRET: webhookSecret,
+      GUEST_DATA_STORAGE_ENABLED: "true",
+      DURABLE_BACKUPS_VERIFIED: "true",
+      TENANT_ISOLATION_TESTS_PASSED: "true",
+      PROVIDER_OAUTH_TESTED: "true",
+      PLATFORM_PRIVACY_REVIEWED: "true",
+      RETENTION_ENFORCEMENT_VERIFIED: "true",
+      RETENTION_WORKER_ENABLED: "true",
+      STAFF_HANDOFF_TESTED: "true",
+      PILOT_RELEASE_APPROVED: "true",
+      // Deliberately include both hotel domains: the public guest API must still enforce the matching tenant's saved website origin.
+      ALLOWED_ORIGINS: "https://alpha.test,https://beta.test,http://localhost:3000"
+    },
+    stdio: "ignore"
+  });
+  let privacyServerReady = false;
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    if (child.exitCode !== null) throw new Error("Privacy-gate test server exited during startup");
+    try {
+      const response = await fetch(baseUrl + "/api/health");
+      if (response.ok) { privacyServerReady = true; break; }
+    } catch {}
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  assert.ok(privacyServerReady, "privacy-gate test server should start with synthetic platform approvals");
+  let retentionRunReady = false;
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const run = await pool.query("SELECT last_success_at,last_deleted_conversations FROM retention_purge_runs WHERE organization_id=$1", [alphaId]);
+    if (run.rowCount && run.rows[0].last_success_at) {
+      retentionRunReady = true;
+      assert.equal(run.rows[0].last_deleted_conversations, 1, "the worker should delete the expired Alpha conversation");
+      break;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  assert.ok(retentionRunReady, "the scheduled retention worker should complete a per-hotel purge");
+  const expiredAlpha = await pool.query("SELECT id FROM conversations WHERE id=$1", [oldAlphaConversation.rows[0].id]);
+  const retainedBeta = await pool.query("SELECT id FROM conversations WHERE id=$1", [oldBetaConversation.rows[0].id]);
+  const expiredAlphaMessages = await pool.query("SELECT id FROM messages WHERE conversation_id=$1", [oldAlphaConversation.rows[0].id]);
+  const retainedBetaMessages = await pool.query("SELECT id FROM messages WHERE conversation_id=$1", [oldBetaConversation.rows[0].id]);
+  assert.equal(expiredAlpha.rowCount, 0, "Alpha's approved retention policy should delete expired conversation data");
+  assert.equal(expiredAlphaMessages.rowCount, 0, "conversation deletion should cascade to guest messages");
+  assert.equal(retainedBeta.rowCount, 1, "Alpha's approval must not purge Beta's data");
+  assert.equal(retainedBetaMessages.rowCount, 1, "Beta's messages must remain scoped to Beta");
+
+  await pool.query("UPDATE storage_connections SET last_sync_at=NULL WHERE organization_id=$1", [alphaId]);
+  const alphaStorageUnverifiedChat = await request("/api/public/hotel-alpha/chat", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ message: "What time is breakfast?" })
+  });
+  assert.equal(alphaStorageUnverifiedChat.status, 503);
+  assert.match((await alphaStorageUnverifiedChat.json()).error, /successful storage file listing within the last 30 days/i);
+  await pool.query("UPDATE storage_connections SET last_sync_at=now(),last_error=NULL WHERE organization_id=$1", [alphaId]);
+
+  const alphaReadyResponse = await request("/api/admin/onboarding", {}, alphaSession);
+  const alphaReady = await alphaReadyResponse.json();
+  assert.equal(alphaReady.platformReady, true);
+  assert.equal(alphaReady.readyForPilot, true, "Alpha should pass both platform and hotel-specific checks when all synthetic gates are satisfied");
+  const betaReadyResponse = await request("/api/admin/onboarding", {}, betaSession);
+  const betaReady = await betaReadyResponse.json();
+  assert.equal(betaReady.platformReady, true);
+  assert.equal(betaReady.readyForPilot, false, "Beta must remain blocked by its own missing privacy approval");
+
+  const betaGuestChat = await request("/api/public/hotel-beta/chat", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ message: "What time is breakfast?" })
+  });
+  assert.equal(betaGuestChat.status, 503);
+  assert.match((await betaGuestChat.json()).error, /privacy and retention approval/i, "a different hotel's approval must not unlock Beta guest chat");
+
+  const alphaApprovedKnowledgeChat = await request("/api/public/hotel-alpha/chat", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ message: "What time is breakfast?" })
+  });
+  assert.equal(alphaApprovedKnowledgeChat.status, 200, "Alpha can use its own verified configuration and approved knowledge: " + await alphaApprovedKnowledgeChat.clone().text());
+  const alphaGuestBody = await alphaApprovedKnowledgeChat.json();
+  assert.equal(alphaGuestBody.reply, "Breakfast is served at 7am.");
+  assert.equal(alphaGuestBody.needsHuman, false);
+  const alphaSystemPrompt = modelRequests.at(-1).messages.find((message) => message.role === "system").content;
+  assert.match(alphaSystemPrompt, /Preferred reply language: "th"/);
+  assert.match(alphaSystemPrompt, /alpha@alpha\.test/);
+  assert.match(alphaSystemPrompt, /Use the Alpha front desk only/);
+  assert.match(alphaSystemPrompt, /Alpha serves breakfast at 7am\./);
+  assert.doesNotMatch(alphaSystemPrompt, /Beta|beta@beta\.test/);
+
+  failNextModelRequest = true;
+  const providerFailure = await request("/api/public/hotel-alpha/chat", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ message: "Could you help with a technical issue?" })
+  });
+  assert.equal(providerFailure.status, 200, "an AI provider outage should produce a safe fallback and staff escalation");
+  const providerFailureBody = await providerFailure.json();
+  assert.equal(providerFailureBody.reply, "I cannot prepare a reliable answer right now. Please contact hotel staff.");
+  assert.equal(providerFailureBody.needsHuman, true);
+  assert.equal(providerFailureBody.notificationDelivered, true);
+  assert.equal(providerFailureBody.notificationStatus, "delivered");
+  assert.ok(providerFailureBody.escalationId);
+  const providerFailureEvent = webhookEvents.at(-1);
+  assert.equal(providerFailureEvent.payload.organizationId, alphaId);
+  assert.equal(providerFailureEvent.payload.organizationSlug, "hotel-alpha");
+  assert.match(providerFailureEvent.payload.reason, /Live AI is temporarily unavailable/);
+  assert.equal(providerFailureEvent.signature, crypto.createHmac("sha256", webhookSecret).update(JSON.stringify(providerFailureEvent.payload)).digest("hex"));
+  const persistedProviderFailure = await pool.query("SELECT notification_status,notification_attempts FROM escalations WHERE id=$1", [providerFailureBody.escalationId]);
+  assert.deepEqual(persistedProviderFailure.rows[0], { notification_status: "delivered", notification_attempts: 1 });
+
+  await pool.query("DELETE FROM knowledge_documents WHERE organization_id=$1", [alphaId]);
+  const alphaGuestChat = await request("/api/public/hotel-alpha/chat", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ message: "What time is breakfast?" })
+  });
+  assert.equal(alphaGuestChat.status, 503);
+  assert.match((await alphaGuestChat.json()).error, /No hotel information has been approved/i, "Alpha should pass its own privacy gate and stop at the next missing prerequisite");
+  const unauthorizedRevoke = await request("/api/platform/organizations/hotel-alpha/privacy-approval", {
+    method: "DELETE",
+    headers: { "X-Platform-Provisioning-Token": "wrong-token" }
+  });
+  assert.equal(unauthorizedRevoke.status, 403, "a hotel approval cannot be revoked without the platform operator token");
+  const revokeAlpha = await request("/api/platform/organizations/hotel-alpha/privacy-approval", {
+    method: "DELETE",
+    headers: { "X-Platform-Provisioning-Token": provisioningToken }
+  });
+  assert.equal(revokeAlpha.status, 200);
+  const alphaAfterRevoke = await request("/api/admin/onboarding", {}, alphaSession);
+  const alphaPrivacyAfterRevoke = (await alphaAfterRevoke.json()).checks.find((check) => check.key === "privacy");
+  assert.equal(alphaPrivacyAfterRevoke.done, false, "revoking approval must close that hotel's privacy gate again");
+  const retainedApproval = await pool.query("SELECT revoked_at FROM organization_privacy_approvals WHERE organization_id=$1", [alphaId]);
+  const retainedPurgeRun = await pool.query("SELECT last_success_at FROM retention_purge_runs WHERE organization_id=$1", [alphaId]);
+  assert.equal(retainedApproval.rowCount, 1, "revocation must preserve the retention schedule for existing data");
+  assert.ok(retainedApproval.rows[0].revoked_at);
+  assert.equal(retainedPurgeRun.rowCount, 1, "retention monitoring must continue after guest-chat approval is revoked");
 });

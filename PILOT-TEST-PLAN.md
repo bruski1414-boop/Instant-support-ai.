@@ -60,21 +60,33 @@ Any cross-workspace data exposure is a release-blocking security defect.
 ## 6. Privacy, reliability and release gates
 
 - [ ] Hotel approves its privacy notice, data-processing terms, lawful basis/consent where applicable, retention schedule and deletion process.
+- [ ] A platform operator records each hotel's written approval separately; Alpha's approval must not satisfy Beta's privacy gate.
+- [ ] Platform-wide privacy review and per-hotel approval are separate. Keep RETENTION_ENFORCEMENT_VERIFIED false until automated per-hotel retention and deletion are implemented and tested.
 - [ ] Durable database hosting, automated backups and a successful restore drill are in place.
 - [ ] Deletion behavior is documented for active records, logs, backups and provider retention.
 - [ ] Secrets are stored only in the hosting provider's secret manager and rotated under an approved procedure.
 - [ ] Rate limits, request-size limits, error handling and abuse controls are tested.
+- [ ] The actual Render proxy hop count is measured; `TRUST_PROXY_HOPS` matches it; forged forwarded prefixes cannot change the resolved visitor IP; distinct visitors receive separate rate-limit identities. Keep `CLIENT_IP_RATE_LIMIT_VERIFIED` false until this is proven.
 - [ ] Monitoring and an incident-response contact are documented.
 - [ ] A hotel manager approves the knowledge base and staff escalation workflow.
 - [ ] A supervised pilot is run with synthetic or explicitly approved limited data before broader guest use.
 - [ ] Results are measured against a pre-pilot baseline; do not promise revenue or staffing outcomes without evidence.
 
+## Automated CI baseline
+
+The main-branch Veyra CI workflow runs Node.js 20 tests against a disposable PostgreSQL 16 service. The current automated suite includes syntax checks, unit/source regression tests and a live two-hotel API integration test using synthetic Hotel Alpha and Hotel Beta workspaces. That integration test covers separate owner sign-ins; tenant-scoped knowledge, settings, users, audit events, escalations, storage connections and overview data; hotel-specific CORS; signed staff-dispatcher test events and retry routing; operator-only per-hotel privacy approvals; Alpha-only guest-chat approval; the scheduled retention worker deleting expired Alpha data while preserving Beta data; approval revocation with the retention schedule preserved; parallel dashboard requests; and negative cross-tenant reads, edits and deletes.
+
+A passing CI run proves only that those automated synthetic checks passed for the tested commit. It does not prove that the live Render environment has the required secrets, that a real hotel's OAuth or staff receiver works, that the live AI answers correctly, or that backups can be restored.
+
 ## Current known limitations
 
-- The deployed service and database are on free plans; the database is temporary and scheduled to expire on 11 December 2026.
-- Guest-data storage is disabled by default.
+- The deployed web service and PostgreSQL database are on free plans; the database is temporary and scheduled to expire on 11 December 2026. Do not use it for real hotel or guest data.
+- Guest-data storage is disabled by default. Keep it disabled until written hotel privacy/retention approval and durable backup/restore evidence exist. Each hotel now has a separate operator-recorded approval record; a platform-wide flag alone is insufficient.
+- The hourly per-hotel retention worker is implemented and synthetic CI tests it. Live worker monitoring, backup retention/deletion behavior and a production restore drill are not yet verified; keep RETENTION_ENFORCEMENT_VERIFIED false until those are complete.
 - Storage import is limited to small text-based documents and Google Docs; full PDF, Word and spreadsheet extraction, broad sync and incremental sync are not complete.
-- Google and Microsoft app registrations, client credentials, consent and live provider flows have not been verified.
-- Current CI runs syntax checks and Node's test discovery, but comprehensive API, frontend, OAuth and two-tenant isolation integration tests are still required.
+- Google/Microsoft app registration, client credentials, consent and live OAuth flows still require authorised setup and testing with separate hotel accounts.
+- The signed staff webhook path is covered with a synthetic test receiver in CI; the actual hotel dispatcher, staff ownership, delivery monitoring and manual fallback still need a supervised live test.
+- Live AI model verification and answer-quality evaluation, browser-level end-to-end tests, sustained load tests, production monitoring, incident response and independent security/privacy review remain outstanding.
+- The main-branch application uses explicit tenant-scoped SQL queries. Automated cross-tenant tests are important evidence, but they are not a substitute for independent review or a database-level security certification.
 
 Do not describe Veyra as production-ready or hotel-ready until every applicable release gate has been tested and signed off.

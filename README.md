@@ -60,31 +60,42 @@ Important environment variables:
 - `OPENAI_API_KEY`: provider secret stored only in Render.
 - `OPENAI_MODEL`: defaults to `gpt-4.1-mini`.
 - `BOOTSTRAP_TOKEN`: one-time first-workspace setup secret; remove it after the first owner is created.
-- `PLATFORM_PROVISIONING_TOKEN`: separate high-entropy server-side secret required to create each additional hotel workspace through `POST /api/platform/organizations`. Keep it only in hosting secrets and never put it in browser code or public documentation.
+- `PLATFORM_PROVISIONING_TOKEN`: separate high-entropy server-side secret required to create each additional hotel workspace and record/revoke per-hotel privacy approvals through the protected platform API. Keep it only in hosting secrets and never put it in browser code or public documentation.
 - `ALLOWED_ORIGINS`: exact platform/admin origins permitted to call the API. A hotel's own saved HTTPS origin is also dynamically allowed for its own embeddable guest widget.
-- `GUEST_DATA_STORAGE_ENABLED`: defaults to false. Do not enable until hotel privacy, data-processing and retention arrangements are approved and durable storage is in place.
+- `TRUST_PROXY_HOPS`: exact numeric proxy hop count measured from the live Render request path; do not guess or set Express `trust proxy` to `true` blindly.
+- `CLIENT_IP_RATE_LIMIT_VERIFIED=true`: set only after the measured hop count is configured and separate real visitor IPs resolve to separate rate-limit identities. Public guest chat stays blocked until this evidence exists.
+- `GUEST_DATA_STORAGE_ENABLED`: defaults to false. Do not enable until platform privacy review, each hotel's separately recorded written approval, durable backups and verified automated retention/deletion are in place.
 - `STORAGE_OAUTH_REDIRECT_BASE`: public HTTPS origin of this Veyra deployment, for example `https://veyra-ai-prototype.onrender.com`.
 - `STORAGE_TOKEN_ENCRYPTION_KEY`: base64-encoded 32-byte random key used for AES-256-GCM encryption of per-hotel OAuth tokens. Keep only in hosting secrets; never commit it.
 - `GOOGLE_OAUTH_CLIENT_ID` and `GOOGLE_OAUTH_CLIENT_SECRET`: Google OAuth web application credentials. Register callback `https://<veyra-origin>/api/admin/storage/oauth/callback` and enable the Google Drive API.
 - `MICROSOFT_OAUTH_CLIENT_ID` and `MICROSOFT_OAUTH_CLIENT_SECRET`: Microsoft Entra application credentials. Register the same callback as a Web redirect URI and grant admin-approved delegated permissions `Files.Read.All`, `Sites.Read.All`, `User.Read`, and `offline_access`.
-- `STAFF_WEBHOOK_URL` and `STAFF_WEBHOOK_SECRET`: signed central staff-dispatcher receiver. It must route using the event's `organizationId` and `organizationSlug`; each hotel owner can send a labelled integration test from their workspace.\n- `DURABLE_BACKUPS_VERIFIED=true`: set only after a durable backup and restore test is documented.\n- `TENANT_ISOLATION_TESTS_PASSED=true`: set only after automated tests prove cross-hotel data isolation.\n- `PROVIDER_OAUTH_TESTED=true`: set only after Google/Microsoft OAuth and document access are tested with separate test tenants.\n- `HOTEL_PRIVACY_APPROVED=true`: set only after the pilot hotel has approved its privacy and retention arrangements in writing.\n- `STAFF_HANDOFF_TESTED=true`: set only after a real staff notification and manual fallback have both been tested.\n- `PILOT_RELEASE_APPROVED=true`: final release approval after all evidence above is reviewed. Never set these flags just to make the dashboard green.
+- `STAFF_WEBHOOK_URL` and `STAFF_WEBHOOK_SECRET`: signed central staff-dispatcher receiver. It must route using the event's `organizationId` and `organizationSlug`; each hotel owner can send a labelled integration test from their workspace.
+- `DURABLE_BACKUPS_VERIFIED=true`: set only after a durable backup and restore test is documented.
+- `TENANT_ISOLATION_TESTS_PASSED=true`: set only after automated tests prove cross-hotel data isolation.
+- `PROVIDER_OAUTH_TESTED=true`: set only after Google/Microsoft OAuth and document access are tested with separate test tenants.
+- `PLATFORM_PRIVACY_REVIEWED=true`: platform-wide privacy and data-processing review; it is not a substitute for each hotel's own written approval.
+- `RETENTION_WORKER_ENABLED=true`: starts the hourly per-hotel purge worker. It deletes conversations, messages and linked escalations after the hotel's retention period, skips open/claimed escalations, and continues purging after an approval is revoked or guest intake is disabled. This is a destructive setting; an authorised adult operator must enable it only after reviewing each hotel's policy.
+- `RETENTION_ENFORCEMENT_VERIFIED=true`: set only after the worker, monitoring and backup-retention/deletion behavior have been tested and reviewed. This is not verified yet.
+- `STAFF_HANDOFF_TESTED=true`: set only after a real staff notification and manual fallback have both been tested.
+- `PILOT_RELEASE_APPROVED=true`: final release approval after all evidence above and each hotel's approval record are reviewed. Never set these flags just to make the dashboard green.
+- Per-hotel written privacy approval is recorded only by a platform operator after reviewing the hotel's written approval: `POST /api/platform/organizations/:slug/privacy-approval` with the `X-Platform-Provisioning-Token` header and an `approvalReference` plus `retentionDays` body field. `DELETE` on the same path revokes new guest-chat approval but preserves the retention schedule so existing data continues to be purged. The record does not prove that backup retention or all legal deletion obligations are satisfied.
 
 Never commit secrets or place them in browser JavaScript.
 
 ## Initial workspace setup
 
 1. A parent or guardian should manage the hosting account, provider billing and any paid upgrade.
-2. Confirm the Render service has `DATABASE_URL` configured and `/api/health` reports `database: connected`. Check `/api/readiness` separately; it will remain degraded until every pilot requirement is satisfied.
+2. Confirm the Render service has `DATABASE_URL` configured. `/api/health` is a minimal process-liveness check; use `/api/readiness` for a minimal platform release status and the authenticated `/api/admin/onboarding` endpoint for per-hotel setup details.
 3. Add the AI provider key in Render's service environment. Do not paste secrets into chat or GitHub.
 4. Use `/setup.html` with the one-time bootstrap token to create the first owner.
 5. Remove `BOOTSTRAP_TOKEN` from Render and redeploy.
 6. For each additional hotel, a trusted platform operator must provision a separate workspace through `POST /api/platform/organizations` using the `PLATFORM_PROVISIONING_TOKEN` header. Give that hotel's owner their own workspace slug and credentials; never share one hotel's login or storage authorization with another.
-6. Sign in at `/dashboard.html` using the workspace slug shown by the setup page, plus the owner email and password.
-7. Add hotel knowledge as unapproved; a hotel manager must verify it before approval.
-8. Set `ALLOWED_ORIGINS` to the exact hotel website origin.
-9. Test the staff notification receiver and its fallback process.
-10. Enable guest-data storage only after the hotel has approved its privacy notice, data-processing terms and retention period, and the database has durable backups and a restore plan.
-11. Embed the widget on the hotel site:
+7. Sign in at `/dashboard.html` using the workspace slug shown by the setup page, plus the owner email and password.
+8. Add hotel knowledge as unapproved; a hotel manager must verify it before approval.
+9. Set `ALLOWED_ORIGINS` to the exact hotel website origin.
+10. Test the staff notification receiver and its fallback process.
+11. Keep guest-data storage disabled until platform-wide privacy review, a platform-operator record of this hotel's written approval, durable backups and automated retention/deletion are all verified. The retention-enforcement gate is not yet satisfied.
+12. Embed the widget on the hotel site:
 
     ```html
     <script src="https://veyra-ai-prototype.onrender.com/widget.js"
@@ -95,10 +106,12 @@ Never commit secrets or place them in browser JavaScript.
 
 ## API endpoints
 
-- `GET /api/health` — process health for the hosting platform; returns HTTP 200 while reporting dependency status
-- `GET /api/readiness` — full hotel pilot readiness; returns HTTP 503 until all required checks pass
+- `GET /api/health` — minimal process liveness for the hosting platform; returns HTTP 200 without exposing internal configuration flags
+- `GET /api/readiness` — minimal platform-wide `ready` / `not-ready` status; detailed per-hotel checks require authentication through `GET /api/admin/onboarding`
 - `POST /api/setup/organization` — one-time first-owner bootstrap
 - `POST /api/platform/organizations` — protected creation of additional hotel workspaces and owner accounts
+- `POST /api/platform/organizations/:slug/privacy-approval` — platform-operator-only record of a hotel's written approval and retention target
+- `DELETE /api/platform/organizations/:slug/privacy-approval` — revoke that hotel's approval record
 - `POST /api/admin/integrations/test-ai` — owner/admin verifies the configured AI model for the current hotel
 - `POST /api/admin/integrations/test-staff-webhook` — owner/admin sends a signed, guest-data-free test event for the current hotel
 - `POST /api/auth/login`
@@ -118,7 +131,9 @@ Never commit secrets or place them in browser JavaScript.
 - `POST /api/invitations/accept` — single-use invitation acceptance
 - `GET /api/auth/me`
 - `GET /api/auth/csrf`
-- `GET /api/admin/conversations/:id` — tenant-scoped conversation transcript\n- `DELETE /api/admin/conversations/:id` — owner/admin-only, tenant-scoped conversation deletion\n- `GET /api/admin/overview`
+- `GET /api/admin/conversations/:id` — tenant-scoped conversation transcript
+- `DELETE /api/admin/conversations/:id` — owner/admin-only, tenant-scoped conversation deletion
+- `GET /api/admin/overview` — tenant-scoped dashboard metrics and recent conversations
 - `GET/POST /api/admin/knowledge`
 - `PATCH/DELETE /api/admin/knowledge/:id` — update, reapprove or delete knowledge; edits remove approval
 - `GET /api/admin/knowledge/:id/versions` — review history including source and review metadata
@@ -132,7 +147,8 @@ Never commit secrets or place them in browser JavaScript.
 This is an active prototype, not a certified or production-approved hotel system. Before real guest use, it still needs:
 
 - Durable paid database hosting, automated backups and a successful restore drill.
-- Hotel-approved privacy notice, data-processing terms, lawful basis/consent where required, retention and deletion workflow.
+- Platform-wide privacy review and a separate written approval record for every hotel; one hotel's approval must never unlock another hotel's workspace.
+- Automated per-hotel retention/deletion enforcement, durable paid database hosting, backups and a successful restore drill.
 - Verified hotel knowledge, source/version history and named approval responsibility.
 - Verified staff notification integration, retries, delivery audit and an operational fallback.
 - Email verification, password recovery, MFA and session/device management.

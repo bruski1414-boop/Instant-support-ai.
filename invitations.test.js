@@ -47,7 +47,15 @@ test("hotel onboarding readiness checks real configuration and privacy gate", ()
   assert.match(server, /u\.protocol==="https:"&&u\.origin===p\.website_url/);
   assert.match(server, /website=u\.origin/);
   assert.match(server, /GUEST_DATA_STORAGE_ENABLED==="true"/);
+  assert.match(server, /CREATE TABLE IF NOT EXISTS organization_privacy_approvals/);
+  assert.match(server, /app\.post\("\/api\/platform\/organizations\/:slug\/privacy-approval"/);
+  assert.match(server, /FROM organization_privacy_approvals p LEFT JOIN retention_purge_runs r ON r.organization_id=p.organization_id WHERE p.organization_id=\$1/);
+  assert.match(server, /PLATFORM_PRIVACY_REVIEWED==="true"/);
+  assert.match(server, /RETENTION_ENFORCEMENT_VERIFIED==="true"/);
   assert.match(server, /checks\.every\(x=>x\.done\)/);
+  assert.match(server, /hotelReady=checks\.every\(x=>x\.done\),platformState=await readinessSnapshot\(\),readyForPilot=hotelReady&&platformState\.readyForPilot/);
+  assert.match(server, /platformReady:platformState\.readyForPilot/);
+  assert.match(dashboard, /o\.platformReady===false/);
   assert.match(dashboard, /data-panel="setup"/);
   assert.match(dashboard, /api\("\/api\/admin\/onboarding"\)/);
   assert.match(dashboard, /settingsForm/);

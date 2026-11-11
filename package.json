@@ -8,7 +8,8 @@
     "dev": "node --watch server.js",
     "test": "node --test",
     "test:live": "node scripts/live-eval.js",
-    "provision:owner": "node scripts/provision-first-owner.js"
+    "provision:owner": "node scripts/provision-first-owner.js",
+    "preflight:production": "node scripts/deployment-preflight.js"
   },
   "engines": {
     "node": ">=20"

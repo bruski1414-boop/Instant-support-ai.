@@ -112,4 +112,5 @@ test("guest widget reuses its server-issued conversation id", () => {
   assert.match(widget, /conversationId=data\.conversationId\|\|conversationId/);
   assert.match(server, /WHERE id=\$1 AND organization_id=\$2/);
   assert.match(server, /LIMIT 8/);
+  assert.match(server, /requestedConversation!==null/);
 });

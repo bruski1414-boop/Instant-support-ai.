@@ -120,6 +120,8 @@ test("two hotel workspaces remain isolated across live API resources", { skip: !
       ...process.env,
       PORT: String(port),
       NODE_ENV: "test",
+      TRUST_PROXY_HOPS: "1",
+      CLIENT_IP_RATE_LIMIT_VERIFIED: "true",
       DATABASE_URL: databaseUrl,
       DATABASE_SSL: "false",
       OPENAI_API_KEY: "",
@@ -152,6 +154,12 @@ test("two hotel workspaces remain isolated across live API resources", { skip: !
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
   assert.ok(ready, "database-backed server should initialize its schema");
+
+  const proxyIpCheck = await request("/__test/client-ip", {
+    headers: { "X-Forwarded-For": "198.51.100.99, 203.0.113.10" }
+  });
+  assert.equal(proxyIpCheck.status, 200);
+  assert.equal((await proxyIpCheck.json()).ip, "203.0.113.10", "the configured proxy hop must ignore a forged left-most X-Forwarded-For value");
 
   const firstSetup = await request("/api/setup/organization", {
     method: "POST",
@@ -472,6 +480,8 @@ test("two hotel workspaces remain isolated across live API resources", { skip: !
       ...process.env,
       PORT: String(privacyPort),
       NODE_ENV: "test",
+      TRUST_PROXY_HOPS: "1",
+      CLIENT_IP_RATE_LIMIT_VERIFIED: "true",
       DATABASE_URL: databaseUrl,
       DATABASE_SSL: "false",
       OPENAI_API_KEY: "synthetic-integration-test-key",

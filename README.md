@@ -72,10 +72,11 @@ Important environment variables:
 - `TENANT_ISOLATION_TESTS_PASSED=true`: set only after automated tests prove cross-hotel data isolation.
 - `PROVIDER_OAUTH_TESTED=true`: set only after Google/Microsoft OAuth and document access are tested with separate test tenants.
 - `PLATFORM_PRIVACY_REVIEWED=true`: platform-wide privacy and data-processing review; it is not a substitute for each hotel's own written approval.
-- `RETENTION_ENFORCEMENT_VERIFIED=true`: set only after automated per-hotel retention enforcement and deletion are implemented and tested. This is not verified yet.
+- `RETENTION_WORKER_ENABLED=true`: starts the hourly per-hotel purge worker. It deletes conversations, messages and linked escalations after the hotel's retention period, skips open/claimed escalations, and continues purging after an approval is revoked or guest intake is disabled. This is a destructive setting; an authorised adult operator must enable it only after reviewing each hotel's policy.
+- `RETENTION_ENFORCEMENT_VERIFIED=true`: set only after the worker, monitoring and backup-retention/deletion behavior have been tested and reviewed. This is not verified yet.
 - `STAFF_HANDOFF_TESTED=true`: set only after a real staff notification and manual fallback have both been tested.
 - `PILOT_RELEASE_APPROVED=true`: final release approval after all evidence above and each hotel's approval record are reviewed. Never set these flags just to make the dashboard green.
-- Per-hotel written privacy approval is recorded only by a platform operator after reviewing the hotel's written approval: `POST /api/platform/organizations/:slug/privacy-approval` with the `X-Platform-Provisioning-Token` header and an `approvalReference` plus `retentionDays` body field. `DELETE` on the same path revokes the record. The record does not prove that automated retention enforcement exists.
+- Per-hotel written privacy approval is recorded only by a platform operator after reviewing the hotel's written approval: `POST /api/platform/organizations/:slug/privacy-approval` with the `X-Platform-Provisioning-Token` header and an `approvalReference` plus `retentionDays` body field. `DELETE` on the same path revokes new guest-chat approval but preserves the retention schedule so existing data continues to be purged. The record does not prove that backup retention or all legal deletion obligations are satisfied.
 
 Never commit secrets or place them in browser JavaScript.
 

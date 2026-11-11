@@ -3,10 +3,17 @@ services:
     name: veyra-ai-prototype
     runtime: node
     plan: free
+    region: singapore
     buildCommand: npm install
     startCommand: npm start
     healthCheckPath: /api/health
     envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: veyra-core-db
+          property: connectionString
+      - key: DATABASE_SSL
+        value: "true"
       - key: OPENAI_API_KEY
         sync: false
       - key: OPENAI_MODEL
@@ -14,4 +21,16 @@ services:
       - key: BUSINESS_NAME
         value: Veyra AI Demo
       - key: BUSINESS_FAQ
-        value: "This is a demo. No real business policies, rates, bookings, or availability are configured."
+        value: "No real hotel policies, rates, bookings, or availability are configured."
+      - key: BOOTSTRAP_TOKEN
+        generateValue: true
+      - key: NODE_ENV
+        value: production
+
+databases:
+  - name: veyra-core-db
+    plan: free
+    region: singapore
+    postgresMajorVersion: 18
+    databaseName: veyra_core_db
+    user: veyra_core_db_user

@@ -51,12 +51,12 @@ function mockReadyDatabasePool(options = {}) {
         rolsuper: false, rolbypassrls: false, rolcreatedb: false, rolcreaterole: false,
       }] };
       if (sql.includes("information_schema.tables")) return { rows: tables.map((table_name) => ({ table_name })) };
+      if (sql.includes("owned_count")) return { rows: [{ owned_count: 0 }] };
       if (sql.includes("FROM pg_class c JOIN pg_namespace")) {
         return { rows: tables.map((table_name) => ({
           table_name, relrowsecurity: true, relforcerowsecurity: true, has_policy: true,
         })) };
       }
-      if (sql.includes("owned_count")) return { rows: [{ owned_count: 0 }] };
       throw new Error("Unexpected readiness SQL");
     },
     async end() {},

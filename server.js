@@ -8,7 +8,7 @@ const path=require("node:path");
 const {promisify}=require("node:util");
 const {Pool}=require("pg");
 const {createStorageRouter}=require("./storage-integrations");
-const {requiresStaffEscalation,buildGuestSupportSystemPrompt}=require("./guest-support-policy");
+const {requiresStaffEscalation,buildGuestSupportSystemPrompt,normalizeGuestSupportAnswer}=require("./guest-support-policy");
 const {buildPilotReadiness}=require("./pilot-readiness");
 const app=express();
 const PORT=Number(process.env.PORT||3000);
@@ -250,8 +250,8 @@ app.post("/api/public/:slug/chat",async(q,r,n)=>{
  {role:"system",content:buildGuestSupportSystemPrompt(org.name,knowledge)},
  ...history,
  {role:"user",content:msg.trim()}]});
- let answer;try{answer=JSON.parse(completion.choices[0]?.message?.content||"");}catch{answer={reply:"I cannot prepare a reliable answer. Please contact hotel staff.",needsHuman:true,handoffReason:"Response validation failed."};}
- const reply=typeof answer.reply==="string"?answer.reply.slice(0,4000):"Please contact hotel staff.";const flagHuman=Boolean(flag||answer.needsHuman);
+ const answer=normalizeGuestSupportAnswer(completion.choices[0]?.message?.content);
+ const reply=answer.reply;const flagHuman=Boolean(flag||answer.needsHuman);
  const c=await db.connect();let cid=conversationId,eid,createdEscalation=false,existingNotificationStatus="not_configured";try{await c.query("BEGIN");if(!cid){const x=await c.query("INSERT INTO conversations(organization_id,channel,status,guest_token_hash) VALUES($1,'website',$2,$3) RETURNING id",[org.id,flagHuman?"escalated":"open",hash(guestToken)]);cid=x.rows[0].id;}else{const locked=await c.query("SELECT id FROM conversations WHERE id=$1 AND organization_id=$2 AND guest_token_hash=$3 FOR UPDATE",[cid,org.id,hash(guestToken)]);if(!locked.rowCount){await c.query("ROLLBACK");return r.status(404).json({error:"Conversation not found."});}}
  await c.query("INSERT INTO messages(conversation_id,role,content) VALUES($1,'guest',$2),($1,'assistant',$3)",[cid,msg.trim(),reply]);await c.query("UPDATE conversations SET last_message_at=now(),status=CASE WHEN $2 THEN 'escalated' WHEN status='resolved' THEN 'open' ELSE status END WHERE id=$1 AND organization_id=$3",[cid,flagHuman,org.id]);
  if(flagHuman){const prior=await c.query("SELECT id,notification_status FROM escalations WHERE conversation_id=$1 AND organization_id=$2 AND status<>'resolved' ORDER BY created_at DESC LIMIT 1",[cid,org.id]);if(prior.rowCount){eid=prior.rows[0].id;existingNotificationStatus=prior.rows[0].notification_status;}else{const e=await c.query("INSERT INTO escalations(organization_id,conversation_id,reason) VALUES($1,$2,$3) RETURNING id",[org.id,cid,String(answer.handoffReason||"Staff review required").slice(0,300)]);eid=e.rows[0].id;createdEscalation=true;}}
@@ -266,7 +266,7 @@ app.post("/api/chat",async(q,r)=>{
  if(db)return r.status(400).json({error:"Use /api/public/:slug/chat for tenant-specific support."});
  const msg=q.body?.message;if(typeof msg!=="string"||!msg.trim())return r.status(400).json({error:"Please enter a message."});if(msg.length>4000)return r.status(413).json({error:"Message too long."});if(q.body?.history!==undefined&&!Array.isArray(q.body.history))return r.status(400).json({error:"Conversation history must be a list."});
  const flag=escalate(msg);if(!ai)return r.status(503).json({error:"Live AI is not configured.",demo:true,needsHuman:flag,handoffConfigured:false});
- try{const faq=process.env.BUSINESS_FAQ||"No approved information.";const x=await ai.chat.completions.create({model:MODEL,temperature:0.1,response_format:{type:"json_object"},messages:[{role:"system",content:"Use only these approved facts: "+faq+". Never invent business facts or actions. If uncertain, request staff. Return JSON with reply, needsHuman, handoffReason."},{role:"user",content:msg.trim()}]});let d;try{d=JSON.parse(x.choices[0]?.message?.content||"");}catch{d={reply:"Please contact staff.",needsHuman:true};}r.json({reply:String(d.reply||"Please contact staff.").slice(0,4000),needsHuman:Boolean(d.needsHuman||flag),handoffConfigured:false,mode:"live-ai"});}catch(e){console.error("Legacy chat failed:",e.message);r.status(502).json({error:"Assistant temporarily unavailable.",needsHuman:true,handoffConfigured:false});}
+ try{const faq=process.env.BUSINESS_FAQ||"No approved information.";const x=await ai.chat.completions.create({model:MODEL,temperature:0.1,response_format:{type:"json_object"},messages:[{role:"system",content:"Use only these approved facts: "+faq+". Never invent business facts or actions. If uncertain, request staff. Return JSON with reply, needsHuman, handoffReason."},{role:"user",content:msg.trim()}]});const d=normalizeGuestSupportAnswer(x.choices[0]?.message?.content);r.json({reply:d.reply,needsHuman:Boolean(d.needsHuman||flag),handoffConfigured:false,mode:"live-ai"});}catch(e){console.error("Legacy chat failed:",e.message);r.status(502).json({error:"Assistant temporarily unavailable.",needsHuman:true,handoffConfigured:false});}
 });
 function publicFile(file,type){return(_q,r)=>{r.type(type);r.sendFile(path.join(__dirname,file));};}
 app.get("/",publicFile("index.html","html"));

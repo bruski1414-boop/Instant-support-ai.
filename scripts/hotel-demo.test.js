@@ -41,7 +41,7 @@ test("sensitive fictional-hotel requests trigger deterministic staff escalation"
 test("live evaluation uses the shared fictional fixture and covers guest-to-staff risks", () => {
   const source = fs.readFileSync(path.join(__dirname, "live-eval.js"), "utf8");
   assert.match(source, /fixtures\/northstar-hotel/);
-  assert.match(source, /No real guest data is used/);
+  assert.match(source, /no real guest data is used/i);
   assert.match(source, /cancellation and refund/i);
   assert.match(source, /food allergy/i);
   assert.match(source, /prompt injection/i);

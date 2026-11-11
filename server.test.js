@@ -173,8 +173,21 @@ test("readiness endpoint returns 503 when live AI is not configured", async (t) 
   assert.equal(body.checks.approvedBusinessKnowledgeConfigured, true);
 });
 
+test("readiness endpoint remains blocked when tenant integration encryption is missing", async (t) => {
+  const base = await withServer(t, makeApp({
+    openaiClient: mockAI("{}").client,
+    dbPool: mockReadyDatabasePool(),
+  }));
+  const response = await fetch(`${base}/api/ready`);
+  const body = await response.json();
+  assert.equal(response.status, 503);
+  assert.equal(body.ready, false);
+  assert.equal(body.checks.tenantIntegrationEncryptionConfigured, false);
+});
+
 test("readiness endpoint returns 200 only when AI and the restricted tenant database are ready", async (t) => {
   const base = await withServer(t, makeApp({
+    env: { TENANT_INTEGRATION_ENCRYPTION_KEY: Buffer.alloc(32, 7).toString("base64") },
     openaiClient: mockAI("{}").client,
     dbPool: mockReadyDatabasePool(),
   }));

@@ -73,7 +73,7 @@ Any cross-workspace data exposure is a release-blocking security defect.
 
 ## Automated CI baseline
 
-The main-branch Veyra CI workflow runs Node.js 20 tests against a disposable PostgreSQL 16 service. The current automated suite includes syntax checks, unit/source regression tests and a live two-hotel API integration test using synthetic Hotel Alpha and Hotel Beta workspaces. That integration test covers separate owner sign-ins; tenant-scoped knowledge, settings, users, audit events, escalations, storage connections and overview data; hotel-specific CORS; signed staff-dispatcher test events and retry routing; parallel dashboard requests; and negative cross-tenant reads, edits and deletes.
+The main-branch Veyra CI workflow runs Node.js 20 tests against a disposable PostgreSQL 16 service. The current automated suite includes syntax checks, unit/source regression tests and a live two-hotel API integration test using synthetic Hotel Alpha and Hotel Beta workspaces. That integration test covers separate owner sign-ins; tenant-scoped knowledge, settings, users, audit events, escalations, storage connections and overview data; hotel-specific CORS; signed staff-dispatcher test events and retry routing; operator-only per-hotel privacy approvals; a check that Alpha's approval does not unlock Beta guest chat; parallel dashboard requests; and negative cross-tenant reads, edits and deletes.
 
 A passing CI run proves only that those automated synthetic checks passed for the tested commit. It does not prove that the live Render environment has the required secrets, that a real hotel's OAuth or staff receiver works, that the live AI answers correctly, or that backups can be restored.
 

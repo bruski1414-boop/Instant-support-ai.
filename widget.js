@@ -41,7 +41,7 @@
       conversationId=data.conversationId||conversationId;
       add(data.reply||"Please contact the hotel team.","assistant");
       if(data.needsHuman){
-        status.textContent=data.notificationDelivered?"The hotel team has been notified.":"Please contact hotel staff directly; automatic notification is not confirmed.";
+        status.textContent=data.notificationDelivered?"The hotel notification endpoint accepted the handoff.":"Please contact hotel staff directly; automatic notification is not confirmed.";
       }else{status.textContent="";}
     }catch(err){add(err.message+" Please use the hotel's usual contact route if you need help now.","assistant");status.textContent="";}
     finally{send.disabled=false;input.focus();}

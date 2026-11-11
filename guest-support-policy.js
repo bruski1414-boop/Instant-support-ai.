@@ -38,4 +38,21 @@ function normalizeGuestSupportAnswer(rawContent) {
   };
 }
 
-module.exports = { requiresStaffEscalation, buildGuestSupportSystemPrompt, normalizeGuestSupportAnswer };
+
+async function generateSafeGuestSupportAnswer(generate, onError = () => {}) {
+  try {
+    if (typeof generate !== "function") throw new TypeError("A response generator is required.");
+    return normalizeGuestSupportAnswer(await generate());
+  } catch (error) {
+    try {
+      if (typeof onError === "function") onError(error);
+    } catch {}
+    return {
+      reply: "I cannot prepare a reliable answer right now. Please contact hotel staff.",
+      needsHuman: true,
+      handoffReason: "Live AI is temporarily unavailable. Staff review is required."
+    };
+  }
+}
+
+module.exports = { requiresStaffEscalation, buildGuestSupportSystemPrompt, normalizeGuestSupportAnswer, generateSafeGuestSupportAnswer };

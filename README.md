@@ -1,80 +1,82 @@
-# Veyra AI — Customer Support MVP
+# Veyra AI
 
-Veyra AI is an early customer-support assistant prototype aimed at hospitality and service businesses.
+Veyra AI is a hotel and service-business customer-support platform in active prototype development. The product is designed to answer guest questions from hotel-approved information and route uncertain or sensitive requests to staff.
 
-## What is in this repository now
+## Live project
+- Website and demo: https://veyra-ai-prototype.onrender.com
+- Owner workspace: https://veyra-ai-prototype.onrender.com/dashboard.html
+- Source code: https://github.com/bruski1414-boop/Instant-support-ai.
 
-- Premium Veyra AI landing page and sample hotel chat.
-- Express backend (server.js) with a live AI chat endpoint.
-- OpenAI API key stays on the server in an environment variable.
-- Business-specific FAQ/context injected into the AI system prompt.
-- Basic request validation and API rate limiting.
-- Escalation flag for requests that should be reviewed by staff.
-- Demo responses when the live backend is not configured.
+## Current engineering foundation
+- Express API with a tenant-specific hotel chat endpoint.
+- PostgreSQL schema for organizations, users, sessions, approved knowledge, conversations, messages, escalations and audit logs.
+- Owner/admin/staff roles and tenant-scoped data access.
+- Scrypt password hashing, opaque session tokens, HttpOnly cookies, CSRF token checks and session expiry.
+- Owner dashboard for overview metrics, knowledge approval and staff handoff status.
+- Embeddable guest chat widget (widget.js).
+- AI responses restricted to each hotel's approved knowledge; unknown facts are not invented.
+- Optional signed webhook for staff escalations.
+- Automated API smoke tests and GitHub Actions CI.
+- Guest conversation storage is disabled by default until privacy terms and retention are approved.
 
-## Important: prototype, not production SaaS
+## Important deployment status
+The multi-tenant code and dashboard are committed. The Render PostgreSQL instance exists on the free plan and expires after 30 days unless upgraded. A Render Blueprint has been planned to adopt the existing service and database and wire DATABASE_URL; the plan still requires approval before it is applied. Until that is done and the service environment is configured, the tenant database features are not live.
 
-This is **not yet a complete €5,000/month enterprise product**. It does not yet include:
-- Customer accounts, organization isolation, or a secure multi-tenant database.
-- Real staff email/SMS/WhatsApp notifications.
-- Booking, CRM, hotel PMS, Shopify, or payment integrations.
-- A secure business-owner dashboard for editing FAQs.
-- Billing, subscription management, audit logs, or enterprise SLAs.
-- Production monitoring, automated tests, or independent security review.
-
-Do not promise those features to customers until they are implemented and tested. Pricing needs to be justified by proven business value, reliability, support, and integrations—not by the number of AI features listed.
-
-## Deploy a prototype on Render
-
-This repository includes a Render Blueprint in `render.yaml`.
-
-1. A parent/guardian should help create or manage any hosting and AI-provider accounts, review billing, and approve API usage.
-2. Open Render and choose **New → Blueprint** (or connect the GitHub repository and create a Blueprint).
-3. Select this repository and review the service settings in `render.yaml`.
-4. In the Render service's Environment settings, add `OPENAI_API_KEY` as a secret. Never paste it into GitHub, website JavaScript, chat messages, or screenshots.
-5. Add the real business's approved FAQ and business name only after receiving permission.
-6. Deploy, then open the service's `/api/health` endpoint and test the chat with non-sensitive sample questions.
-
-Render's free web services may sleep after inactivity and take time to wake up. AI-provider usage may still cost money. A free hosting tier does not mean unlimited or free AI requests. Review current hosting and API prices before enabling customer traffic.
-
-This is a **single-business prototype**, not a multi-company SaaS. Do not connect real customer data or promise service-level guarantees until authentication, tenant isolation, privacy controls, monitoring, and a security review are implemented.
-
-## Run locally
-
-Requirements: Node.js 20 or newer.
-
-1. Install dependencies with: npm install
-2. Copy .env.example to .env.
-3. Add your OpenAI API key to .env. Keep the key private and never commit .env.
-4. Configure BUSINESS_NAME and BUSINESS_FAQ with information approved by the business.
-5. Start the server with: npm start
-6. Open http://localhost:3000.
-
-Without an API key, the website still displays sample demo responses, but the backend returns a setup message instead of calling a live AI model.
+The existing web service currently runs on Render's free web plan. AI responses require an approved server-side OPENAI_API_KEY. Real hotel traffic must not be enabled until the hotel has approved its knowledge, privacy notice, data processing terms, retention period, staff handoff route and testing.
 
 ## Environment variables
+- DATABASE_URL: Render Postgres internal connection string.
+- DATABASE_SSL: true by default.
+- OPENAI_API_KEY: secret API key stored only in Render.
+- OPENAI_MODEL: default gpt-4.1-mini.
+- BOOTSTRAP_TOKEN: one-time setup token generated by Render; remove after first owner is created.
+- ALLOWED_ORIGINS: exact website origins allowed to call the API.
+- GUEST_DATA_STORAGE_ENABLED: defaults to false; set true only after privacy, retention and data-processing approvals and after moving to durable database storage.
+- STAFF_WEBHOOK_URL and STAFF_WEBHOOK_SECRET: optional signed escalation notification receiver.
 
-- OPENAI_API_KEY: server-side secret; required for live AI.
-- OPENAI_MODEL: model name, default gpt-4.1-mini.
-- PORT: server port, default 3000.
-- ALLOWED_ORIGINS: comma-separated origins allowed to call the API. Defaults to localhost only.
-- BUSINESS_NAME: business name used by the assistant.
-- BUSINESS_FAQ: approved facts and policies for the business.
+Never commit secrets or put them in browser JavaScript.
 
-## Next engineering milestones
+## Initial workspace setup
+1. A parent or guardian should manage hosting accounts, API-provider billing and any paid upgrade.
+2. Wait for the Render Blueprint plan to be reviewed and applied, or connect the Postgres internal connection string manually in the Veyra service's Environment settings.
+3. Add the server-side AI key in Render. Do not expose it to the browser.
+4. Confirm /api/health reports database: connected.
+5. Use POST /api/setup/organization with the one-time X-Bootstrap-Token header to create the first owner. Require a unique password of at least 12 characters.
+6. Remove BOOTSTRAP_TOKEN from Render and redeploy.
+7. Sign in at /dashboard.html.
+8. Add hotel knowledge as unapproved, have a hotel manager verify it, then approve it.
+9. Set the exact hotel website origin in ALLOWED_ORIGINS.
+10. Enable conversation storage only after the hotel's privacy and retention requirements are approved and a durable database is in place.
+11. Add the widget to the hotel website:
 
-1. Build authentication and strict tenant separation before serving multiple companies.
-2. Store each company's knowledge base securely and add owner-approved updates.
-3. Add reliable human handoff notifications and staff response tracking.
-4. Add source-grounded answers, confidence checks, and evaluation tests.
-5. Integrate one real business channel at a time (website widget first).
-6. Add usage monitoring, privacy controls, data retention, and billing only after the core service is reliable.
-7. Run security and reliability reviews before handling real customer data.
+    <script src="https://veyra-ai-prototype.onrender.com/widget.js"
+            data-veyra-slug="your-hotel-slug"
+            data-veyra-api="https://veyra-ai-prototype.onrender.com"
+            async></script>
 
-## Safety and reliability principles
+## API endpoints
+- GET /api/health
+- POST /api/setup/organization — one-time owner bootstrap
+- POST /api/auth/login
+- POST /api/auth/logout
+- GET /api/auth/me
+- GET /api/auth/csrf
+- GET /api/admin/overview
+- GET/POST /api/admin/knowledge
+- PATCH/DELETE /api/admin/knowledge/:id
+- GET /api/admin/escalations
+- PATCH /api/admin/escalations/:id
+- POST /api/public/:slug/chat
 
-- Never invent prices, room availability, booking confirmations, refund decisions, or business policies.
-- Escalate uncertain, urgent, sensitive, or complaint-related requests to staff.
-- Do not put API keys in frontend JavaScript or public GitHub files.
-- Use only customer information that the business has permission to provide.
-- Keep a human responsible for consequential decisions.
+## Before any hotel pilot
+This is not yet certified or approved for production hotel use. Still required:
+- Durable database plan, backups and restore test.
+- Verified email, password recovery, MFA and staff invitation workflow.
+- Privacy notice, data-processing terms, consent where required, retention and deletion workflow.
+- Hotel-approved knowledge source/version history.
+- Tested staff notification receiver, retry handling, delivery audit and fallback process.
+- PostgreSQL integration tests, tenant-isolation tests, prompt-injection tests, abuse tests and load tests.
+- Security review, monitoring, incident response and hotel sign-off.
+- A supervised pilot measuring real outcomes against a baseline.
+
+Never promise bookings, refunds, room availability, completed notifications, staff replacement or revenue improvements unless the required integrations and outcomes have been verified.

@@ -227,3 +227,11 @@ test("guest conversation writes lock and revalidate the tenant-owned conversatio
   assert.match(server, /SELECT id FROM conversations WHERE id=\$1 AND organization_id=\$2 AND guest_token_hash=\$3 FOR UPDATE/);
   assert.match(server, /UPDATE conversations SET last_message_at=now\(\),status=CASE WHEN \$2 THEN 'escalated' WHEN status='resolved' THEN 'open' ELSE status END WHERE id=\$1 AND organization_id=\$3/);
 });
+
+
+test("staff handoff events carry stable tenant identifiers for multi-hotel routing", () => {
+  const server = fs.readFileSync("server.js", "utf8");
+  assert.match(server, /organizationId:org\.id,organizationSlug:org\.slug/);
+  assert.match(server, /o\.id,o\.name,o\.slug FROM escalations e JOIN organizations o ON o\.id=e\.organization_id/);
+  assert.match(server, /notify\(\{id:item\.id,name:item\.name,slug:item\.slug\}/);
+});

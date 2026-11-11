@@ -62,7 +62,7 @@ Important environment variables:
 - `BOOTSTRAP_TOKEN`: one-time first-workspace setup secret; remove it after the first owner is created.
 - `PLATFORM_PROVISIONING_TOKEN`: separate high-entropy server-side secret required to create each additional hotel workspace through `POST /api/platform/organizations`. Keep it only in hosting secrets and never put it in browser code or public documentation.
 - `ALLOWED_ORIGINS`: exact platform/admin origins permitted to call the API. A hotel's own saved HTTPS origin is also dynamically allowed for its own embeddable guest widget.
-- `GUEST_DATA_STORAGE_ENABLED`: defaults to false. Do not enable until hotel privacy, data-processing and retention arrangements are approved and durable storage is in place.
+- `GUEST_DATA_STORAGE_ENABLED`: defaults to false. Do not enable until platform privacy review, each hotel's separately recorded written approval, durable backups and verified automated retention/deletion are in place.
 - `STORAGE_OAUTH_REDIRECT_BASE`: public HTTPS origin of this Veyra deployment, for example `https://veyra-ai-prototype.onrender.com`.
 - `STORAGE_TOKEN_ENCRYPTION_KEY`: base64-encoded 32-byte random key used for AES-256-GCM encryption of per-hotel OAuth tokens. Keep only in hosting secrets; never commit it.
 - `GOOGLE_OAUTH_CLIENT_ID` and `GOOGLE_OAUTH_CLIENT_SECRET`: Google OAuth web application credentials. Register callback `https://<veyra-origin>/api/admin/storage/oauth/callback` and enable the Google Drive API.
@@ -87,12 +87,12 @@ Never commit secrets or place them in browser JavaScript.
 4. Use `/setup.html` with the one-time bootstrap token to create the first owner.
 5. Remove `BOOTSTRAP_TOKEN` from Render and redeploy.
 6. For each additional hotel, a trusted platform operator must provision a separate workspace through `POST /api/platform/organizations` using the `PLATFORM_PROVISIONING_TOKEN` header. Give that hotel's owner their own workspace slug and credentials; never share one hotel's login or storage authorization with another.
-6. Sign in at `/dashboard.html` using the workspace slug shown by the setup page, plus the owner email and password.
-7. Add hotel knowledge as unapproved; a hotel manager must verify it before approval.
-8. Set `ALLOWED_ORIGINS` to the exact hotel website origin.
-9. Test the staff notification receiver and its fallback process.
-10. Enable guest-data storage only after the hotel has approved its privacy notice, data-processing terms and retention period, and the database has durable backups and a restore plan.
-11. Embed the widget on the hotel site:
+7. Sign in at `/dashboard.html` using the workspace slug shown by the setup page, plus the owner email and password.
+8. Add hotel knowledge as unapproved; a hotel manager must verify it before approval.
+9. Set `ALLOWED_ORIGINS` to the exact hotel website origin.
+10. Test the staff notification receiver and its fallback process.
+11. Keep guest-data storage disabled until platform-wide privacy review, a platform-operator record of this hotel's written approval, durable backups and automated retention/deletion are all verified. The retention-enforcement gate is not yet satisfied.
+12. Embed the widget on the hotel site:
 
     ```html
     <script src="https://veyra-ai-prototype.onrender.com/widget.js"
@@ -107,6 +107,8 @@ Never commit secrets or place them in browser JavaScript.
 - `GET /api/readiness` — full hotel pilot readiness; returns HTTP 503 until all required checks pass
 - `POST /api/setup/organization` — one-time first-owner bootstrap
 - `POST /api/platform/organizations` — protected creation of additional hotel workspaces and owner accounts
+- `POST /api/platform/organizations/:slug/privacy-approval` — platform-operator-only record of a hotel's written approval and retention target
+- `DELETE /api/platform/organizations/:slug/privacy-approval` — revoke that hotel's approval record
 - `POST /api/admin/integrations/test-ai` — owner/admin verifies the configured AI model for the current hotel
 - `POST /api/admin/integrations/test-staff-webhook` — owner/admin sends a signed, guest-data-free test event for the current hotel
 - `POST /api/auth/login`
@@ -126,7 +128,9 @@ Never commit secrets or place them in browser JavaScript.
 - `POST /api/invitations/accept` — single-use invitation acceptance
 - `GET /api/auth/me`
 - `GET /api/auth/csrf`
-- `GET /api/admin/conversations/:id` — tenant-scoped conversation transcript\n- `DELETE /api/admin/conversations/:id` — owner/admin-only, tenant-scoped conversation deletion\n- `GET /api/admin/overview`
+- `GET /api/admin/conversations/:id` — tenant-scoped conversation transcript
+- `DELETE /api/admin/conversations/:id` — owner/admin-only, tenant-scoped conversation deletion
+- `GET /api/admin/overview` — tenant-scoped dashboard metrics and recent conversations
 - `GET/POST /api/admin/knowledge`
 - `PATCH/DELETE /api/admin/knowledge/:id` — update, reapprove or delete knowledge; edits remove approval
 - `GET /api/admin/knowledge/:id/versions` — review history including source and review metadata
@@ -140,7 +144,8 @@ Never commit secrets or place them in browser JavaScript.
 This is an active prototype, not a certified or production-approved hotel system. Before real guest use, it still needs:
 
 - Durable paid database hosting, automated backups and a successful restore drill.
-- Hotel-approved privacy notice, data-processing terms, lawful basis/consent where required, retention and deletion workflow.
+- Platform-wide privacy review and a separate written approval record for every hotel; one hotel's approval must never unlock another hotel's workspace.
+- Automated per-hotel retention/deletion enforcement, durable paid database hosting, backups and a successful restore drill.
 - Verified hotel knowledge, source/version history and named approval responsibility.
 - Verified staff notification integration, retries, delivery audit and an operational fallback.
 - Email verification, password recovery, MFA and session/device management.

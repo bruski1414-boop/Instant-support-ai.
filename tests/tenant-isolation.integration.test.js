@@ -156,8 +156,8 @@ test("two hotel workspaces remain isolated across live API resources", { skip: !
   const betaSession = await login("hotel-beta", "owner@beta.test");
 
   for (const [session, ownTitle, otherTitle, ownUrl, otherUrl, ownEmail, otherEmail, ownEvent, otherEvent, ownStorage, otherStorage] of [
-    [alphaSession, "Alpha breakfast", "Beta breakfast", "https://alpha.test", "https://beta.test", "owner@alpha.test", "owner@beta.test", "alpha.private_event", "beta.private_event", "alpha-drive", "beta-sharepoint"],
-    [betaSession, "Beta breakfast", "Alpha breakfast", "https://beta.test", "https://alpha.test", "owner@beta.test", "owner@alpha.test", "beta.private_event", "alpha.private_event", "beta-sharepoint", "alpha-drive"]
+    [alphaSession, "Alpha breakfast", "Beta breakfast", "https://alpha.test", "https://beta.test", "owner@alpha.test", "owner@beta.test", "alpha.private_event", "beta.private_event", "google", "microsoft"],
+    [betaSession, "Beta breakfast", "Alpha breakfast", "https://beta.test", "https://alpha.test", "owner@beta.test", "owner@alpha.test", "beta.private_event", "alpha.private_event", "microsoft", "google"]
   ]) {
     const [knowledge, settings, users, audit, escalations, storage, overview] = await Promise.all([
       request("/api/admin/knowledge", {}, session),
@@ -165,7 +165,7 @@ test("two hotel workspaces remain isolated across live API resources", { skip: !
       request("/api/admin/users", {}, session),
       request("/api/admin/audit", {}, session),
       request("/api/admin/escalations", {}, session),
-      request("/api/admin/storage", {}, session),
+      request("/api/admin/storage/connections", {}, session),
       request("/api/admin/overview", {}, session)
     ]);
     for (const response of [knowledge, settings, users, audit, escalations, storage, overview]) assert.equal(response.status, 200);
@@ -181,8 +181,8 @@ test("two hotel workspaces remain isolated across live API resources", { skip: !
     assert.ok(!a.events.some((item) => item.action === otherEvent));
     assert.ok(e.escalations.some((item) => item.reason.includes(ownTitle.split(" ")[0])));
     assert.ok(!e.escalations.some((item) => item.reason.includes(otherTitle.split(" ")[0])));
-    assert.equal(st.connection.workspace_reference, ownStorage);
-    assert.notEqual(st.connection.workspace_reference, otherStorage);
+    assert.ok(st.connections.some((item) => item.provider === ownStorage));
+    assert.ok(!st.connections.some((item) => item.provider === otherStorage));
     assert.equal(o.conversations.length, 1);
     assert.ok(!JSON.stringify(o).includes("Private " + (ownTitle.startsWith("Alpha") ? "Beta" : "Alpha") + " guest message"));
   }

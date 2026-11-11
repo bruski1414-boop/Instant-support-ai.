@@ -146,3 +146,14 @@ test("conversation transcript reads are tenant scoped", () => {
   assert.match(server, /messages:m\.rows\.reverse\(\)/);
   assert.match(dashboard, /view-conversation/);
 });
+
+test("public file serving exposes only the intended frontend assets", async () => {
+  const widget = await fetch(`${baseUrl}/widget.js`);
+  const source = await fetch(`${baseUrl}/server.js`);
+  const docs = await fetch(`${baseUrl}/README.md`);
+  assert.equal(widget.status, 200);
+  assert.equal(source.status, 404);
+  assert.equal(docs.status, 404);
+  assert.equal(widget.headers.get("x-content-type-options"), "nosniff");
+  assert.equal(widget.headers.get("x-frame-options"), "DENY");
+});

@@ -66,6 +66,7 @@ Any cross-workspace data exposure is a release-blocking security defect.
 - [ ] Deletion behavior is documented for active records, logs, backups and provider retention.
 - [ ] Secrets are stored only in the hosting provider's secret manager and rotated under an approved procedure.
 - [ ] Rate limits, request-size limits, error handling and abuse controls are tested.
+- [ ] The actual Render proxy hop count is measured; `TRUST_PROXY_HOPS` matches it; forged forwarded prefixes cannot change the resolved visitor IP; distinct visitors receive separate rate-limit identities. Keep `CLIENT_IP_RATE_LIMIT_VERIFIED` false until this is proven.
 - [ ] Monitoring and an incident-response contact are documented.
 - [ ] A hotel manager approves the knowledge base and staff escalation workflow.
 - [ ] A supervised pilot is run with synthetic or explicitly approved limited data before broader guest use.

@@ -57,7 +57,7 @@ Apply migrations in order: `001_multi_tenant_foundation.sql`, `002_authenticatio
 ## Health and readiness
 
 - `GET /api/health` checks whether the process is responding and reports whether live AI configuration is present. A `degraded` status means the process is up but not ready to answer guests.
-- `GET /api/ready` returns HTTP 200 only when an AI client and approved business knowledge are configured; otherwise it returns HTTP 503. This is a configuration check, not a proof that the provider is reachable or that answers are accurate.
+- `GET /api/ready` returns HTTP 200 only when the AI client is configured, PostgreSQL is reachable, all tenant tables and forced RLS policies exist, and the connected database role is restricted and does not own application tables. Otherwise it returns HTTP 503 with non-secret check results. This is a readiness check, not proof that the AI provider is reachable or that answers are accurate.
 
 ## Run tests
 

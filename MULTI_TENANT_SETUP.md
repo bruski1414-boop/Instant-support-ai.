@@ -30,7 +30,10 @@ In Render service Environment, configure:
 5. POST /api/auth/login; retain returned csrfToken in page memory and send it as X-CSRF-Token on state-changing authenticated calls. Session cookie is HttpOnly.
 6. GET /api/auth/me confirms the workspace.
 7. Add knowledge with POST /api/admin/knowledge. Hotel manager must verify the facts before approved=true.
-8. Use POST /api/public/{organization-slug}/chat for the website widget. Publish a guest privacy notice before enabling storage.
+8. Configure GUEST_DATA_STORAGE_ENABLED=true only after the hotel has approved its privacy notice, data-processing terms and retention period, and a durable database is in place.
+9. Set ALLOWED_ORIGINS to the hotel website origin and test the signed webhook.
+10. Embed the guest widget with: `<script src="https://veyra-ai-prototype.onrender.com/widget.js" data-veyra-slug="your-hotel-slug" data-veyra-api="https://veyra-ai-prototype.onrender.com" async></script>`.
+11. Publish the guest privacy notice before enabling conversation storage.
 
 ## API
 - GET /api/health

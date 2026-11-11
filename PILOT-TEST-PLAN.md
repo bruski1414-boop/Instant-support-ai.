@@ -73,7 +73,7 @@ Any cross-workspace data exposure is a release-blocking security defect.
 
 ## Automated CI baseline
 
-The main-branch Veyra CI workflow runs Node.js 20 tests against a disposable PostgreSQL 16 service. The current automated suite includes syntax checks, unit/source regression tests and a live two-hotel API integration test using synthetic Hotel Alpha and Hotel Beta workspaces. That integration test covers separate owner sign-ins; tenant-scoped knowledge, settings, users, audit events, escalations, storage connections and overview data; hotel-specific CORS; signed staff-dispatcher test events and retry routing; operator-only per-hotel privacy approvals; a check that Alpha's approval does not unlock Beta guest chat; parallel dashboard requests; and negative cross-tenant reads, edits and deletes.
+The main-branch Veyra CI workflow runs Node.js 20 tests against a disposable PostgreSQL 16 service. The current automated suite includes syntax checks, unit/source regression tests and a live two-hotel API integration test using synthetic Hotel Alpha and Hotel Beta workspaces. That integration test covers separate owner sign-ins; tenant-scoped knowledge, settings, users, audit events, escalations, storage connections and overview data; hotel-specific CORS; signed staff-dispatcher test events and retry routing; operator-only per-hotel privacy approvals; Alpha-only guest-chat approval; the scheduled retention worker deleting expired Alpha data while preserving Beta data; approval revocation with the retention schedule preserved; parallel dashboard requests; and negative cross-tenant reads, edits and deletes.
 
 A passing CI run proves only that those automated synthetic checks passed for the tested commit. It does not prove that the live Render environment has the required secrets, that a real hotel's OAuth or staff receiver works, that the live AI answers correctly, or that backups can be restored.
 
@@ -81,7 +81,7 @@ A passing CI run proves only that those automated synthetic checks passed for th
 
 - The deployed web service and PostgreSQL database are on free plans; the database is temporary and scheduled to expire on 11 December 2026. Do not use it for real hotel or guest data.
 - Guest-data storage is disabled by default. Keep it disabled until written hotel privacy/retention approval and durable backup/restore evidence exist. Each hotel now has a separate operator-recorded approval record; a platform-wide flag alone is insufficient.
-- The application records a per-hotel retention target but does not yet enforce automatic retention deletion. RETENTION_ENFORCEMENT_VERIFIED must remain false, so the public guest-chat release gate remains closed.
+- The hourly per-hotel retention worker is implemented and synthetic CI tests it. Live worker monitoring, backup retention/deletion behavior and a production restore drill are not yet verified; keep RETENTION_ENFORCEMENT_VERIFIED false until those are complete.
 - Storage import is limited to small text-based documents and Google Docs; full PDF, Word and spreadsheet extraction, broad sync and incremental sync are not complete.
 - Google/Microsoft app registration, client credentials, consent and live OAuth flows still require authorised setup and testing with separate hotel accounts.
 - The signed staff webhook path is covered with a synthetic test receiver in CI; the actual hotel dispatcher, staff ownership, delivery monitoring and manual fallback still need a supervised live test.

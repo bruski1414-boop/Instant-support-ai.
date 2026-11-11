@@ -81,3 +81,9 @@ test("workspace audit viewer is tenant-scoped and owner/admin-only", () => {
   assert.match(dashboard, /id="auditList"/);
   assert.match(dashboard, /api\("\/api\/admin\/audit"\)/);
 });
+
+test("Render process health stays HTTP 200 while pilot readiness is reported separately", () => {
+  assert.match(server, /app\.get\("\/api\/health".*r\.status\(200\)/s);
+  assert.match(server, /app\.get\("\/api\/readiness".*r\.status\(state\.readyForPilot\?200:503\)/s);
+  assert.match(server, /readyForPilot/);
+});

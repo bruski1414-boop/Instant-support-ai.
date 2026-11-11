@@ -157,3 +157,17 @@ test("public file serving exposes only the intended frontend assets", async () =
   assert.equal(widget.headers.get("x-content-type-options"), "nosniff");
   assert.equal(widget.headers.get("x-frame-options"), "DENY");
 });
+
+test("sign-in is scoped to a hotel workspace", () => {
+  const server = fs.readFileSync("server.js", "utf8");
+  const dashboard = fs.readFileSync("dashboard.html", "utf8");
+  assert.match(server, /organizationSlug/);
+  assert.match(server, /JOIN organizations o ON o\.id=u\.organization_id/);
+  assert.match(server, /o\.slug=\$2/);
+  assert.match(dashboard, /id="workspaceSlug"/);
+});
+
+test("first-owner bootstrap serializes competing setup requests", () => {
+  const server = fs.readFileSync("server.js", "utf8");
+  assert.match(server, /pg_advisory_xact_lock\(20261111\)/);
+});

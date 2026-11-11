@@ -26,25 +26,17 @@ before(async () => {
   if (!ready) throw new Error("Veyra server did not become ready");
 });
 after(() => { if (child && child.exitCode === null) child.kill("SIGTERM"); });
-test("health endpoint reports demo mode when no API key is configured", async () => {
+test("health endpoint exposes only minimal process liveness", async () => {
   const response = await fetch(`${baseUrl}/api/health`);
   const body = await response.json();
   assert.equal(response.status, 200);
-  assert.equal(body.status, "degraded");
-  assert.equal(body.readyForPilot, false);
-  assert.equal(body.checks.databaseConnected, false);
-  assert.equal(body.checks.aiConfigured, false);
-  assert.equal(body.mode, "demo-no-api-key");
-  assert.equal(body.humanHandoff, "not-configured");
-  assert.equal(body.guestDataStorage, false);
-  assert.equal(body.database, "not-configured");
+  assert.deepEqual(body, { status: "ok" });
 });
-test("pilot readiness remains blocked separately from process health", async () => {
+test("public readiness exposes only a minimal release status", async () => {
   const response = await fetch(`${baseUrl}/api/readiness`);
   const body = await response.json();
   assert.equal(response.status, 503);
-  assert.equal(body.status, "not-ready");
-  assert.equal(body.readyForPilot, false);
+  assert.deepEqual(body, { status: "not-ready", readyForPilot: false });
 });
 test("chat rejects an empty message", async () => {
   const response = await fetch(`${baseUrl}/api/chat`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ message: "   " }) });

@@ -14,8 +14,12 @@ test("two hotel workspaces remain isolated across live API resources", { skip: !
   let webhookServer;
   let webhookUrl;
   const webhookEvents = [];
+  const modelRequests = [];
   const webhookSecret = "integration-test-webhook-secret";
   const password = "test-password-for-hotel-owner";
+  let openAiServer;
+  let openAiBaseUrl;
+  let failNextModelRequest = false;
 
   async function freePort() {
     const server = net.createServer();
@@ -56,6 +60,7 @@ test("two hotel workspaces remain isolated across live API resources", { skip: !
   t.after(async () => {
     if (child && child.exitCode === null) child.kill("SIGTERM");
     if (webhookServer) await new Promise((resolve) => webhookServer.close(resolve));
+    if (openAiServer) await new Promise((resolve) => openAiServer.close(resolve));
     await pool.end();
   });
 
@@ -71,6 +76,39 @@ test("two hotel workspaces remain isolated across live API resources", { skip: !
   });
   await new Promise((resolve) => webhookServer.listen(0, "127.0.0.1", resolve));
   webhookUrl = `http://127.0.0.1:${webhookServer.address().port}/staff-handoff`;
+
+  openAiServer = http.createServer((req, res) => {
+    let raw = "";
+    req.setEncoding("utf8");
+    req.on("data", (chunk) => { raw += chunk; });
+    req.on("end", () => {
+      modelRequests.push(JSON.parse(raw));
+      if (failNextModelRequest) {
+        failNextModelRequest = false;
+        res.writeHead(401, { "content-type": "application/json" });
+        res.end(JSON.stringify({ error: { message: "Synthetic provider outage", type: "authentication_error" } }));
+        return;
+      }
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({
+        id: "chatcmpl-synthetic",
+        object: "chat.completion",
+        created: 1,
+        model: "gpt-4.1-mini",
+        choices: [{
+          index: 0,
+          message: {
+            role: "assistant",
+            content: JSON.stringify({ reply: "Breakfast is served at 7am.", needsHuman: false, handoffReason: "" })
+          },
+          finish_reason: "stop"
+        }],
+        usage: { prompt_tokens: 10, completion_tokens: 10, total_tokens: 20 }
+      }));
+    });
+  });
+  await new Promise((resolve) => openAiServer.listen(0, "127.0.0.1", resolve));
+  openAiBaseUrl = `http://127.0.0.1:${openAiServer.address().port}/v1`;
 
   const port = await freePort();
   baseUrl = `http://127.0.0.1:${port}`;
@@ -162,7 +200,7 @@ test("two hotel workspaces remain isolated across live API resources", { skip: !
     [alphaId, alphaDoc.rows[0].id, alphaUser.rows[0].id]
   );
   await pool.query(
-    "INSERT INTO organization_settings(organization_id,website_url,support_email) VALUES($1,'https://alpha.test','alpha@alpha.test'),($2,'https://beta.test','beta@beta.test')",
+    "INSERT INTO organization_settings(organization_id,website_url,support_email,language,fallback_instructions) VALUES($1,'https://alpha.test','alpha@alpha.test','th','Use the Alpha front desk only.'),($2,'https://beta.test','beta@beta.test','fr','Use the Beta reception only.')",
     [alphaId, betaId]
   );
   const alphaConversation = await pool.query(
@@ -260,7 +298,7 @@ test("two hotel workspaces remain isolated across live API resources", { skip: !
   const normalizedAlphaSettings = await request("/api/admin/settings", {
     method: "PUT",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ website_url: "https://alpha.test/", support_email: "alpha@alpha.test", timezone: "UTC", language: "en" })
+    body: JSON.stringify({ website_url: "https://alpha.test/", support_email: "alpha@alpha.test", timezone: "UTC", language: "th", fallback_instructions: "Use the Alpha front desk only." })
   }, alphaSession);
   assert.equal(normalizedAlphaSettings.status, 200, "hotel profile should accept and normalize a trailing slash on the website origin: " + await normalizedAlphaSettings.clone().text());
 
@@ -437,6 +475,7 @@ test("two hotel workspaces remain isolated across live API resources", { skip: !
       DATABASE_URL: databaseUrl,
       DATABASE_SSL: "false",
       OPENAI_API_KEY: "synthetic-integration-test-key",
+      OPENAI_BASE_URL: openAiBaseUrl,
       BOOTSTRAP_TOKEN: bootstrapToken,
       PLATFORM_PROVISIONING_TOKEN: provisioningToken,
       STAFF_WEBHOOK_URL: webhookUrl,
@@ -511,6 +550,43 @@ test("two hotel workspaces remain isolated across live API resources", { skip: !
   });
   assert.equal(betaGuestChat.status, 503);
   assert.match((await betaGuestChat.json()).error, /privacy and retention approval/i, "a different hotel's approval must not unlock Beta guest chat");
+
+  const alphaGuestChat = await request("/api/public/hotel-alpha/chat", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ message: "What time is breakfast?" })
+  });
+  assert.equal(alphaGuestChat.status, 200, "Alpha can use its own verified configuration and approved knowledge: " + await alphaGuestChat.clone().text());
+  const alphaGuestBody = await alphaGuestChat.json();
+  assert.equal(alphaGuestBody.reply, "Breakfast is served at 7am.");
+  assert.equal(alphaGuestBody.needsHuman, false);
+  const alphaSystemPrompt = modelRequests.at(-1).messages.find((message) => message.role === "system").content;
+  assert.match(alphaSystemPrompt, /Preferred reply language: "th"/);
+  assert.match(alphaSystemPrompt, /alpha@alpha\.test/);
+  assert.match(alphaSystemPrompt, /Use the Alpha front desk only/);
+  assert.match(alphaSystemPrompt, /Alpha serves breakfast at 7am\./);
+  assert.doesNotMatch(alphaSystemPrompt, /Beta|beta@beta\.test/);
+
+  failNextModelRequest = true;
+  const providerFailure = await request("/api/public/hotel-alpha/chat", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ message: "Could you help with a technical issue?" })
+  });
+  assert.equal(providerFailure.status, 200, "an AI provider outage should produce a safe fallback and staff escalation");
+  const providerFailureBody = await providerFailure.json();
+  assert.equal(providerFailureBody.reply, "I cannot prepare a reliable answer right now. Please contact hotel staff.");
+  assert.equal(providerFailureBody.needsHuman, true);
+  assert.equal(providerFailureBody.notificationDelivered, true);
+  assert.equal(providerFailureBody.notificationStatus, "delivered");
+  assert.ok(providerFailureBody.escalationId);
+  const providerFailureEvent = webhookEvents.at(-1);
+  assert.equal(providerFailureEvent.payload.organizationId, alphaId);
+  assert.equal(providerFailureEvent.payload.organizationSlug, "hotel-alpha");
+  assert.match(providerFailureEvent.payload.reason, /Live AI is temporarily unavailable/);
+  assert.equal(providerFailureEvent.signature, crypto.createHmac("sha256", webhookSecret).update(JSON.stringify(providerFailureEvent.payload)).digest("hex"));
+  const persistedProviderFailure = await pool.query("SELECT notification_status,notification_attempts FROM escalations WHERE id=$1", [providerFailureBody.escalationId]);
+  assert.deepEqual(persistedProviderFailure.rows[0], { notification_status: "delivered", notification_attempts: 1 });
 
   await pool.query("DELETE FROM knowledge_documents WHERE organization_id=$1", [alphaId]);
   const alphaGuestChat = await request("/api/public/hotel-alpha/chat", {

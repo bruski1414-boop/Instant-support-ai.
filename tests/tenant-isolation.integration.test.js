@@ -200,6 +200,14 @@ test("two hotel workspaces remain isolated across live API resources", { skip: !
 
   const alphaSession = await login("hotel-alpha", "owner@alpha.test");
   const betaSession = await login("hotel-beta", "owner@beta.test");
+
+  const invalidKnowledgeApproval = await request("/api/admin/knowledge", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ title: "Unverified input type", content: "This should not be saved as approved knowledge.", approved: "false" })
+  }, alphaSession);
+  assert.equal(invalidKnowledgeApproval.status, 400, "a string value such as 'false' must not be coerced into approved=true");
+  assert.match((await invalidKnowledgeApproval.json()).error, /Approval must be a boolean/i);
   const alphaApproval = await request("/api/platform/organizations/hotel-alpha/privacy-approval", {
     method: "POST",
     headers: { "content-type": "application/json", "X-Platform-Provisioning-Token": provisioningToken },

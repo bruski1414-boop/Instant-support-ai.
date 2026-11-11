@@ -90,3 +90,6 @@ Without OPENAI_API_KEY, live AI responses are unavailable. Without both webhook 
 - Monitoring, incident response, hotel manager sign-off and supervised pilot with baseline measurement.
 
 Do not use real guest data or present this as production-ready until the hotel and responsible adults have approved the operational, legal, privacy and security requirements.
+
+
+Knowledge history: the platform stores document snapshots and change types. The history endpoint checks both document ID and workspace ID; document deletion removes its snapshots. Any edit to title, category or content automatically resets approval.

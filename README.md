@@ -11,9 +11,9 @@ Veyra AI is a hotel customer-support platform prototype. It is designed to answe
 
 ## Current deployment
 
-The Render web service is live and connected to its Render PostgreSQL database. The latest Render deployment completed successfully on 11 November 2026. The latest test-suite result has not yet been independently verified; a successful deployment does not mean the tests passed.
+The Render web service is connected to PostgreSQL. GitHub Actions CI runs on Node.js 20 with a temporary PostgreSQL 16 service and executes the complete test suite, including a live two-hotel API isolation test. A successful deployment or CI run is useful evidence, but neither certifies the product for real guest data or a hotel launch.
 
-The latest GitHub Actions run (#530) completed successfully: the Node.js 20 CI job ran `npm install` and `npm test` without errors. The live Render deploy also completed successfully. Render was previously selecting Node.js 26 because the package engine range was broad; the runtime is now being pinned to Node.js 20.x to match CI and reduce environment drift.\n\nThe web service and database are currently on Render's free plans. The database is temporary and is scheduled to expire on 11 December 2026. Do not put real hotel or guest data into this environment. A parent or guardian must manage hosting accounts, any paid upgrades and provider billing.
+The web service and database are currently on Render's free plans. The database is temporary and is scheduled to expire on 11 December 2026. Do not put real hotel or guest data into this environment. A parent or guardian must manage hosting accounts, any paid upgrades and provider billing.
 
 ## Implemented foundation
 

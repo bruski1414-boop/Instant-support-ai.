@@ -63,3 +63,14 @@ test("hotel knowledge records its source and review date, and expired documents 
   assert.match(dashboard, /id="kReviewDue"/);
   assert.match(dashboard, /source_reference/);
 });
+
+test("workspace owners and admins can revoke individual staff access safely", () => {
+  assert.match(server, /app\.get\("\/api\/admin\/users"/);
+  assert.match(server, /app\.patch\("\/api\/admin\/users\/:id"/);
+  assert.match(server, /You cannot deactivate your own account/);
+  assert.match(server, /workspace owner account cannot be changed/);
+  assert.match(server, /DELETE FROM sessions WHERE user_id=\$1/);
+  assert.match(server, /user\.deactivated/);
+  assert.match(dashboard, /id="memberList"/);
+  assert.match(dashboard, /data-action="toggle-user"/);
+});

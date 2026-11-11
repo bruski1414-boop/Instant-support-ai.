@@ -4,6 +4,7 @@ const cors=require("cors");
 const rateLimit=require("express-rate-limit");
 const OpenAI=require("openai");
 const crypto=require("node:crypto");
+const path=require("node:path");
 const {promisify}=require("node:util");
 const {Pool}=require("pg");
 const app=express();
@@ -16,6 +17,7 @@ const scrypt=promisify(crypto.scrypt);
 const prod=process.env.NODE_ENV==="production";
 const cookie=prod?"__Host-veyra_session":"veyra_session";
 app.disable("x-powered-by");
+app.use((_q,r,n)=>{r.setHeader("X-Content-Type-Options","nosniff");r.setHeader("X-Frame-Options","DENY");r.setHeader("Referrer-Policy","strict-origin-when-cross-origin");r.setHeader("Permissions-Policy","camera=(),microphone=(),geolocation=()");n();});
 app.use(cors({origin(o,cb){if(!o||origins.includes(o))return cb(null,true);cb(new Error("Origin not allowed"));},credentials:true,allowedHeaders:["Content-Type","X-CSRF-Token","X-Bootstrap-Token"],methods:["GET","POST","PATCH","DELETE","OPTIONS"]}));
 app.use(express.json({limit:"20kb"}));
 app.use("/api/",rateLimit({windowMs:60000,limit:60,standardHeaders:"draft-7",legacyHeaders:false}));
@@ -144,7 +146,12 @@ app.post("/api/chat",async(q,r)=>{
  const flag=escalate(msg);if(!ai)return r.status(503).json({error:"Live AI is not configured.",demo:true,needsHuman:flag,handoffConfigured:false});
  try{const faq=process.env.BUSINESS_FAQ||"No approved information.";const x=await ai.chat.completions.create({model:MODEL,temperature:0.1,response_format:{type:"json_object"},messages:[{role:"system",content:"Use only these approved facts: "+faq+". Never invent business facts or actions. If uncertain, request staff. Return JSON with reply, needsHuman, handoffReason."},{role:"user",content:msg.trim()}]});let d;try{d=JSON.parse(x.choices[0]?.message?.content||"");}catch{d={reply:"Please contact staff.",needsHuman:true};}r.json({reply:String(d.reply||"Please contact staff.").slice(0,4000),needsHuman:Boolean(d.needsHuman||flag),handoffConfigured:false,mode:"live-ai"});}catch(e){console.error("Legacy chat failed:",e.message);r.status(502).json({error:"Assistant temporarily unavailable.",needsHuman:true,handoffConfigured:false});}
 });
-app.use(express.static(__dirname));
+function publicFile(file,type){return(_q,r)=>{r.type(type);r.sendFile(path.join(__dirname,file));};}
+app.get("/",publicFile("index.html","html"));
+app.get("/index.html",publicFile("index.html","html"));
+app.get("/dashboard.html",publicFile("dashboard.html","html"));
+app.get("/setup.html",publicFile("setup.html","html"));
+app.get("/widget.js",publicFile("widget.js","javascript"));
 app.use((e,_q,r,_n)=>{console.error("Veyra API error:",e?.message||"unknown");if(!r.headersSent)r.status(500).json({error:"Something went wrong. Please try again."});});
 async function start(){if(db){await db.query(schema);await db.query("DELETE FROM sessions WHERE expires_at<now()");}app.listen(PORT,"0.0.0.0",()=>console.log("Veyra listening on "+PORT+(db?" with PostgreSQL":" in demo mode")));}
 start().catch(e=>{console.error("Startup failed:",e.message);process.exit(1);});

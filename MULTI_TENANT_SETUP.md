@@ -20,7 +20,8 @@ A parent or guardian must manage hosting accounts, any paid upgrades and API-pro
 - Dashboard UI for sign-in, overview, conversations, knowledge approval and staff handoff status.
 - Hotel-specific public AI endpoint at POST /api/public/:slug/chat. It uses only that hotel's approved knowledge and refuses to invent business facts.
 - Conservative escalation for sensitive/uncertain requests.
-- Optional signed webhook; the API response reports whether a notification was actually delivered.
+- Optional signed webhook; delivery status and attempt count are persisted on each escalation, and failed notifications can be retried from the dashboard (maximum five attempts).
+- Separate rate limits protect public guest chat and initial workspace bootstrap.
 - Embeddable guest chat widget.
 - Guest-data storage gate is disabled unless explicitly enabled after hotel privacy and retention approval.
 

@@ -24,6 +24,7 @@ The web service and database are currently on Render's free plans. The database 
 - One-time first-owner bootstrap endpoint and setup page.
 - Tenant-scoped staff invitations: hashed single-use tokens, 24-hour expiry, revocation, role restrictions and a dedicated acceptance page. Invitation delivery is manual; no email provider is connected.
 - Workspace member management: owner/admin can deactivate staff accounts; deactivation revokes all active sessions. Admins cannot change owner or administrator access.
+- Tenant-scoped security activity viewer for workspace owners and admins.
 - Hotel workspace profile and live pre-pilot readiness checklist for website origin, approved knowledge, AI configuration, staff notification and privacy/storage gate.
 - Knowledge source references and review dates, with overdue documents automatically excluded from guest-answer context until reviewed.
 - Owner dashboard for conversations, knowledge approval and escalation status.
@@ -82,6 +83,7 @@ Never commit secrets or place them in browser JavaScript.
 - `POST /api/auth/logout`
 - `GET/POST/DELETE /api/admin/invitations` — owner/admin invitation management
 - `GET /api/admin/users` and `PATCH /api/admin/users/:id` — view team and activate/deactivate access
+- `GET /api/admin/audit` — latest 100 tenant-scoped audit events for owners/admins
 - `GET/PUT /api/admin/settings` — hotel profile settings (owner/admin can edit)
 - `GET /api/admin/onboarding` — live pre-pilot readiness checks
 - `POST /api/invitations/accept` — single-use invitation acceptance

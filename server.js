@@ -101,7 +101,7 @@ async function notify(org,cid,reason){
  try{const body=JSON.stringify({event:"veyra.escalation.created",organizationId:org.id,organizationSlug:org.slug,organization:org.name,conversationId:cid,reason,createdAt:new Date().toISOString()});const sig=crypto.createHmac("sha256",process.env.STAFF_WEBHOOK_SECRET).update(body).digest("hex");const ctl=new AbortController();const timer=setTimeout(()=>ctl.abort(),5000);try{const resp=await fetch(process.env.STAFF_WEBHOOK_URL,{method:"POST",headers:{"content-type":"application/json","x-veyra-signature":sig},body,signal:ctl.signal});return{configured:true,delivered:resp.ok,status:resp.ok?"delivered":"failed"};}finally{clearTimeout(timer);}}catch(e){console.error("Webhook failed:",e.message);return{configured:true,delivered:false,status:"failed"};}
 }
 async function purgeExpiredGuestConversations(){
- if(!db||process.env.GUEST_DATA_STORAGE_ENABLED!=="true"||process.env.RETENTION_WORKER_ENABLED!=="true")return{enabled:false};
+ if(!db||process.env.RETENTION_WORKER_ENABLED!=="true")return{enabled:false};
  const c=await db.connect();let locked=false;const results=[];
  try{
   const lock=await c.query("SELECT pg_try_advisory_lock(20261113) AS locked");
@@ -128,7 +128,7 @@ async function purgeExpiredGuestConversations(){
  }
 }
 function startRetentionWorker(){
- if(!db||process.env.GUEST_DATA_STORAGE_ENABLED!=="true"||process.env.RETENTION_WORKER_ENABLED!=="true")return;
+ if(!db||process.env.RETENTION_WORKER_ENABLED!=="true")return;
  const run=()=>purgeExpiredGuestConversations().catch(e=>console.error("Retention worker failed:",e.message));
  const initial=setTimeout(run,1000);initial.unref?.();
  const interval=setInterval(run,60*60*1000);interval.unref?.();

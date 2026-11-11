@@ -30,7 +30,7 @@ $("setup").addEventListener("submit",async e=>{
   const data=await response.json();
   if(!response.ok)throw new Error(data.error||"Setup failed.");
   $("setup").classList.add("hidden");
-  show("Workspace created for "+data.organization.name+". Now remove BOOTSTRAP_TOKEN in Render, then sign in at the dashboard. The owner account is "+data.owner.email+".","good");
+  show("Workspace created for "+data.organization.name+". Workspace slug: "+data.organization.slug+". After BOOTSTRAP_TOKEN is removed in Render, sign in using this slug and the owner email "+data.owner.email+".","good");
  }catch(error){show(error.message,"bad");}
  finally{button.disabled=false;button.textContent="Create secure workspace";}
 });

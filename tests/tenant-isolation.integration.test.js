@@ -163,6 +163,10 @@ test("two hotel workspaces remain isolated across live API resources", { skip: !
     "INSERT INTO organization_storage_connections(organization_id,provider,workspace_reference,status) VALUES($1,'google_drive','alpha-drive','connected'),($2,'microsoft_sharepoint','beta-sharepoint','connected')",
     [alphaId, betaId]
   );
+  await pool.query(
+    "INSERT INTO storage_connections(organization_id,provider,account_email,encrypted_tokens,status) VALUES($1,'google','storage@alpha.test','encrypted-alpha-placeholder','connected'),($2,'microsoft','storage@beta.test','encrypted-beta-placeholder','connected')",
+    [alphaId, betaId]
+  );
 
   const alphaSession = await login("hotel-alpha", "owner@alpha.test");
   const betaSession = await login("hotel-beta", "owner@beta.test");

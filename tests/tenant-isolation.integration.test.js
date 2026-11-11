@@ -2,6 +2,7 @@ const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const { spawn } = require("node:child_process");
 const net = require("node:net");
+const http = require("node:http");
 const crypto = require("node:crypto");
 const { Pool } = require("pg");
 
@@ -10,6 +11,10 @@ test("two hotel workspaces remain isolated across live API resources", { skip: !
   const pool = new Pool({ connectionString: databaseUrl });
   let child;
   let baseUrl;
+  let webhookServer;
+  let webhookUrl;
+  const webhookEvents = [];
+  const webhookSecret = "integration-test-webhook-secret";
   const password = "test-password-for-hotel-owner";
 
   async function freePort() {
@@ -50,8 +55,22 @@ test("two hotel workspaces remain isolated across live API resources", { skip: !
 
   t.after(async () => {
     if (child && child.exitCode === null) child.kill("SIGTERM");
+    if (webhookServer) await new Promise((resolve) => webhookServer.close(resolve));
     await pool.end();
   });
+
+  webhookServer = http.createServer((req, res) => {
+    let raw = "";
+    req.setEncoding("utf8");
+    req.on("data", (chunk) => { raw += chunk; });
+    req.on("end", () => {
+      webhookEvents.push({ payload: JSON.parse(raw), signature: req.headers["x-veyra-signature"] });
+      res.writeHead(202, { "content-type": "application/json" });
+      res.end(JSON.stringify({ accepted: true }));
+    });
+  });
+  await new Promise((resolve) => webhookServer.listen(0, "127.0.0.1", resolve));
+  webhookUrl = `http://127.0.0.1:${webhookServer.address().port}/staff-handoff`;
 
   const port = await freePort();
   baseUrl = `http://127.0.0.1:${port}`;
@@ -68,6 +87,8 @@ test("two hotel workspaces remain isolated across live API resources", { skip: !
       OPENAI_API_KEY: "",
       BOOTSTRAP_TOKEN: bootstrapToken,
       PLATFORM_PROVISIONING_TOKEN: provisioningToken,
+      STAFF_WEBHOOK_URL: webhookUrl,
+      STAFF_WEBHOOK_SECRET: webhookSecret,
       GUEST_DATA_STORAGE_ENABLED: "false",
       ALLOWED_ORIGINS: "http://localhost:3000"
     },
@@ -151,8 +172,8 @@ test("two hotel workspaces remain isolated across live API resources", { skip: !
     "INSERT INTO escalations(organization_id,conversation_id,reason) VALUES($1,$2,'Alpha private escalation') RETURNING id",
     [alphaId, alphaConversation.rows[0].id]
   );
-  await pool.query(
-    "INSERT INTO escalations(organization_id,conversation_id,reason) VALUES($1,$2,'Beta private escalation')",
+  const betaEscalation = await pool.query(
+    "INSERT INTO escalations(organization_id,conversation_id,reason) VALUES($1,$2,'Beta private escalation') RETURNING id",
     [betaId, betaConversation.rows[0].id]
   );
   await pool.query(
@@ -170,6 +191,30 @@ test("two hotel workspaces remain isolated across live API resources", { skip: !
 
   const alphaSession = await login("hotel-alpha", "owner@alpha.test");
   const betaSession = await login("hotel-beta", "owner@beta.test");
+
+  for (const [session, escalationId, expectedOrganizationId, expectedSlug] of [
+    [alphaSession, alphaEscalation.rows[0].id, alphaId, "hotel-alpha"],
+    [betaSession, betaEscalation.rows[0].id, betaId, "hotel-beta"]
+  ]) {
+    const response = await request(`/api/admin/escalations/${escalationId}/notify`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{}"
+    }, session);
+    assert.equal(response.status, 200, "each hotel should be able to retry its own staff handoff");
+    const body = await response.json();
+    assert.equal(body.delivered, true);
+    assert.equal(body.notificationStatus, "delivered");
+    const event = webhookEvents.at(-1);
+    assert.equal(event.payload.organizationId, expectedOrganizationId);
+    assert.equal(event.payload.organizationSlug, expectedSlug);
+    assert.equal(event.payload.event, "veyra.escalation.created");
+    assert.equal(
+      event.signature,
+      crypto.createHmac("sha256", webhookSecret).update(JSON.stringify(event.payload)).digest("hex"),
+      "handoff webhook must be signed"
+    );
+  }
 
   for (const [session, ownTitle, otherTitle, ownUrl, otherUrl, ownEmail, otherEmail, ownEvent, otherEvent, ownStorage, otherStorage] of [
     [alphaSession, "Alpha breakfast", "Beta breakfast", "https://alpha.test", "https://beta.test", "owner@alpha.test", "owner@beta.test", "alpha.private_event", "beta.private_event", "google", "microsoft"],

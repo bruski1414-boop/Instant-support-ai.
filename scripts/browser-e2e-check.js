@@ -14,6 +14,7 @@ async function startStaticServer() {
     const pathname = new URL(req.url, "http://127.0.0.1").pathname;
     const files = {
       "/guest.html": ["guest.html", "text/html; charset=utf-8"],
+      "/dashboard.html": ["dashboard.html", "text/html; charset=utf-8"],
       "/widget.js": ["widget.js", "application/javascript; charset=utf-8"],
       "/widget.css": ["widget.css", "text/css; charset=utf-8"],
     };
@@ -53,7 +54,7 @@ test("guest chat sends a message, disables duplicate submission, and stores the 
   const send = page.locator("#send");
   await input.fill("When is breakfast?");
   await send.click();
-  await assert.doesNotReject(async () => page.getByText("Sending…").waitFor());
+  await page.getByText("Sending…").waitFor();
   await assert.equal(await input.isDisabled(), true);
   await assert.equal(await send.isDisabled(), true);
   await page.getByText("Breakfast is served from 7:00 AM to 10:30 AM.").waitFor();
@@ -138,4 +139,97 @@ test("website launcher renders once and points to the correct hosted guest chat"
   assert.equal(await launcher.count(), 1);
   assert.equal(await launcher.getAttribute("href"), host.origin + "/guest.html?workspace=" + workspace);
   assert.equal(await launcher.getAttribute("rel"), "noopener noreferrer");
+});
+
+test("authenticated dashboard loads and saves knowledge, privacy, and website settings", async (t) => {
+  const host = await startStaticServer();
+  t.after(() => new Promise(resolve => host.server.close(resolve)));
+  const context = await browser.newContext();
+  t.after(() => context.close());
+  await context.addCookies([{ name: "veyra_csrf", value: "csrf-test-token", url: host.origin }]);
+  const page = await context.newPage();
+  const documentId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+  const state = { documents: [], retentionDays: 90, origins: [] };
+  const writes = [];
+
+  await page.route("**/api/**", async route => {
+    const request = route.request();
+    const url = new URL(request.url());
+    const method = request.method();
+    const payload = request.postData() ? JSON.parse(request.postData()) : {};
+    let status = 200;
+    let body = {};
+
+    if (method !== "GET") {
+      const headers = request.headers();
+      writes.push({ path: url.pathname, csrf: headers["x-csrf-token"], tenant: headers["x-veyra-workspace"] });
+    }
+
+    if (url.pathname === "/api/auth/me" && method === "GET") {
+      body = { authenticated: true, user: { email: "owner@northstar.example" }, memberships: [{ tenant_id: workspace, role: "owner" }] };
+    } else if (url.pathname === "/api/workspaces" && method === "GET") {
+      body = { workspaces: [{ id: workspace, name: "Northstar Hotel Demo", role: "owner" }] };
+    } else if (url.pathname === "/api/health" && method === "GET") {
+      body = { status: "ready", liveAIReady: true, businessKnowledgeConfigured: true, handoffConfigured: false };
+    } else if (url.pathname === "/api/knowledge" && method === "GET") {
+      body = { documents: state.documents, role: "owner" };
+    } else if (url.pathname === "/api/knowledge" && method === "POST") {
+      const doc = { id: documentId, title: payload.title, content: payload.content, version: 1, approved_at: null };
+      state.documents = [doc];
+      status = 201;
+      body = { document: doc };
+    } else if (url.pathname === "/api/knowledge/" + documentId + "/approve" && method === "POST") {
+      state.documents[0].approved_at = "2026-11-11T00:00:00.000Z";
+      body = { document: state.documents[0] };
+    } else if (url.pathname === "/api/conversations" && method === "GET") {
+      body = { conversations: [] };
+    } else if (url.pathname === "/api/handoffs" && method === "GET") {
+      body = { handoffs: [], delivery: "dashboard-queue-only" };
+    } else if (url.pathname === "/api/integrations/slack" && method === "GET") {
+      body = { configured: false, encryptionReady: true };
+    } else if (url.pathname === "/api/privacy/retention" && method === "GET") {
+      body = { conversationRetentionDays: state.retentionDays, canManage: true };
+    } else if (url.pathname === "/api/privacy/retention" && method === "PATCH") {
+      state.retentionDays = payload.conversationRetentionDays;
+      body = { conversationRetentionDays: state.retentionDays };
+    } else if (url.pathname === "/api/widget/domains" && method === "GET") {
+      body = { origins: state.origins, canManage: true };
+    } else if (url.pathname === "/api/widget/domains" && method === "PUT") {
+      state.origins = payload.origins;
+      body = { saved: true, origins: state.origins };
+    } else {
+      status = 404;
+      body = { error: "Unexpected test API request: " + method + " " + url.pathname };
+    }
+
+    await route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
+  });
+
+  await page.goto(host.origin + "/dashboard.html");
+  await page.waitForFunction(() => document.getElementById("workspaceName")?.textContent === "Northstar Hotel Demo");
+  assert.equal(await page.locator("#accountEmail").textContent(), "owner@northstar.example");
+  await page.getByText("No knowledge documents yet.").waitFor();
+
+  await page.locator("#knowledgeTitle").fill("Check-in policy");
+  await page.locator("#knowledgeContent").fill("Check-in begins at 3:00 PM.");
+  await page.locator("#knowledgeSave").click();
+  await page.getByText("Draft · not used for answers").waitFor();
+  await page.getByRole("button", { name: "Approve" }).click();
+  await page.getByText("Approved", { exact: true }).waitFor();
+
+  await page.locator("#retentionDays").selectOption("180");
+  await page.locator("#saveRetention").click();
+  await page.getByText("Saved. Conversations older than 180 days will be purged on the next workspace access.").waitFor();
+
+  await page.locator("#widgetDomains").fill("https://www.northstar.example");
+  await page.locator("#saveWidgetDomains").click();
+  await page.getByText("1 approved domain saved. The launcher is blocked on all other websites.").waitFor();
+
+  assert.equal(state.retentionDays, 180);
+  assert.deepEqual(state.origins, ["https://www.northstar.example"]);
+  assert.equal(writes.length, 4);
+  for (const write of writes) {
+    assert.equal(write.csrf, "csrf-test-token", "dashboard mutations must include the CSRF cookie token");
+    assert.equal(write.tenant, workspace, "dashboard mutations must include the selected workspace");
+  }
 });

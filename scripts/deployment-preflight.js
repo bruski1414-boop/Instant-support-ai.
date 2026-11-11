@@ -21,8 +21,8 @@ function validateEnvironment(env = process.env) {
   }
 
   if (env.NODE_ENV !== "production") issues.push("NODE_ENV must be set to production.");
-  if (env.DATABASE_SSL !== undefined && !["true", "false"].includes(env.DATABASE_SSL)) {
-    issues.push("DATABASE_SSL must be either true or false when set.");
+  if (env.DATABASE_SSL !== "true") {
+    issues.push("DATABASE_SSL must be true in production so PostgreSQL connections use verified TLS.");
   }
 
   if (env.APP_ORIGIN) {

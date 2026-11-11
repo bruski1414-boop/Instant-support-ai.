@@ -47,7 +47,8 @@ The Render service has a connected PostgreSQL database. Confirm the following va
 - PLATFORM_PROVISIONING_TOKEN: separate high-entropy operator-only secret used by the hotel provisioning endpoint. Never put it in browser code or public documentation.
 - STORAGE_OAUTH_REDIRECT_BASE and STORAGE_TOKEN_ENCRYPTION_KEY: public callback origin and base64-encoded 32-byte encryption key for per-hotel OAuth tokens.
 - GOOGLE_OAUTH_CLIENT_ID/SECRET and MICROSOFT_OAUTH_CLIENT_ID/SECRET: provider application credentials; register the exact callback URL shown in the README and complete provider consent.
-- DURABLE_BACKUPS_VERIFIED, TENANT_ISOLATION_TESTS_PASSED, PROVIDER_OAUTH_TESTED, PLATFORM_PRIVACY_REVIEWED, RETENTION_ENFORCEMENT_VERIFIED, STAFF_HANDOFF_TESTED and PILOT_RELEASE_APPROVED: platform evidence flags. Set them only after the corresponding test/approval is genuinely complete; never set them to make readiness appear green. RETENTION_ENFORCEMENT_VERIFIED must remain false until automated retention and deletion are implemented and tested.
+- RETENTION_WORKER_ENABLED=true: starts the hourly purge worker for approved hotel workspaces. It removes expired conversations, messages and linked escalations, skips open/claimed escalations, and continues after an approval is revoked or guest intake is disabled. This is destructive; an authorised adult operator must enable it only after reviewing the policy.
+- DURABLE_BACKUPS_VERIFIED, TENANT_ISOLATION_TESTS_PASSED, PROVIDER_OAUTH_TESTED, PLATFORM_PRIVACY_REVIEWED, RETENTION_ENFORCEMENT_VERIFIED, STAFF_HANDOFF_TESTED and PILOT_RELEASE_APPROVED: platform evidence flags. Set them only after the corresponding test/approval is genuinely complete; never set them to make readiness appear green. RETENTION_ENFORCEMENT_VERIFIED must remain false until live worker monitoring and backup-retention/deletion behavior are tested.
 
 Without OPENAI_API_KEY, live AI responses are unavailable. Without both webhook settings, escalations are recorded but staff are not notified automatically.
 
@@ -100,7 +101,7 @@ Without OPENAI_API_KEY, live AI responses are unavailable. Without both webhook 
 - Replace temporary free database hosting with a durable plan; configure automated backups and prove restoration. The current free database expires on 11 December 2026.
 - Obtain hotel-approved privacy notice, data-processing terms, lawful basis/consent where required, retention and deletion workflow before any real guest data is stored.
 - Record each hotel's written privacy approval separately through the operator-only approval endpoint. A global platform privacy review or one hotel's approval must never unlock another hotel's workspace.
-- Implement and verify automated per-hotel retention/deletion before RETENTION_ENFORCEMENT_VERIFIED or PILOT_RELEASE_APPROVED can be set; the current code records a retention target but does not yet enforce automatic deletion.
+- The per-hotel hourly retention worker is implemented and covered by synthetic CI tests. Verify its live monitoring, failure handling and backup-retention/deletion behavior before RETENTION_ENFORCEMENT_VERIFIED or PILOT_RELEASE_APPROVED can be set.
 - Test the actual hotel's signed webhook, retries, delivery audit, staff ownership and manual fallback. CI uses only a synthetic test receiver.
 - Complete live AI provider/model verification and separate Google/Microsoft OAuth tests using authorised hotel test accounts.
 - Add email verification, password recovery, MFA, invitation email delivery and subscription billing. Staff invitations exist, but delivery is manual.

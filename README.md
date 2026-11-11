@@ -11,7 +11,7 @@ Veyra AI is an early customer-support assistant prototype aimed at hospitality a
 - Basic request validation and API rate limiting.
 - Conservative escalation rules for sensitive or uncertain requests.
 - Tenant-specific Slack handoff notifications with AES-256-GCM encrypted webhook storage, owner/admin setup, test delivery, and disconnect controls.
-- Tenant-scoped staff handoff inbox in the authenticated dashboard, with queue refresh, conversation review, staff replies, and resolution.
+- Tenant-scoped staff handoff inbox in the authenticated dashboard, with queue refresh, conversation review, internal staff notes, and resolution. Staff notes are not delivered to guests; there is no outbound guest-reply channel yet.
 - Security headers, bounded request/history sizes, API timeout, and restricted public routes.
 - Staff webhook destinations restricted to Slack's official incoming-webhook hosts; redirects are blocked to reduce SSRF risk.
 - Built-in Node test suite (`npm test`) with GitHub Actions CI.
@@ -20,7 +20,7 @@ Veyra AI is an early customer-support assistant prototype aimed at hospitality a
 
 ## Important: prototype, not production SaaS
 
-This is an early prototype, not a production-ready enterprise product. It does not yet include:
+This is an early tenant-aware MVP codebase, not a production-ready hotel service. Passing CI does not establish live deployment, AI answer accuracy, security certification, operational coverage, or hotel readiness. It does not yet include:
 - Tenant-scoped workspace discovery, knowledge-document drafts and approvals, conversation storage, staff notes, and a public tenant-specific guest chat endpoint are implemented and covered by disposable-PostgreSQL integration tests. Live database provisioning, service encryption-key configuration, retention/deletion controls, and independent production security review remain outstanding.
 - Native staff email/SMS/WhatsApp integrations; tenant-specific Slack incoming webhooks are implemented, but email/SMS/WhatsApp channels are not.
 - Booking, CRM, hotel PMS, Shopify, or payment integrations.
@@ -30,9 +30,9 @@ This is an early prototype, not a production-ready enterprise product. It does n
 
 Do not promise those features to customers until they are implemented and tested. Pricing needs to be justified by proven business value, reliability, support, and integrations—not by the number of AI features listed.
 
-## Deploy a prototype on Render
+## Prototype deployment (not a hotel launch)
 
-This repository includes a Render Blueprint in `render.yaml`.
+This repository includes a Render Blueprint in `render.yaml`. **Do not deploy this branch to a real hotel's website or enable guest traffic yet.** Use a new isolated staging service only after an authorised adult/operator has approved the costs, database, secrets, privacy, and security plan. Follow [`docs/hotel-pilot-runbook.md`](docs/hotel-pilot-runbook.md).
 
 1. A parent/guardian should help create or manage any hosting and AI-provider accounts, review billing, and approve API usage.
 2. Open Render and choose **New → Blueprint** (or connect the GitHub repository and create a Blueprint).
@@ -44,7 +44,7 @@ This repository includes a Render Blueprint in `render.yaml`.
 
 Render's free web services may sleep after inactivity and take time to wake up. AI-provider usage may still cost money. A free hosting tier does not mean unlimited or free AI requests. Review current hosting and API prices before enabling customer traffic.
 
-This is a **single-business prototype**, not a multi-company SaaS. Do not connect real customer data or promise service-level guarantees until authentication, tenant isolation, privacy controls, monitoring, and a security review are implemented.
+The code now contains tenant-aware workspace and guest-chat foundations, but it has not been deployed or independently reviewed in a live environment. Do not connect real guest data or promise service-level guarantees until staging, security/privacy review, backups, monitoring, and a supervised pilot are complete.
 
 ## Authentication foundation
 
@@ -116,3 +116,8 @@ The CI workflow installs a pinned Playwright version and Chromium to exercise th
 - Do not put API keys in frontend JavaScript or public GitHub files.
 - Use only customer information that the business has permission to provide.
 - Keep a human responsible for consequential decisions.
+
+
+## Hotel pilot readiness
+
+The current build is **not approved for hotel guest traffic**. It has no live hosted database or staging deployment, the live-model evaluation has not been run, and there has been no independent security/privacy review. It also has no PMS/booking/payment integrations, no outbound staff-to-guest reply channel, no scheduled retention purge, and no customer data-export workflow. Use the supervised checklist in [`docs/hotel-pilot-runbook.md`](docs/hotel-pilot-runbook.md); do not treat a green CI run as permission to launch.

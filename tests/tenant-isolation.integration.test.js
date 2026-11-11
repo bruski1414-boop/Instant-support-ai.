@@ -221,6 +221,14 @@ test("two hotel workspaces remain isolated across live API resources", { skip: !
   const verifiedChecks = await pool.query("SELECT organization_id,integration FROM organization_integration_checks WHERE integration='staff_webhook' ORDER BY organization_id");
   assert.equal(verifiedChecks.rowCount, 2, "staff integration verification must be stored separately for each hotel");
 
+  for (const session of [alphaSession, betaSession]) {
+    const onboarding = await request("/api/admin/onboarding", {}, session);
+    assert.equal(onboarding.status, 200);
+    const state = await onboarding.json();
+    assert.equal(state.checks.find((item) => item.key === "handoff").done, true);
+    assert.equal(state.checks.find((item) => item.key === "ai").done, false);
+  }
+
   for (const [session, escalationId, expectedOrganizationId, expectedSlug] of [
     [alphaSession, alphaEscalation.rows[0].id, alphaId, "hotel-alpha"],
     [betaSession, betaEscalation.rows[0].id, betaId, "hotel-beta"]

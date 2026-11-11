@@ -1,6 +1,6 @@
 const express = require("express");
 const crypto = require("node:crypto");
-const { createTokenCipher, readTextLimited } = require("./storage-security");
+const { createTokenCipher, readTextLimited, fetchMicrosoftDownload } = require("./storage-security");
 
 const PROVIDERS = {
   google: {
@@ -221,7 +221,7 @@ function createStorageRouter({ db, auth, role, audit }) {
         if (![200, 302, 303].includes(response.status)) throw new Error("Could not download the selected Microsoft document.");
         const downloadUrl = response.status === 200 ? null : response.headers.get("location");
         if (response.status !== 200 && !downloadUrl) throw new Error("Microsoft storage returned an invalid download redirect.");
-        const contentResponse = response.status === 200 ? response : await fetch(downloadUrl, { signal: AbortSignal.timeout(20000) });
+        const contentResponse = response.status === 200 ? response : await fetchMicrosoftDownload(downloadUrl, { signal: AbortSignal.timeout(20000) });
         content = await readTextLimited(contentResponse);
       }
       if (!content.trim() || Buffer.byteLength(content, "utf8") > 12000) return safeError(res, "The selected file is empty or larger than the 12 KB knowledge-document limit.");

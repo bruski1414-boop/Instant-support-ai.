@@ -24,6 +24,8 @@ The web service and database are currently on Render's free plans. The database 
 - One-time first-owner bootstrap endpoint and setup page.
 - Owner dashboard for conversations, knowledge approval and escalation status.
 - Embeddable guest chat widget with multi-turn conversation continuity and bounded history.
+- Public file allowlist so source files, tests and internal documentation are not served as website assets.
+- Baseline browser security headers (content-type sniffing, framing, referrer and permissions policies).
 - Tenant-scoped owner/admin conversation deletion from active database records (backup/provider retention may differ) with an audit record.
 - AI answer generation constrained to each hotel's approved knowledge, with conservative escalation for uncertain or sensitive requests.
 - Optional signed staff webhook with persisted delivery status, attempt count and a dashboard retry action for failed notifications.

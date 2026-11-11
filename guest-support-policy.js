@@ -1,5 +1,5 @@
 function requiresStaffEscalation(message) {
-  return /\b(human|real person|staff|manager|urgent|emergency|complaint|cancel|refund|medical|allergy|allergic|injury|unsafe|harassment|discrimination|lost child|fire|police|ambulance|payment)\b/i.test(String(message || ""));
+  return /\\b(human|real person|staff|manager|urgent|emergency|complaint|cancel|refund|medical|allergy|allergic|injury|unsafe|harassment|discrimination|lost child|fire|police|ambulance|payment|booking|reservation)\\b/i.test(String(message || ""));
 }
 
 function buildGuestSupportSystemPrompt(hotelName, approvedKnowledge) {

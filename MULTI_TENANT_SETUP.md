@@ -70,7 +70,7 @@ Without OPENAI_API_KEY, live AI responses are unavailable. Without both webhook 
 - POST /api/auth/logout
 - GET /api/auth/me
 - GET /api/auth/csrf
-- DELETE /api/admin/conversations/:id — owner/admin-only, tenant-scoped conversation deletion\n- GET /api/admin/overview
+- GET /api/admin/conversations/:id — tenant-scoped conversation transcript\n- DELETE /api/admin/conversations/:id — owner/admin-only, tenant-scoped conversation deletion\n- GET /api/admin/overview
 - GET/POST /api/admin/knowledge
 - PATCH/DELETE /api/admin/knowledge/:id
 - GET /api/admin/escalations

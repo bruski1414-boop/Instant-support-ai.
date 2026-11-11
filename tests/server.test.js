@@ -30,7 +30,8 @@ test("health endpoint reports demo mode when no API key is configured", async ()
   assert.equal(response.status, 200);
   assert.equal(body.status, "ok");
   assert.equal(body.mode, "demo-no-api-key");
-  assert.equal(body.humanHandoff, "flag-only-notification-not-configured");
+  assert.equal(body.humanHandoff, "not-configured");
+  assert.equal(body.database, "not-configured");
 });
 test("chat rejects an empty message", async () => {
   const response = await fetch(`${baseUrl}/api/chat`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ message: "   " }) });

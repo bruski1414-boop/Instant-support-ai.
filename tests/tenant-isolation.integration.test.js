@@ -203,6 +203,23 @@ test("two hotel workspaces remain isolated across live API resources", { skip: !
     assert.ok(!JSON.stringify(o).includes("Private " + (ownTitle.startsWith("Alpha") ? "Beta" : "Alpha") + " guest message"));
   }
 
+  const parallelOverview = await Promise.all(Array.from({ length: 12 }, (_, index) => {
+    const isAlpha = index % 2 === 0;
+    const session = isAlpha ? alphaSession : betaSession;
+    return request("/api/admin/overview", {}, session).then(async (response) => ({
+      isAlpha,
+      status: response.status,
+      body: await response.json()
+    }));
+  }));
+  for (const result of parallelOverview) {
+    assert.equal(result.status, 200, "both hotels should serve concurrent dashboard requests");
+    assert.equal(result.body.conversations.length, 1);
+    const payload = JSON.stringify(result.body);
+    assert.ok(payload.includes(result.isAlpha ? "Private Alpha guest message" : "Private Beta guest message"));
+    assert.ok(!payload.includes(result.isAlpha ? "Private Beta guest message" : "Private Alpha guest message"));
+  }
+
   const crossTenantChecks = [
     ["GET", `/api/admin/knowledge/${alphaDoc.rows[0].id}/versions`, undefined, betaSession, 404],
     ["PATCH", `/api/admin/knowledge/${alphaDoc.rows[0].id}`, { content: "Attempted cross-hotel edit." }, betaSession, 404],

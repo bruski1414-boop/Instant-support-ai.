@@ -36,6 +36,7 @@ main{padding:28px clamp(16px,4vw,48px);max-width:1450px;width:100%;margin:auto}.
  <div class="navlabel">WORKSPACE</div>
  <nav class="nav">
   <button class="active" data-panel="overview">◫ Overview</button>
+  <button data-panel="setup">⚙ Hotel setup</button>
   <button data-panel="conversations">☷ Conversations</button>
   <button data-panel="knowledge">✧ Knowledge base</button>
   <button data-panel="escalations">↗ Staff handoffs</button>
@@ -47,6 +48,27 @@ main{padding:28px clamp(16px,4vw,48px);max-width:1450px;width:100%;margin:auto}.
 <main>
  <header class="top"><div><div class="crumb" id="crumb">WORKSPACE / OVERVIEW</div><h1 id="heading">Support overview</h1><div class="muted" id="subheading">A live view of conversations and staff attention.</div></div><div class="actions"><button class="btn" id="refresh">↻ Refresh</button></div></header>
  <div id="globalNotice" class="notice hidden"></div>
+
+ <section id="panel-setup" class="panel">
+  <div class="sectionrow"><h2>Hotel workspace profile</h2><span class="muted">Used for setup and operational handoff</span></div>
+  <div class="card">
+   <form id="settingsForm">
+    <div class="formrow">
+     <div class="field"><label for="hotelWebsite">Official hotel website (HTTPS origin)</label><input id="hotelWebsite" type="url" maxlength="300" placeholder="https://hotel.example"></div>
+     <div class="field"><label for="supportEmail">Staff contact email</label><input id="supportEmail" type="email" maxlength="254" placeholder="frontdesk@hotel.example"></div>
+    </div>
+    <div class="formrow">
+     <div class="field"><label for="hotelTimezone">Hotel time zone (IANA)</label><input id="hotelTimezone" maxlength="80" placeholder="Asia/Bangkok"></div>
+     <div class="field"><label for="hotelLanguage">Primary language code</label><input id="hotelLanguage" maxlength="6" placeholder="en"></div>
+    </div>
+    <div class="field"><label for="fallbackInstructions">Staff fallback instructions (no secrets)</label><textarea id="fallbackInstructions" maxlength="1500" placeholder="Example: For urgent guest matters, call the front desk using the hotel's published number."></textarea></div>
+    <button class="btn primary" type="submit">Save hotel profile</button>
+   </form>
+  </div>
+  <div class="sectionrow"><h2>Pre-pilot readiness</h2><span id="readinessSummary" class="tag warn">Checking…</span></div>
+  <div id="readinessList" style="display:grid;gap:9px"></div>
+  <p class="muted" style="font-size:12px;margin-top:14px">This is an operational checklist, not a legal or security certification. Guest-data storage stays disabled until the hotel approves privacy, retention, backups and deletion arrangements in writing.</p>
+ </section>
  <section id="panel-overview" class="panel active">
   <div class="grid">
    <div class="card"><div class="metriclabel">Conversations today</div><div class="metric" id="mToday">—</div></div>
@@ -124,7 +146,7 @@ function switchPanel(name){
  document.querySelectorAll(".panel").forEach(x=>x.classList.remove("active"));
  $("panel-"+name).classList.add("active");
  document.querySelectorAll("[data-panel]").forEach(x=>x.classList.toggle("active",x.dataset.panel===name));
- const labels={team:["TEAM ACCESS","Team access","Invite employees and manage pending invitations."],overview:["OVERVIEW","Support overview","A live view of conversations and staff attention."],conversations:["CONVERSATIONS","Recent conversations","Review the latest guest interactions."],knowledge:["KNOWLEDGE BASE","Hotel knowledge","Control the facts the assistant is allowed to use."],escalations:["STAFF HANDOFFS","Staff handoff queue","Requests that need a member of your team."]};
+ const labels={setup:["HOTEL SETUP","Hotel setup","Configure the hotel profile and review the real pre-pilot requirements."],team:["TEAM ACCESS","Team access","Invite employees and manage pending invitations."],overview:["OVERVIEW","Support overview","A live view of conversations and staff attention."],conversations:["CONVERSATIONS","Recent conversations","Review the latest guest interactions."],knowledge:["KNOWLEDGE BASE","Hotel knowledge","Control the facts the assistant is allowed to use."],escalations:["STAFF HANDOFFS","Staff handoff queue","Requests that need a member of your team."]};
  $("crumb").textContent="WORKSPACE / "+labels[name][0];$("heading").textContent=labels[name][1];$("subheading").textContent=labels[name][2];
  loadPanel(name);
 }
@@ -145,7 +167,7 @@ async function loadEscalations(){
  $("escalationRows").innerHTML=(d.escalations||[]).map(x=>'<tr><td>'+safe(x.reason)+'</td><td>'+statusTag(x.status)+'</td><td><span class="tag '+(x.notification_status==="delivered"?"good":x.notification_status==="failed"?"bad":"warn")+'">'+safe(x.notification_status||"not_configured")+'</span>'+(x.notification_status==="failed"?' <button class="btn" data-action="retry-notification" data-id="'+safe(x.id)+'">Retry</button>':"")+'</td><td>'+date(x.created_at)+'</td><td><select data-action="escalation-status" data-id="'+safe(x.id)+'"><option value="open" '+(x.status==="open"?"selected":"")+' >Open</option><option value="claimed" '+(x.status==="claimed"?"selected":"")+' >Claimed</option><option value="resolved" '+(x.status==="resolved"?"selected":"")+' >Resolved</option></select></td></tr>').join("")||'<tr><td colspan="5" class="empty">No staff handoffs yet.</td></tr>';
 }
 async function loadPanel(name){
- try{if(name==="overview"||name==="conversations")await loadOverview();if(name==="knowledge")await loadKnowledge();if(name==="escalations")await loadEscalations();if(name==="team")await loadInvitations();$("globalNotice").classList.add("hidden");}
+ try{if(name==="overview"||name==="conversations")await loadOverview();if(name==="knowledge")await loadKnowledge();if(name==="escalations")await loadEscalations();if(name==="team")await loadInvitations();if(name==="setup")await loadSetup();$("globalNotice").classList.add("hidden");}
  catch(e){notice(e.message,"error");}
 }
 async function enterWorkspace(){
@@ -157,6 +179,19 @@ $("logout").addEventListener("click",async()=>{try{await api("/api/auth/logout",
 $("refresh").addEventListener("click",()=>loadPanel(activePanel));
 document.querySelectorAll("[data-panel]").forEach(b=>b.addEventListener("click",()=>switchPanel(b.dataset.panel)));
 
+
+async function loadSetup(){
+ const [s,o]=await Promise.all([api("/api/admin/settings"),api("/api/admin/onboarding")]);
+ $("hotelWebsite").value=s.settings.website_url||"";
+ $("supportEmail").value=s.settings.support_email||"";
+ $("hotelTimezone").value=s.settings.timezone||"UTC";
+ $("hotelLanguage").value=s.settings.language||"en";
+ $("fallbackInstructions").value=s.settings.fallback_instructions||"";
+ $("readinessSummary").textContent=o.readyForPilot?"All checks passed":"Needs attention";
+ $("readinessSummary").className="tag "+(o.readyForPilot?"good":"warn");
+ $("readinessList").innerHTML=o.checks.map(x=>'<article class="card" style="display:flex;align-items:flex-start;gap:12px"><span class="tag '+(x.done?"good":"warn")+'">'+(x.done?"Complete":"Action needed")+'</span><div><strong>'+safe(x.label)+'</strong><div class="muted" style="font-size:12px;margin-top:4px">'+safe(x.detail)+'</div></div></article>').join("");
+}
+$("settingsForm").addEventListener("submit",async e=>{e.preventDefault();try{await api("/api/admin/settings",{method:"PUT",body:JSON.stringify({website_url:$("hotelWebsite").value,support_email:$("supportEmail").value,timezone:$("hotelTimezone").value,language:$("hotelLanguage").value,fallback_instructions:$("fallbackInstructions").value})});showToast("Hotel profile saved.");await loadSetup();}catch(err){notice(err.message,"error");}});
 async function loadInvitations(){
  const d=await api("/api/admin/invitations");
  const rows=(d.invitations||[]).map(x=>{const state=x.accepted_at?"Accepted":x.revoked_at?"Revoked":new Date(x.expires_at)<=new Date()?"Expired":"Pending";return '<tr><td>'+safe(x.email)+'</td><td>'+safe(x.role)+'</td><td>'+safe(state)+'</td><td>'+date(x.expires_at)+'</td><td>'+(state==="Pending"?'<button class="btn danger" data-action="revoke-invitation" data-id="'+safe(x.id)+'">Revoke</button>':"—")+'</td></tr>';}).join("");

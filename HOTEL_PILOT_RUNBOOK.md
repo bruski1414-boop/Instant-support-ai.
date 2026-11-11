@@ -17,7 +17,7 @@ A controlled evaluation of Veyra's multi-tenant hotel-support prototype. Each ho
 2. Replace the demo business name and FAQ with hotel-approved, dated information.
 3. Set OPENAI_API_KEY as a server secret in Render. Never commit it.
 4. Set ALLOWED_ORIGINS to the exact hotel website origins, not a wildcard.
-5. Check /api/health for process/database/AI state and /api/readiness for the platform release gate. /api/health can be healthy while the pilot is not ready; /api/readiness must return 200 before guest traffic. Confirm the model and provider usage limits with the account owner.
+5. Check `/api/health` for minimal process liveness and `/api/readiness` for the minimal platform release status. Neither public endpoint exposes detailed configuration flags. Use authenticated `/api/admin/onboarding` for per-hotel checks; it must show every required gate complete before any guest traffic. Confirm model/provider usage limits with the account owner.
 6. Run the automated tests with npm test.
 7. Test at least 30 hotel-approved questions, including unknown questions, outdated information, complaints, refund requests, allergies, safety issues, and attempts to override the assistant instructions.
 8. Run the per-hotel signed staff-dispatcher test and verify the actual hotel team receives the right organization ID/slug. Confirm a named person owns the queue and test the manual fallback; do not treat webhook acceptance as proof that staff read the alert.

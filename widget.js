@@ -19,6 +19,7 @@
   head.append(title,sub);
   var messages=document.createElement("div");messages.className="messages";messages.setAttribute("aria-live","polite");
   var status=document.createElement("div");status.className="status";status.textContent="";
+  var conversationId=null;
   var form=document.createElement("form");form.className="form";
   var input=document.createElement("input");input.type="text";input.maxLength=4000;input.placeholder="How can we help?";input.setAttribute("aria-label","Message the hotel");input.required=true;
   var send=document.createElement("button");send.type="submit";send.textContent="Send";
@@ -34,9 +35,10 @@
     e.preventDefault();var message=input.value.trim();if(!message)return;
     add(message,"guest");input.value="";send.disabled=true;status.textContent="Preparing a response…";
     try{
-      var response=await fetch(api+"/api/public/"+encodeURIComponent(slug)+"/chat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:message})});
+      var response=await fetch(api+"/api/public/"+encodeURIComponent(slug)+"/chat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:message,conversationId:conversationId})});
       var data=await response.json();
       if(!response.ok)throw new Error(data.error||"The assistant is temporarily unavailable.");
+      conversationId=data.conversationId||conversationId;
       add(data.reply||"Please contact the hotel team.","assistant");
       if(data.needsHuman){
         status.textContent=data.notificationDelivered?"The hotel team has been notified.":"Please contact hotel staff directly; automatic notification is not confirmed.";

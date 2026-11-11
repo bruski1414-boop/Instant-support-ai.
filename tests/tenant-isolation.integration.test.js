@@ -216,6 +216,12 @@ test("two hotel workspaces remain isolated across live API resources", { skip: !
     );
   }
 
+  const alphaRetryState = await pool.query("SELECT notification_status,notification_attempts FROM escalations WHERE id=$1", [alphaEscalation.rows[0].id]);
+  const betaRetryState = await pool.query("SELECT notification_status,notification_attempts FROM escalations WHERE id=$1", [betaEscalation.rows[0].id]);
+  assert.deepEqual(alphaRetryState.rows[0], { notification_status: "delivered", notification_attempts: 1 });
+  assert.deepEqual(betaRetryState.rows[0], { notification_status: "delivered", notification_attempts: 1 });
+  assert.equal(webhookEvents.length, 2, "each hotel's handoff should reach the dispatcher exactly once");
+
   for (const [session, ownTitle, otherTitle, ownUrl, otherUrl, ownEmail, otherEmail, ownEvent, otherEvent, ownStorage, otherStorage] of [
     [alphaSession, "Alpha breakfast", "Beta breakfast", "https://alpha.test", "https://beta.test", "owner@alpha.test", "owner@beta.test", "alpha.private_event", "beta.private_event", "google", "microsoft"],
     [betaSession, "Beta breakfast", "Alpha breakfast", "https://beta.test", "https://alpha.test", "owner@beta.test", "owner@alpha.test", "beta.private_event", "alpha.private_event", "microsoft", "google"]

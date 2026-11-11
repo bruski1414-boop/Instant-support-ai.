@@ -193,3 +193,13 @@ test("health endpoint cannot report pilot readiness with missing prerequisites",
   assert.equal(body.readyForPilot, false);
   assert.deepEqual(body.checks, { database: false, ai: false, guestDataStorage: false, humanHandoff: false });
 });
+
+test("knowledge documents retain tenant-scoped version history", () => {
+  const server = fs.readFileSync("server.js", "utf8");
+  const dashboard = fs.readFileSync("dashboard.html", "utf8");
+  assert.match(server, /CREATE TABLE IF NOT EXISTS knowledge_document_versions/);
+  assert.match(server, /knowledge_document_versions WHERE document_id=\$1 AND organization_id=\$2/);
+  assert.match(server, /change_type/);
+  assert.match(dashboard, /history-knowledge/);
+  assert.match(dashboard, /knowledgeHistory/);
+});

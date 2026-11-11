@@ -84,7 +84,7 @@ main{padding:28px clamp(16px,4vw,48px);max-width:1450px;width:100%;margin:auto}.
 let csrfToken="";
 let activePanel="overview";
 const $=id=>document.getElementById(id);
-const safe=(v)=>String(v==null?"":v);
+const safe=(v)=>String(v==null?"":v).replace(/[&<>"\']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","\'":"&#39;"}[c];});
 function showToast(s){const e=$("toast");e.textContent=s;e.classList.remove("hidden");setTimeout(()=>e.classList.add("hidden"),3200);}
 function notice(s,type){const e=$("globalNotice");e.textContent=s;e.className="notice "+(type||"");e.classList.remove("hidden");}
 function loginError(s){const e=$("loginMessage");e.textContent=s;e.className="notice error";}

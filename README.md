@@ -22,6 +22,7 @@ The latest GitHub Actions run (#530) completed successfully: the Node.js 20 CI j
 - Tenant-scoped dashboard APIs for overview, knowledge and staff handoffs.
 - Owner/admin/staff/viewer roles; scrypt password hashing; opaque session tokens; HttpOnly/SameSite cookies; CSRF checks; and session expiry.
 - One-time first-owner bootstrap endpoint and setup page.
+- Protected, rate-limited platform provisioning endpoint for creating additional hotel workspaces and their first owners. It requires a server-side `PLATFORM_PROVISIONING_TOKEN`; it is not an open public signup route.
 - Tenant-scoped staff invitations: hashed single-use tokens, 24-hour expiry, revocation, role restrictions and a dedicated acceptance page. Invitation delivery is manual; no email provider is connected.
 - Workspace member management: owner/admin can deactivate staff accounts; deactivation revokes all active sessions. Admins cannot change owner or administrator access.
 - Tenant-scoped security activity viewer for workspace owners and admins.
@@ -38,7 +39,7 @@ The latest GitHub Actions run (#530) completed successfully: the Node.js 20 CI j
 - Optional signed staff webhook with persisted delivery status, attempt count and a dashboard retry action for failed notifications.
 - Separate rate limits for public guest chat and first-owner bootstrap.
 - Guest conversation storage is disabled by default until privacy and retention arrangements are approved.
-- GitHub Actions CI checks JavaScript syntax and runs Node's test suite. Current unit tests cover storage-token encryption/tamper detection, bounded document downloads, guest escalation keyword detection, the grounded-answer system prompt and strict pilot-release gating. Comprehensive API, frontend, live provider-OAuth and two-tenant isolation integration coverage is still required.
+- GitHub Actions CI runs syntax checks and Node's test suite against PostgreSQL 16. The two-hotel integration test provisions two separate hotel workspaces, signs in as both owners, checks tenant separation across knowledge, settings, staff, audit events, storage connections, conversations and escalations, attempts cross-tenant reads/edits/deletes, and sends concurrent dashboard requests for both hotels. Unit tests also cover storage-token encryption/tamper detection, bounded document downloads, guest escalation rules, the grounded-answer system prompt and strict pilot-release gating. Live provider-OAuth, external notification, broader API and load testing remain outstanding.
 
 ## Runtime configuration
 
@@ -49,7 +50,8 @@ Important environment variables:
 - `DATABASE_SSL`: defaults to TLS enabled.
 - `OPENAI_API_KEY`: provider secret stored only in Render.
 - `OPENAI_MODEL`: defaults to `gpt-4.1-mini`.
-- `BOOTSTRAP_TOKEN`: one-time setup secret; remove it after the first owner is created.
+- `BOOTSTRAP_TOKEN`: one-time first-workspace setup secret; remove it after the first owner is created.
+- `PLATFORM_PROVISIONING_TOKEN`: separate high-entropy server-side secret required to create each additional hotel workspace through `POST /api/platform/organizations`. Keep it only in hosting secrets and never put it in browser code or public documentation.
 - `ALLOWED_ORIGINS`: exact website origins permitted to call the API.
 - `GUEST_DATA_STORAGE_ENABLED`: defaults to false. Do not enable until hotel privacy, data-processing and retention arrangements are approved and durable storage is in place.
 - `STORAGE_OAUTH_REDIRECT_BASE`: public HTTPS origin of this Veyra deployment, for example `https://veyra-ai-prototype.onrender.com`.
@@ -67,6 +69,7 @@ Never commit secrets or place them in browser JavaScript.
 3. Add the AI provider key in Render's service environment. Do not paste secrets into chat or GitHub.
 4. Use `/setup.html` with the one-time bootstrap token to create the first owner.
 5. Remove `BOOTSTRAP_TOKEN` from Render and redeploy.
+6. For each additional hotel, a trusted platform operator must provision a separate workspace through `POST /api/platform/organizations` using the `PLATFORM_PROVISIONING_TOKEN` header. Give that hotel's owner their own workspace slug and credentials; never share one hotel's login or storage authorization with another.
 6. Sign in at `/dashboard.html` using the workspace slug shown by the setup page, plus the owner email and password.
 7. Add hotel knowledge as unapproved; a hotel manager must verify it before approval.
 8. Set `ALLOWED_ORIGINS` to the exact hotel website origin.
@@ -85,7 +88,8 @@ Never commit secrets or place them in browser JavaScript.
 
 - `GET /api/health` — process health for the hosting platform; returns HTTP 200 while reporting dependency status
 - `GET /api/readiness` — full hotel pilot readiness; returns HTTP 503 until all required checks pass
-- `POST /api/setup/organization` — one-time owner bootstrap
+- `POST /api/setup/organization` — one-time first-owner bootstrap
+- `POST /api/platform/organizations` — protected creation of additional hotel workspaces and owner accounts
 - `POST /api/auth/login`
 - `POST /api/auth/logout`
 - `GET/POST/DELETE /api/admin/invitations` — owner/admin invitation management
@@ -122,7 +126,7 @@ This is an active prototype, not a certified or production-approved hotel system
 - Verified staff notification integration, retries, delivery audit and an operational fallback.
 - Email verification, password recovery, MFA and session/device management.
 - Finish storage connector hardening and tests: Microsoft tenant consent and real SharePoint library coverage, provider pagination, large-file streaming, Word/PDF/Excel extraction, automated incremental sync/webhooks and revoked-token handling.
-- PostgreSQL integration tests, tenant-isolation tests, prompt-injection and abuse tests, security review and load tests.
+- Expand tenant-isolation tests to every sensitive route and table; add prompt-injection, abuse, external-provider, backup/restore, security-review and sustained load tests.
 - Monitoring, incident response, hotel manager sign-off and a supervised pilot measured against a baseline.
 
 Never promise a booking, refund, room availability, completed notification, staff replacement or revenue improvement unless the required integration and result have actually been verified.

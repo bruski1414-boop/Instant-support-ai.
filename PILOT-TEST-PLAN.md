@@ -84,6 +84,5 @@ A passing CI run proves only that those automated synthetic checks passed for th
 - The signed staff webhook path is covered with a synthetic test receiver in CI; the actual hotel dispatcher, staff ownership, delivery monitoring and manual fallback still need a supervised live test.
 - Live AI model verification and answer-quality evaluation, browser-level end-to-end tests, sustained load tests, production monitoring, incident response and independent security/privacy review remain outstanding.
 - The main-branch application uses explicit tenant-scoped SQL queries. Automated cross-tenant tests are important evidence, but they are not a substitute for independent review or a database-level security certification.
-- The Render database is not reachable through the connected read-only database tool because its external IP allowlist is empty. Do not weaken the database allowlist to make an inspection tool work; use the authorised Render dashboard or a trusted operator environment when database inspection is required.
 
 Do not describe Veyra as production-ready or hotel-ready until every applicable release gate has been tested and signed off.

@@ -239,7 +239,7 @@ test("staff handoff events carry stable tenant identifiers for multi-hotel routi
 
 test("hotel website origins are allowed dynamically from each tenant's saved HTTPS profile", () => {
   const server = fs.readFileSync("server.js", "utf8");
-  assert.match(server, /SELECT 1 FROM organization_settings WHERE website_url=\$1 LIMIT 1/);
+  assert.match(server, /JOIN organization_settings s ON s\.organization_id=o\.id WHERE o\.slug=\$1 AND s\.website_url=\$2/);
   assert.match(server, /u\.protocol==="https:"&&u\.origin===p\.website_url/);
 });
 

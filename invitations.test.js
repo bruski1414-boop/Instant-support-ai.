@@ -44,7 +44,7 @@ test("hotel onboarding readiness checks real configuration and privacy gate", ()
   assert.match(server, /CREATE TABLE IF NOT EXISTS organization_settings/);
   assert.match(server, /app\.get\("\/api\/admin\/onboarding"/);
   assert.match(server, /app\.put\("\/api\/admin\/settings"/);
-  assert.match(server, /origins\.includes\(new URL\(p\.website_url\)\.origin\)/);
+  assert.match(server, /u\.protocol==="https:"&&u\.origin===p\.website_url/);
   assert.match(server, /GUEST_DATA_STORAGE_ENABLED==="true"/);
   assert.match(server, /checks\.every\(x=>x\.done\)/);
   assert.match(dashboard, /data-panel="setup"/);

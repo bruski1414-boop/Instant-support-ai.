@@ -48,7 +48,7 @@ Compare with a pre-pilot baseline. Do not claim extra revenue or labour savings 
 
 ## What remains before a real guest pilot or scalable subscription
 
-- Durable database hosting, automated backups and a documented successful restore drill. The current free PostgreSQL instance is temporary and expires on 11 December 2026.
+- Production hosting: the current Render web service and PostgreSQL are both on Free plans. The web service spins down after 15 minutes idle and may take about a minute to wake; the database expires on 11 December 2026 and Free Postgres has no backups. An adult account owner must approve durable paid hosting before any hotel relies on Veyra.
 - Written hotel approval for the website widget, knowledge sources, privacy notice, data-processing terms, retention/deletion process and any permitted guest data.
 - Platform-wide privacy review and per-hotel approval are separate gates. The operator-only privacy approval record must refer to the hotel's written approval and retention target.
 - The hourly per-hotel retention worker is implemented and covered by synthetic CI tests. It deletes expired conversations, messages and linked escalations, skips open/claimed escalations, and continues after approval revocation. Keep RETENTION_ENFORCEMENT_VERIFIED and PILOT_RELEASE_APPROVED false until live worker monitoring and backup-retention/deletion behavior are tested and independently reviewed.

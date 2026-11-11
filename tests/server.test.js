@@ -235,3 +235,19 @@ test("staff handoff events carry stable tenant identifiers for multi-hotel routi
   assert.match(server, /o\.id AS organization_id,o\.name,o\.slug FROM escalations e JOIN organizations o ON o\.id=e\.organization_id/);
   assert.match(server, /notify\(\{id:item\.organization_id,name:item\.name,slug:item\.slug\}/);
 });
+
+
+test("hotel website origins are allowed dynamically from each tenant's saved HTTPS profile", () => {
+  const server = fs.readFileSync("server.js", "utf8");
+  assert.match(server, /SELECT 1 FROM organization_settings WHERE website_url=\$1 LIMIT 1/);
+  assert.match(server, /u\.protocol==="https:"&&u\.origin===p\.website_url/);
+});
+
+test("AI and staff integrations require live verification before onboarding marks them complete", () => {
+  const server = fs.readFileSync("server.js", "utf8");
+  assert.match(server, /organization_integration_checks/);
+  assert.match(server, /ai\.models\.retrieve\(MODEL/);
+  assert.match(server, /veyra\.integration\.test/);
+  assert.match(server, /verified_at,verified_by/);
+  assert.match(server, /handoffVerified=Boolean\(handoffConfigured&&verified\.staff_webhook\)/);
+});

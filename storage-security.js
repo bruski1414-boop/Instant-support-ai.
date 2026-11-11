@@ -44,4 +44,31 @@ async function readTextLimited(response, maxBytes = 12000) {
   return Buffer.concat(chunks).toString("utf8");
 }
 
-module.exports = { createTokenCipher, readTextLimited };
+const MICROSOFT_DOWNLOAD_HOSTS = ["sharepoint.com", "sharepointonline.com", "1drv.com"];
+
+function validateMicrosoftDownloadUrl(value) {
+  let url;
+  try { url = new URL(String(value)); } catch { throw new Error("Microsoft returned an invalid document download URL."); }
+  const host = url.hostname.toLowerCase();
+  const allowedHost = MICROSOFT_DOWNLOAD_HOSTS.some(domain => host === domain || host.endsWith("." + domain));
+  if (url.protocol !== "https:" || !allowedHost || url.username || url.password || (url.port && url.port !== "443")) {
+    throw new Error("Microsoft returned a document URL outside the approved download hosts.");
+  }
+  return url.toString();
+}
+
+async function fetchMicrosoftDownload(value, options = {}) {
+  let url = validateMicrosoftDownloadUrl(value);
+  for (let redirects = 0; redirects <= 3; redirects += 1) {
+    const response = await fetch(url, { ...options, redirect: "manual" });
+    if (![301, 302, 303, 307, 308].includes(response.status)) return response;
+    if (redirects === 3) throw new Error("Microsoft document download exceeded the redirect limit.");
+    const location = response.headers.get("location");
+    if (!location) throw new Error("Microsoft document download returned an invalid redirect.");
+    await response.body?.cancel().catch(() => {});
+    url = validateMicrosoftDownloadUrl(new URL(location, url).toString());
+  }
+  throw new Error("Microsoft document download failed.");
+}
+
+module.exports = { createTokenCipher, readTextLimited, validateMicrosoftDownloadUrl, fetchMicrosoftDownload };

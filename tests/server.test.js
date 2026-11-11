@@ -198,6 +198,7 @@ test("health endpoint cannot report pilot readiness with missing prerequisites",
   const response = await fetch(`${baseUrl}/api/health`);
   const body = await response.json();
   assert.equal(body.readyForPilot, false);
+  assert.equal(body.multiTenant, false, "database connectivity alone must not claim tenant isolation is verified");
   assert.deepEqual(body.checks, {
     databaseConnected: false,
     aiConfigured: false,

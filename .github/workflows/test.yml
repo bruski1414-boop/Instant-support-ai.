@@ -39,7 +39,7 @@ jobs:
         run: |
           npm install --no-save --package-lock=false playwright@1.56.1
           npx playwright install --with-deps chromium
-      - name: Verify guest chat and website launcher in Chromium
+      - name: Verify guest chat, website launcher, and authenticated dashboard in Chromium
         run: node --test scripts/browser-e2e-check.js
       - name: Apply tenant schema to disposable PostgreSQL
         run: psql -v ON_ERROR_STOP=1 -f migrations/001_multi_tenant_foundation.sql

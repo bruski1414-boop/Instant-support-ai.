@@ -117,7 +117,7 @@ app.post("/api/platform/organizations",requireDb,async(q,r,n)=>{
   if(!secret||!equal(q.get("X-Platform-Provisioning-Token"),secret))return r.status(403).json({error:"Platform provisioning is not authorized."});
   const b=q.body||{};
   if(typeof b.organizationName!=="string"||b.organizationName.trim().length<2||b.organizationName.length>100)return r.status(400).json({error:"Valid organization name required."});
-  if(typeof b.email!=="string"||!/^[-.+\\w]+@[-.\\w]+\\.[A-Za-z]{2,}$/.test(b.email)||b.email.length>254)return r.status(400).json({error:"Valid owner email required."});
+  if(typeof b.email!=="string"||!/^[-.+\w]+@[-.\w]+\.[A-Za-z]{2,}$/.test(b.email)||b.email.length>254)return r.status(400).json({error:"Valid owner email required."});
   if(typeof b.password!=="string"||b.password.length<12||b.password.length>200)return r.status(400).json({error:"Owner password must be 12–200 characters."});
   const organizationSlug=slug(b.organizationName);
   const c=await db.connect();

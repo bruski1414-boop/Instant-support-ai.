@@ -49,6 +49,9 @@ Compare with a pre-pilot baseline. Do not claim extra revenue or labour savings 
 
 - Durable database hosting, automated backups and a documented successful restore drill. The current free PostgreSQL instance is temporary and expires on 11 December 2026.
 - Written hotel approval for the website widget, knowledge sources, privacy notice, data-processing terms, retention/deletion process and any permitted guest data.
+- Platform-wide privacy review and per-hotel approval are separate gates. The operator-only privacy approval record must refer to the hotel's written approval and retention target.
+- The current application records a retention target but does not yet enforce automatic per-hotel retention deletion. Keep RETENTION_ENFORCEMENT_VERIFIED and PILOT_RELEASE_APPROVED false until that enforcement is implemented, tested and independently reviewed.
+- A platform operator records each hotel's written privacy/retention approval separately. Approval for one hotel must never unlock another hotel's workspace.
 - Live AI provider/model verification, each hotel's own OAuth authorization, and the actual signed staff dispatcher tested with the hotel team and manual fallback.
 - Independent security/privacy review. The current main-branch application relies on explicit tenant-scoped queries; CI coverage is valuable but is not a security certification.
 - Live-model answer-quality and prompt-injection evaluation, browser-level end-to-end tests, sustained load testing and a full owner/admin/staff/viewer permission review.

@@ -76,7 +76,7 @@ app.post("/api/setup/organization",requireDb,async(q,r,n)=>{
   const b=q.body||{};if(typeof b.organizationName!=="string"||b.organizationName.trim().length<2||b.organizationName.length>100)return r.status(400).json({error:"Valid organization name required."});
   if(typeof b.email!=="string"||!/^[-.+\w]+@[-.\w]+\.[A-Za-z]{2,}$/.test(b.email)||b.email.length>254)return r.status(400).json({error:"Valid email required."});
   if(typeof b.password!=="string"||b.password.length<12||b.password.length>200)return r.status(400).json({error:"Password must be at least 12 characters."});
-  const c=await db.connect();try{await c.query("BEGIN");const count=await c.query("SELECT count(*)::int AS n FROM users");if(count.rows[0].n>0){await c.query("ROLLBACK");return r.status(409).json({error:"Initial setup already completed."});}
+  const c=await db.connect();try{await c.query("BEGIN");await c.query("SELECT pg_advisory_xact_lock(20261111)");const count=await c.query("SELECT count(*)::int AS n FROM users");if(count.rows[0].n>0){await c.query("ROLLBACK");return r.status(409).json({error:"Initial setup already completed."});}
    const o=await c.query("INSERT INTO organizations(name,slug) VALUES($1,$2) RETURNING id,name,slug",[b.organizationName.trim(),slug(b.organizationName)]);
    const u=await c.query("INSERT INTO users(organization_id,email,password_hash,role) VALUES($1,lower($2),$3,'owner') RETURNING email",[o.rows[0].id,b.email,await pwHash(b.password)]);
    await c.query("INSERT INTO audit_logs(organization_id,action,target_type) VALUES($1,'organization.created','organization')",[o.rows[0].id]);await c.query("COMMIT");
@@ -85,8 +85,8 @@ app.post("/api/setup/organization",requireDb,async(q,r,n)=>{
  }catch(e){n(e);}
 });
 app.post("/api/auth/login",requireDb,async(q,r,n)=>{
- try{const b=q.body||{};if(typeof b.email!=="string"||typeof b.password!=="string"||b.email.length>254||b.password.length>200)return r.status(400).json({error:"Enter email and password."});
-  const x=await db.query("SELECT id,email,password_hash,role FROM users WHERE email=lower($1) AND active=true LIMIT 2",[b.email]);
+ try{const b=q.body||{};if(typeof b.email!=="string"||typeof b.password!=="string"||typeof b.organizationSlug!=="string"||b.email.length>254||b.password.length>200||!/^[a-z0-9-]{1,48}$/.test(b.organizationSlug))return r.status(400).json({error:"Enter workspace slug, email and password."});
+  const x=await db.query("SELECT u.id,u.email,u.password_hash,u.role FROM users u JOIN organizations o ON o.id=u.organization_id WHERE u.email=lower($1) AND o.slug=$2 AND u.active=true AND o.status<>'suspended' LIMIT 2",[b.email,b.organizationSlug]);
   if(x.rowCount!==1||!(await pwCheck(b.password,x.rows[0].password_hash)))return r.status(401).json({error:"Email or password is incorrect."});
   const t=crypto.randomBytes(32).toString("base64url"),csrf=crypto.randomBytes(24).toString("base64url");
   await db.query("INSERT INTO sessions(user_id,token_hash,csrf_hash,expires_at) VALUES($1,$2,$3,now()+interval '12 hours')",[x.rows[0].id,hash(t),hash(csrf)]);setCookie(r,t);

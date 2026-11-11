@@ -107,3 +107,17 @@ test("AI provider failures return a safe staff-escalation fallback", async () =>
   assert.equal(diagnosticRecorded, true);
   assert.equal(JSON.stringify(answer).includes("synthetic provider outage"), false);
 });
+
+test("hotel-specific response settings are included without crossing hotel boundaries", () => {
+  const prompt = buildGuestSupportSystemPrompt("Hotel Alpha", "Alpha breakfast hours only.", {
+    language: "th",
+    supportEmail: "alpha@alpha.test",
+    fallbackInstructions: "Use the Alpha front desk only."
+  });
+  assert.match(prompt, /Preferred reply language: "th"/);
+  assert.match(prompt, /alpha@alpha\.test/);
+  assert.match(prompt, /Use the Alpha front desk only/);
+  assert.match(prompt, /untrusted reference text/);
+  assert.match(prompt, /Approved knowledge:\nAlpha breakfast hours only\./);
+  assert.doesNotMatch(prompt, /Hotel Beta|beta@beta\.test|Beta reception/);
+});

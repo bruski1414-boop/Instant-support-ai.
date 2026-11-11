@@ -94,7 +94,8 @@ test("two hotel workspaces remain isolated across live API resources", { skip: !
       TENANT_ISOLATION_TESTS_PASSED: "true",
       PROVIDER_OAUTH_TESTED: "true",
       PLATFORM_PRIVACY_REVIEWED: "true",
-      RETENTION_ENFORCEMENT_VERIFIED: "true",
+      RETENTION_ENFORCEMENT_VERIFIED: "false",
+      RETENTION_WORKER_ENABLED: "false",
       STAFF_HANDOFF_TESTED: "true",
       PILOT_RELEASE_APPROVED: "true",
       ALLOWED_ORIGINS: "http://localhost:3000"
@@ -226,8 +227,8 @@ test("two hotel workspaces remain isolated across live API resources", { skip: !
     assert.doesNotMatch(storageCheck.detail, new RegExp(otherProvider), "another hotel's storage provider must not leak into this workspace");
     const privacyCheck = onboarding.checks.find((check) => check.key === "privacy");
     const isAlpha = session === alphaSession;
-    assert.equal(privacyCheck.done, isAlpha, "privacy approval must be recorded separately for each hotel");
-    if (isAlpha) assert.match(privacyCheck.detail, /90-day retention target/);
+    assert.equal(privacyCheck.done, false, "the first server has no verified retention worker");
+    if (isAlpha) assert.match(privacyCheck.detail, /retention worker has not completed a recent successful run/i);
     else assert.match(privacyCheck.detail, /platform operator must record this hotel's written privacy approval/i);
   }
 
@@ -382,6 +383,20 @@ test("two hotel workspaces remain isolated across live API resources", { skip: !
   assert.match((await alphaTranscript.text()), /Private Alpha guest message/);
   const betaTranscript = await request(`/api/admin/conversations/${alphaConversation.rows[0].id}`, {}, betaSession);
   assert.equal(betaTranscript.status, 404);
+  await pool.query("UPDATE organization_privacy_approvals SET retention_days=1 WHERE organization_id=$1", [alphaId]);
+  const oldAlphaConversation = await pool.query(
+    "INSERT INTO conversations(organization_id,channel,status,started_at,last_message_at) VALUES($1,'website','open',now()-interval '2 days',now()-interval '2 days') RETURNING id",
+    [alphaId]
+  );
+  const oldBetaConversation = await pool.query(
+    "INSERT INTO conversations(organization_id,channel,status,started_at,last_message_at) VALUES($1,'website','open',now()-interval '2 days',now()-interval '2 days') RETURNING id",
+    [betaId]
+  );
+  await pool.query(
+    "INSERT INTO messages(conversation_id,role,content,created_at) VALUES($1,'guest','expired Alpha test message',now()-interval '2 days'),($2,'guest','unapproved Beta test message',now()-interval '2 days')",
+    [oldAlphaConversation.rows[0].id, oldBetaConversation.rows[0].id]
+  );
+
   if (child && child.exitCode === null) {
     const originalChild = child;
     originalChild.kill("SIGTERM");
@@ -408,6 +423,7 @@ test("two hotel workspaces remain isolated across live API resources", { skip: !
       PROVIDER_OAUTH_TESTED: "true",
       PLATFORM_PRIVACY_REVIEWED: "true",
       RETENTION_ENFORCEMENT_VERIFIED: "true",
+      RETENTION_WORKER_ENABLED: "true",
       STAFF_HANDOFF_TESTED: "true",
       PILOT_RELEASE_APPROVED: "true",
       ALLOWED_ORIGINS: "http://localhost:3000"
@@ -424,6 +440,25 @@ test("two hotel workspaces remain isolated across live API resources", { skip: !
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
   assert.ok(privacyServerReady, "privacy-gate test server should start with synthetic platform approvals");
+  let retentionRunReady = false;
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const run = await pool.query("SELECT last_success_at,last_deleted_conversations FROM retention_purge_runs WHERE organization_id=$1", [alphaId]);
+    if (run.rowCount && run.rows[0].last_success_at) {
+      retentionRunReady = true;
+      assert.equal(run.rows[0].last_deleted_conversations, 1, "the worker should delete the expired Alpha conversation");
+      break;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  assert.ok(retentionRunReady, "the scheduled retention worker should complete a per-hotel purge");
+  const expiredAlpha = await pool.query("SELECT id FROM conversations WHERE id=$1", [oldAlphaConversation.rows[0].id]);
+  const retainedBeta = await pool.query("SELECT id FROM conversations WHERE id=$1", [oldBetaConversation.rows[0].id]);
+  const expiredAlphaMessages = await pool.query("SELECT id FROM messages WHERE conversation_id=$1", [oldAlphaConversation.rows[0].id]);
+  const retainedBetaMessages = await pool.query("SELECT id FROM messages WHERE conversation_id=$1", [oldBetaConversation.rows[0].id]);
+  assert.equal(expiredAlpha.rowCount, 0, "Alpha's approved retention policy should delete expired conversation data");
+  assert.equal(expiredAlphaMessages.rowCount, 0, "conversation deletion should cascade to guest messages");
+  assert.equal(retainedBeta.rowCount, 1, "Alpha's approval must not purge Beta's data");
+  assert.equal(retainedBetaMessages.rowCount, 1, "Beta's messages must remain scoped to Beta");
 
   const alphaReadyResponse = await request("/api/admin/onboarding", {}, alphaSession);
   const alphaReady = await alphaReadyResponse.json();
@@ -463,4 +498,9 @@ test("two hotel workspaces remain isolated across live API resources", { skip: !
   const alphaAfterRevoke = await request("/api/admin/onboarding", {}, alphaSession);
   const alphaPrivacyAfterRevoke = (await alphaAfterRevoke.json()).checks.find((check) => check.key === "privacy");
   assert.equal(alphaPrivacyAfterRevoke.done, false, "revoking approval must close that hotel's privacy gate again");
+  const retainedApproval = await pool.query("SELECT revoked_at FROM organization_privacy_approvals WHERE organization_id=$1", [alphaId]);
+  const retainedPurgeRun = await pool.query("SELECT last_success_at FROM retention_purge_runs WHERE organization_id=$1", [alphaId]);
+  assert.equal(retainedApproval.rowCount, 1, "revocation must preserve the retention schedule for existing data");
+  assert.ok(retainedApproval.rows[0].revoked_at);
+  assert.equal(retainedPurgeRun.rowCount, 1, "retention monitoring must continue after guest-chat approval is revoked");
 });

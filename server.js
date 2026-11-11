@@ -63,6 +63,7 @@ const schema=[
 "CREATE INDEX IF NOT EXISTS user_invitations_org_time_idx ON user_invitations(organization_id,created_at DESC)",
 "CREATE TABLE IF NOT EXISTS organization_settings(organization_id UUID PRIMARY KEY REFERENCES organizations(id) ON DELETE CASCADE,website_url TEXT NOT NULL DEFAULT '',support_email TEXT NOT NULL DEFAULT '',timezone TEXT NOT NULL DEFAULT 'UTC',language TEXT NOT NULL DEFAULT 'en',fallback_instructions TEXT NOT NULL DEFAULT '',updated_by UUID REFERENCES users(id) ON DELETE SET NULL,updated_at TIMESTAMPTZ NOT NULL DEFAULT now())",
 "CREATE TABLE IF NOT EXISTS organization_privacy_approvals(organization_id UUID PRIMARY KEY REFERENCES organizations(id) ON DELETE CASCADE,approval_reference TEXT NOT NULL,retention_days INTEGER NOT NULL CHECK(retention_days BETWEEN 1 AND 730),approved_by_operator TEXT NOT NULL DEFAULT 'platform_operator',approved_at TIMESTAMPTZ NOT NULL DEFAULT now(),updated_at TIMESTAMPTZ NOT NULL DEFAULT now())",
+"CREATE TABLE IF NOT EXISTS retention_purge_runs(organization_id UUID PRIMARY KEY REFERENCES organizations(id) ON DELETE CASCADE,last_success_at TIMESTAMPTZ,last_deleted_conversations INTEGER NOT NULL DEFAULT 0,last_error TEXT NOT NULL DEFAULT '',updated_at TIMESTAMPTZ NOT NULL DEFAULT now())",
 "CREATE TABLE IF NOT EXISTS organization_storage_connections(id UUID PRIMARY KEY DEFAULT gen_random_uuid(),organization_id UUID NOT NULL UNIQUE REFERENCES organizations(id) ON DELETE CASCADE,provider TEXT NOT NULL CHECK(provider IN ('google_drive','microsoft_sharepoint')),workspace_reference TEXT NOT NULL DEFAULT '',root_folder_reference TEXT NOT NULL DEFAULT '',status TEXT NOT NULL DEFAULT 'pending_authorization' CHECK(status IN ('pending_authorization','connected','paused','error')),scopes TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],connected_by UUID REFERENCES users(id) ON DELETE SET NULL,connected_at TIMESTAMPTZ,last_sync_at TIMESTAMPTZ,last_sync_status TEXT NOT NULL DEFAULT 'never',last_sync_error TEXT NOT NULL DEFAULT '',created_at TIMESTAMPTZ NOT NULL DEFAULT now(),updated_at TIMESTAMPTZ NOT NULL DEFAULT now())",
 "CREATE TABLE IF NOT EXISTS storage_connections(organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,provider TEXT NOT NULL CHECK(provider IN ('google','microsoft')),account_email TEXT NOT NULL DEFAULT '',encrypted_tokens TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'connected',connected_by UUID REFERENCES users(id) ON DELETE SET NULL,connected_at TIMESTAMPTZ NOT NULL DEFAULT now(),last_sync_at TIMESTAMPTZ,last_error TEXT,PRIMARY KEY(organization_id,provider))",
 "CREATE TABLE IF NOT EXISTS storage_oauth_states(state_hash TEXT PRIMARY KEY,organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,provider TEXT NOT NULL CHECK(provider IN ('google','microsoft')),expires_at TIMESTAMPTZ NOT NULL)",
@@ -97,7 +98,40 @@ async function notify(org,cid,reason){
  if(!process.env.STAFF_WEBHOOK_URL||!process.env.STAFF_WEBHOOK_SECRET)return{configured:false,delivered:false,status:"not_configured"};
  try{const body=JSON.stringify({event:"veyra.escalation.created",organizationId:org.id,organizationSlug:org.slug,organization:org.name,conversationId:cid,reason,createdAt:new Date().toISOString()});const sig=crypto.createHmac("sha256",process.env.STAFF_WEBHOOK_SECRET).update(body).digest("hex");const ctl=new AbortController();const timer=setTimeout(()=>ctl.abort(),5000);try{const resp=await fetch(process.env.STAFF_WEBHOOK_URL,{method:"POST",headers:{"content-type":"application/json","x-veyra-signature":sig},body,signal:ctl.signal});return{configured:true,delivered:resp.ok,status:resp.ok?"delivered":"failed"};}finally{clearTimeout(timer);}}catch(e){console.error("Webhook failed:",e.message);return{configured:true,delivered:false,status:"failed"};}
 }
-async function readinessSnapshot(){let database="not-configured";if(db){try{await db.query("SELECT 1");database="connected";}catch{database="unavailable";}}const guestDataStorage=process.env.GUEST_DATA_STORAGE_ENABLED==="true",humanHandoff=Boolean(process.env.STAFF_WEBHOOK_URL&&process.env.STAFF_WEBHOOK_SECRET);const gate=buildPilotReadiness({databaseConnected:database==="connected",aiConfigured:Boolean(ai),guestDataStorageEnabled:guestDataStorage,staffWebhookConfigured:humanHandoff,durableBackupsVerified:process.env.DURABLE_BACKUPS_VERIFIED==="true",tenantIsolationTestsPassed:process.env.TENANT_ISOLATION_TESTS_PASSED==="true",providerOAuthTested:process.env.PROVIDER_OAUTH_TESTED==="true",platformPrivacyReviewPassed:process.env.PLATFORM_PRIVACY_REVIEWED==="true",retentionEnforcementVerified:process.env.RETENTION_ENFORCEMENT_VERIFIED==="true",staffHandoffTested:process.env.STAFF_HANDOFF_TESTED==="true",pilotReleaseApproved:process.env.PILOT_RELEASE_APPROVED==="true"});return{service:"Veyra AI",mode:ai?"ai-configured":"demo-no-api-key",model:ai?MODEL:null,database,multiTenant:database==="connected"&&gate.checks.tenantIsolationTestsPassed,guestDataStorage,humanHandoff:humanHandoff?"webhook-configured":"not-configured",readyForPilot:gate.readyForPilot,checks:gate.checks};}
+async function purgeExpiredGuestConversations(){
+ if(!db||process.env.GUEST_DATA_STORAGE_ENABLED!=="true"||process.env.RETENTION_WORKER_ENABLED!=="true")return{enabled:false};
+ const c=await db.connect();let locked=false;const results=[];
+ try{
+  const lock=await c.query("SELECT pg_try_advisory_lock(20261113) AS locked");
+  locked=lock.rows[0].locked;
+  if(!locked)return{skipped:true};
+  const organizations=await c.query("SELECT organization_id,retention_days FROM organization_privacy_approvals ORDER BY organization_id");
+  for(const organization of organizations.rows){
+   try{
+    await c.query("BEGIN");
+    const deleted=await c.query("DELETE FROM conversations WHERE organization_id=$1 AND last_message_at<now()-($2::int*interval '1 day') RETURNING id",[organization.organization_id,organization.retention_days]);
+    await c.query("INSERT INTO retention_purge_runs(organization_id,last_success_at,last_deleted_conversations,last_error,updated_at) VALUES($1,now(),$2,'',now()) ON CONFLICT(organization_id) DO UPDATE SET last_success_at=now(),last_deleted_conversations=EXCLUDED.last_deleted_conversations,last_error='',updated_at=now()",[organization.organization_id,deleted.rowCount]);
+    await c.query("COMMIT");
+    results.push({organizationId:organization.organization_id,deletedConversations:deleted.rowCount});
+   }catch(e){
+    await c.query("ROLLBACK");
+    try{await c.query("INSERT INTO retention_purge_runs(organization_id,last_error,updated_at) VALUES($1,$2,now()) ON CONFLICT(organization_id) DO UPDATE SET last_error=EXCLUDED.last_error,updated_at=now()",[organization.organization_id,String(e.message||"purge failed").slice(0,300)]);}catch(logError){console.error("Retention purge status could not be recorded:",logError.message);}
+    console.error("Retention purge failed for a hotel workspace:",e.message);
+   }
+  }
+  return{enabled:true,results};
+ }finally{
+  if(locked){try{await c.query("SELECT pg_advisory_unlock(20261113)");}catch(e){console.error("Retention worker lock release failed:",e.message);}}
+  c.release();
+ }
+}
+function startRetentionWorker(){
+ if(!db||process.env.GUEST_DATA_STORAGE_ENABLED!=="true"||process.env.RETENTION_WORKER_ENABLED!=="true")return;
+ const run=()=>purgeExpiredGuestConversations().catch(e=>console.error("Retention worker failed:",e.message));
+ const initial=setTimeout(run,1000);initial.unref?.();
+ const interval=setInterval(run,60*60*1000);interval.unref?.();
+}
+async function readinessSnapshot(){let database="not-configured",retentionWorkerHealthy=false;if(db){try{await db.query("SELECT 1");database="connected";const retentionState=await db.query("SELECT count(*)::int AS approved_count,count(*) FILTER(WHERE r.last_success_at>=now()-interval '26 hours' AND r.last_error='')::int AS healthy_count FROM organization_privacy_approvals p LEFT JOIN retention_purge_runs r ON r.organization_id=p.organization_id");retentionWorkerHealthy=process.env.RETENTION_WORKER_ENABLED==="true"&&retentionState.rows[0].approved_count===retentionState.rows[0].healthy_count;}catch{database="unavailable";retentionWorkerHealthy=false;}}const guestDataStorage=process.env.GUEST_DATA_STORAGE_ENABLED==="true",humanHandoff=Boolean(process.env.STAFF_WEBHOOK_URL&&process.env.STAFF_WEBHOOK_SECRET);const gate=buildPilotReadiness({databaseConnected:database==="connected",aiConfigured:Boolean(ai),guestDataStorageEnabled:guestDataStorage,staffWebhookConfigured:humanHandoff,durableBackupsVerified:process.env.DURABLE_BACKUPS_VERIFIED==="true",tenantIsolationTestsPassed:process.env.TENANT_ISOLATION_TESTS_PASSED==="true",providerOAuthTested:process.env.PROVIDER_OAUTH_TESTED==="true",platformPrivacyReviewPassed:process.env.PLATFORM_PRIVACY_REVIEWED==="true",retentionEnforcementVerified:process.env.RETENTION_ENFORCEMENT_VERIFIED==="true"&&retentionWorkerHealthy,staffHandoffTested:process.env.STAFF_HANDOFF_TESTED==="true",pilotReleaseApproved:process.env.PILOT_RELEASE_APPROVED==="true"});return{service:"Veyra AI",mode:ai?"ai-configured":"demo-no-api-key",model:ai?MODEL:null,database,multiTenant:database==="connected"&&gate.checks.tenantIsolationTestsPassed,guestDataStorage,humanHandoff:humanHandoff?"webhook-configured":"not-configured",readyForPilot:gate.readyForPilot,checks:gate.checks};}
 app.get("/api/health",async(_q,r)=>{const state=await readinessSnapshot();r.status(200).json({status:state.readyForPilot?"ready":"degraded",...state});});
 app.get("/api/readiness",async(_q,r)=>{const state=await readinessSnapshot();r.status(state.readyForPilot?200:503).json({status:state.readyForPilot?"ready":"not-ready",...state});});
 app.post("/api/setup/organization",requireDb,async(q,r,n)=>{
@@ -240,5 +274,5 @@ app.get("/setup.html",publicFile("setup.html","html"));
 app.get("/invite.html",publicFile("invite.html","html"));
 app.get("/widget.js",publicFile("widget.js","javascript"));
 app.use((e,_q,r,_n)=>{console.error("Veyra API error:",e?.message||"unknown");if(!r.headersSent)r.status(500).json({error:"Something went wrong. Please try again."});});
-async function start(){if(db){await db.query(schema);await db.query("DELETE FROM sessions WHERE expires_at<now()");await db.query("DELETE FROM storage_oauth_states WHERE expires_at<now()");}app.listen(PORT,"0.0.0.0",()=>console.log("Veyra listening on "+PORT+(db?" with PostgreSQL":" in demo mode")));}
+async function start(){if(db){await db.query(schema);await db.query("DELETE FROM sessions WHERE expires_at<now()");await db.query("DELETE FROM storage_oauth_states WHERE expires_at<now()");startRetentionWorker();}app.listen(PORT,"0.0.0.0",()=>console.log("Veyra listening on "+PORT+(db?" with PostgreSQL":" in demo mode")));}
 start().catch(e=>{console.error("Startup failed:",e.message);process.exit(1);});

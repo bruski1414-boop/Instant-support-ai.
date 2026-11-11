@@ -39,6 +39,7 @@ main{padding:28px clamp(16px,4vw,48px);max-width:1450px;width:100%;margin:auto}.
   <button data-panel="conversations">☷ Conversations</button>
   <button data-panel="knowledge">✧ Knowledge base</button>
   <button data-panel="escalations">↗ Staff handoffs</button>
+  <button data-panel="team" id="teamNav">♙ Team access</button>
  </nav>
  <div class="navlabel">ACCOUNT</div><nav class="nav"><button id="logout">↪ Sign out</button><button onclick="location.href='index.html'">↖ Public website</button></nav>
  <div class="sidefoot">VEYRA AI · HOTEL SUPPORT PLATFORM<br>Workspace data is private to your organization.</div>
@@ -74,6 +75,24 @@ main{padding:28px clamp(16px,4vw,48px);max-width:1450px;width:100%;margin:auto}.
   </div>
   <div id="knowledgeList" style="display:grid;gap:10px;margin-top:14px"></div>
  </section>
+
+ <section id="panel-team" class="panel">
+  <div class="sectionrow"><h2>Team access</h2><span class="muted">Individual accounts · least-privilege roles</span></div>
+  <div class="card">
+   <h3 style="margin:0 0 6px">Invite a team member</h3>
+   <p class="muted" style="font-size:12px">Create a single-use invitation link. It expires after 24 hours. Copy it and send it privately to the employee; Veyra does not send email yet.</p>
+   <form id="inviteForm">
+    <div class="formrow">
+     <div class="field"><label for="inviteEmail">Employee email</label><input id="inviteEmail" type="email" required maxlength="254"></div>
+     <div class="field"><label for="inviteRole">Access role</label><select id="inviteRole"><option value="staff">Staff · handle handoffs</option><option value="viewer">Viewer · read workspace</option><option value="admin">Admin · manage workspace</option></select></div>
+    </div>
+    <button class="btn primary" type="submit">＋ Create invitation</button>
+   </form>
+   <div id="inviteResult" class="notice hidden" style="margin-top:14px"></div>
+  </div>
+  <div class="sectionrow"><h2>Invitations</h2><span class="muted">Latest 100</span></div>
+  <div id="invitationList" class="card tablewrap"><div class="empty">Loading invitations…</div></div>
+ </section>
  <section id="panel-escalations" class="panel">
   <div class="sectionrow"><h2>Staff handoff queue</h2><span class="muted">Urgent, sensitive or uncertain requests</span></div>
   <div class="card tablewrap"><table class="table"><thead><tr><th>REASON</th><th>STATUS</th><th>NOTIFICATION</th><th>CREATED</th><th>ACTION</th></tr></thead><tbody id="escalationRows"></tbody></table></div>
@@ -105,7 +124,7 @@ function switchPanel(name){
  document.querySelectorAll(".panel").forEach(x=>x.classList.remove("active"));
  $("panel-"+name).classList.add("active");
  document.querySelectorAll("[data-panel]").forEach(x=>x.classList.toggle("active",x.dataset.panel===name));
- const labels={overview:["OVERVIEW","Support overview","A live view of conversations and staff attention."],conversations:["CONVERSATIONS","Recent conversations","Review the latest guest interactions."],knowledge:["KNOWLEDGE BASE","Hotel knowledge","Control the facts the assistant is allowed to use."],escalations:["STAFF HANDOFFS","Staff handoff queue","Requests that need a member of your team."]};
+ const labels={team:["TEAM ACCESS","Team access","Invite employees and manage pending invitations."],overview:["OVERVIEW","Support overview","A live view of conversations and staff attention."],conversations:["CONVERSATIONS","Recent conversations","Review the latest guest interactions."],knowledge:["KNOWLEDGE BASE","Hotel knowledge","Control the facts the assistant is allowed to use."],escalations:["STAFF HANDOFFS","Staff handoff queue","Requests that need a member of your team."]};
  $("crumb").textContent="WORKSPACE / "+labels[name][0];$("heading").textContent=labels[name][1];$("subheading").textContent=labels[name][2];
  loadPanel(name);
 }
@@ -126,17 +145,25 @@ async function loadEscalations(){
  $("escalationRows").innerHTML=(d.escalations||[]).map(x=>'<tr><td>'+safe(x.reason)+'</td><td>'+statusTag(x.status)+'</td><td><span class="tag '+(x.notification_status==="delivered"?"good":x.notification_status==="failed"?"bad":"warn")+'">'+safe(x.notification_status||"not_configured")+'</span>'+(x.notification_status==="failed"?' <button class="btn" data-action="retry-notification" data-id="'+safe(x.id)+'">Retry</button>':"")+'</td><td>'+date(x.created_at)+'</td><td><select data-action="escalation-status" data-id="'+safe(x.id)+'"><option value="open" '+(x.status==="open"?"selected":"")+' >Open</option><option value="claimed" '+(x.status==="claimed"?"selected":"")+' >Claimed</option><option value="resolved" '+(x.status==="resolved"?"selected":"")+' >Resolved</option></select></td></tr>').join("")||'<tr><td colspan="5" class="empty">No staff handoffs yet.</td></tr>';
 }
 async function loadPanel(name){
- try{if(name==="overview"||name==="conversations")await loadOverview();if(name==="knowledge")await loadKnowledge();if(name==="escalations")await loadEscalations();$("globalNotice").classList.add("hidden");}
+ try{if(name==="overview"||name==="conversations")await loadOverview();if(name==="knowledge")await loadKnowledge();if(name==="escalations")await loadEscalations();if(name==="team")await loadInvitations();$("globalNotice").classList.add("hidden");}
  catch(e){notice(e.message,"error");}
 }
 async function enterWorkspace(){
- try{const c=await api("/api/auth/csrf");csrfToken=c.csrfToken;const d=await api("/api/auth/me");currentRole=d.user.role;$("orgName").textContent=d.organization.name;$("userRole").textContent=d.user.role+" · "+d.user.email;$("login").classList.add("hidden");$("app").classList.remove("hidden");switchPanel("overview");}
+ try{const c=await api("/api/auth/csrf");csrfToken=c.csrfToken;const d=await api("/api/auth/me");currentRole=d.user.role;$("teamNav").classList.toggle("hidden",!["owner","admin"].includes(currentRole));$("orgName").textContent=d.organization.name;$("userRole").textContent=d.user.role+" · "+d.user.email;$("login").classList.add("hidden");$("app").classList.remove("hidden");switchPanel("overview");}
  catch(e){$("login").classList.remove("hidden");$("app").classList.add("hidden");}
 }
 $("loginForm").addEventListener("submit",async e=>{e.preventDefault();try{const d=await api("/api/auth/login",{method:"POST",body:JSON.stringify({organizationSlug:$("workspaceSlug").value.trim().toLowerCase(),email:$("email").value,password:$("password").value})});csrfToken=d.csrfToken;await enterWorkspace();}catch(err){loginError(err.message);}});
 $("logout").addEventListener("click",async()=>{try{await api("/api/auth/logout",{method:"POST",body:"{}"});}catch{}csrfToken="";$("app").classList.add("hidden");$("login").classList.remove("hidden");$("password").value="";});
 $("refresh").addEventListener("click",()=>loadPanel(activePanel));
 document.querySelectorAll("[data-panel]").forEach(b=>b.addEventListener("click",()=>switchPanel(b.dataset.panel)));
+
+async function loadInvitations(){
+ const d=await api("/api/admin/invitations");
+ const rows=(d.invitations||[]).map(x=>{const state=x.accepted_at?"Accepted":x.revoked_at?"Revoked":new Date(x.expires_at)<=new Date()?"Expired":"Pending";return '<tr><td>'+safe(x.email)+'</td><td>'+safe(x.role)+'</td><td>'+safe(state)+'</td><td>'+date(x.expires_at)+'</td><td>'+(state==="Pending"?'<button class="btn danger" data-action="revoke-invitation" data-id="'+safe(x.id)+'">Revoke</button>':"—")+'</td></tr>';}).join("");
+ $("invitationList").innerHTML='<table class="table"><thead><tr><th>EMAIL</th><th>ROLE</th><th>STATUS</th><th>EXPIRES</th><th>ACTION</th></tr></thead><tbody>'+(rows||'<tr><td colspan="5" class="empty">No invitations yet.</td></tr>')+'</tbody></table>';
+}
+$("inviteForm").addEventListener("submit",async e=>{e.preventDefault();const result=$("inviteResult");result.classList.add("hidden");try{const x=await api("/api/admin/invitations",{method:"POST",body:JSON.stringify({email:$("inviteEmail").value,role:$("inviteRole").value})});const url=location.origin+x.invitePath;result.innerHTML='<strong>Invitation created.</strong><p>'+safe(x.message)+'</p><input id="newInviteLink" readonly style="width:100%;background:#080e16;border:1px solid #33445b;color:white;border-radius:8px;padding:10px" value="'+safe(url)+'"><button class="btn" id="copyInviteLink" type="button" style="margin-top:8px">Copy invitation link</button>';result.className="notice good";$("inviteForm").reset();$("copyInviteLink").addEventListener("click",async()=>{try{await navigator.clipboard.writeText(url);showToast("Invitation link copied.");}catch{$("newInviteLink").select();showToast("Select and copy the invitation link.");}});await loadInvitations();}catch(err){result.textContent=err.message;result.className="notice error";}});
+$("invitationList").addEventListener("click",async e=>{const b=e.target.closest('button[data-action="revoke-invitation"]');if(!b)return;if(!confirm("Revoke this unused invitation?"))return;b.disabled=true;try{await api("/api/admin/invitations/"+encodeURIComponent(b.dataset.id),{method:"DELETE",body:"{}"});showToast("Invitation revoked.");await loadInvitations();}catch(err){notice(err.message,"error");b.disabled=false;}});
 $("knowledgeForm").addEventListener("submit",async e=>{e.preventDefault();try{await api("/api/admin/knowledge",{method:"POST",body:JSON.stringify({title:$("kTitle").value,category:$("kCategory").value,content:$("kContent").value,approved:$("kApproved").checked})});$("knowledgeForm").reset();showToast("Knowledge saved.");await loadKnowledge();}catch(err){notice(err.message,"error");}});
 $("knowledgeList").addEventListener("click",async e=>{const b=e.target.closest("button[data-action]");if(!b)return;try{if(b.dataset.action==="history-knowledge"){const d=await api("/api/admin/knowledge/"+encodeURIComponent(b.dataset.id)+"/versions");const panel=b.closest("article").querySelector(".knowledgeHistory");panel.style.display="grid";panel.style.gap="8px";panel.innerHTML=(d.versions||[]).map(v=>'<div class="card"><div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap"><strong>'+safe(v.title)+'</strong>'+statusTag(v.approved?"approved":"not approved")+'</div><small class="muted">'+safe(v.change_type)+' · '+date(v.created_at)+'</small><p style="white-space:pre-wrap;margin:8px 0">'+safe(v.content)+'</p></div>').join("")||'<p class="muted">No saved versions.</p>';return;}if(b.dataset.action==="toggle-knowledge"){await api("/api/admin/knowledge/"+encodeURIComponent(b.dataset.id),{method:"PATCH",body:JSON.stringify({approved:b.dataset.approved==="true"})});showToast("Knowledge approval updated.");}else if(b.dataset.action==="delete-knowledge"){if(!confirm("Delete this knowledge document?"))return;await api("/api/admin/knowledge/"+encodeURIComponent(b.dataset.id),{method:"DELETE",body:"{}"});showToast("Knowledge deleted.");}await loadKnowledge();}catch(err){notice(err.message,"error");}});
 $("conversationRows").addEventListener("click",async e=>{const b=e.target.closest("button[data-action]");if(!b)return;const id=encodeURIComponent(b.dataset.id);if(b.dataset.action==="view-conversation"){b.disabled=true;try{const d=await api("/api/admin/conversations/"+id);const el=$("conversationDetail");el.classList.remove("hidden");el.innerHTML='<div style="display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap"><div><strong>Conversation '+safe(d.conversation.id).slice(0,8)+'</strong><div class="muted" style="font-size:11px">'+safe(d.conversation.status)+' · Started '+date(d.conversation.started_at)+'</div></div><button class="btn" data-action="close-conversation">Close</button></div><div style="display:grid;gap:9px;margin-top:14px">'+(d.messages||[]).map(m=>'<article class="card"><strong>'+safe(m.role)+'</strong><div style="white-space:pre-wrap;margin:7px 0">'+safe(m.content)+'</div><small class="muted">'+date(m.created_at)+'</small></article>').join("")+'</div>';}catch(err){notice(err.message,"error");}finally{b.disabled=false;}return;}if(b.dataset.action==="delete-conversation"){if(!confirm("Delete this conversation from active Veyra records? Backup and provider retention may differ."))return;b.disabled=true;try{await api("/api/admin/conversations/"+id,{method:"DELETE",body:"{}"});$("conversationDetail").classList.add("hidden");showToast("Conversation deleted.");await loadOverview();}catch(err){notice(err.message,"error");b.disabled=false;}}});

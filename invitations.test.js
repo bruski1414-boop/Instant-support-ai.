@@ -74,3 +74,10 @@ test("workspace owners and admins can revoke individual staff access safely", ()
   assert.match(dashboard, /id="memberList"/);
   assert.match(dashboard, /data-action="toggle-user"/);
 });
+
+test("workspace audit viewer is tenant-scoped and owner/admin-only", () => {
+  assert.match(server, /app\.get\("\/api\/admin\/audit",requireDb,auth,role\("owner","admin"\)/);
+  assert.match(server, /WHERE a\.organization_id=\$1 ORDER BY a\.created_at DESC LIMIT 100/);
+  assert.match(dashboard, /id="auditList"/);
+  assert.match(dashboard, /api\("\/api\/admin\/audit"\)/);
+});

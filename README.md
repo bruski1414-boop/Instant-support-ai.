@@ -24,6 +24,7 @@ The web service and database are currently on Render's free plans. The database 
 - One-time first-owner bootstrap endpoint and setup page.
 - Tenant-scoped staff invitations: hashed single-use tokens, 24-hour expiry, revocation, role restrictions and a dedicated acceptance page. Invitation delivery is manual; no email provider is connected.
 - Hotel workspace profile and live pre-pilot readiness checklist for website origin, approved knowledge, AI configuration, staff notification and privacy/storage gate.
+- Knowledge source references and review dates, with overdue documents automatically excluded from guest-answer context until reviewed.
 - Owner dashboard for conversations, knowledge approval and escalation status.
 - Embeddable guest chat widget with multi-turn conversation continuity, bounded history and a per-conversation access token stored only as a hash server-side.
 - Public file allowlist so source files, tests and internal documentation are not served as website assets.
@@ -86,7 +87,8 @@ Never commit secrets or place them in browser JavaScript.
 - `GET /api/auth/csrf`
 - `GET /api/admin/conversations/:id` — tenant-scoped conversation transcript\n- `DELETE /api/admin/conversations/:id` — owner/admin-only, tenant-scoped conversation deletion\n- `GET /api/admin/overview`
 - `GET/POST /api/admin/knowledge`
-- `PATCH/DELETE /api/admin/knowledge/:id`
+- `PATCH/DELETE /api/admin/knowledge/:id` — update, reapprove or delete knowledge; edits remove approval
+- `GET /api/admin/knowledge/:id/versions` — review history including source and review metadata
 - `GET /api/admin/escalations`
 - `POST /api/admin/escalations/:id/notify` — retry a failed notification (maximum five attempts)
 - `PATCH /api/admin/escalations/:id`

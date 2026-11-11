@@ -201,6 +201,7 @@ async function loadInvitations(){
  const rows=(d.invitations||[]).map(x=>{const state=x.accepted_at?"Accepted":x.revoked_at?"Revoked":new Date(x.expires_at)<=new Date()?"Expired":"Pending";return '<tr><td>'+safe(x.email)+'</td><td>'+safe(x.role)+'</td><td>'+safe(state)+'</td><td>'+date(x.expires_at)+'</td><td>'+(state==="Pending"?'<button class="btn danger" data-action="revoke-invitation" data-id="'+safe(x.id)+'">Revoke</button>':"—")+'</td></tr>';}).join("");
  $("invitationList").innerHTML='<table class="table"><thead><tr><th>EMAIL</th><th>ROLE</th><th>STATUS</th><th>EXPIRES</th><th>ACTION</th></tr></thead><tbody>'+(rows||'<tr><td colspan="5" class="empty">No invitations yet.</td></tr>')+'</tbody></table>';
  await loadUsers();
+ await loadAudit();
 }
 async function loadAudit(){
  const d=await api("/api/admin/audit");

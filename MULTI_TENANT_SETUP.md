@@ -26,6 +26,10 @@ A parent or guardian must manage hosting accounts, any paid upgrades and API-pro
 - Public file allowlist and baseline browser security headers.
 - Tenant-scoped owner/admin conversation deletion from active database records (backup/provider retention may differ) with an audit record.
 - Guest-data storage gate is disabled unless explicitly enabled after hotel privacy and retention approval.
+- Per-hotel onboarding checks verify the hotel profile, approved/current knowledge, AI provider check, website origin, signed staff dispatcher check, OAuth-backed storage connection and privacy/storage state.
+- Each hotel can authorize its own Google Drive or Microsoft account. OAuth tokens are encrypted at rest with AES-256-GCM; imports are limited to small plain-text files and Google Docs and always require manager approval.
+- The operator-only hotel provisioning endpoint is protected by PLATFORM_PROVISIONING_TOKEN; the Node CLI provisions a separate workspace and first owner without exposing the token in browser code.
+- CI includes a PostgreSQL-backed two-hotel integration test for tenant-scoped API data, website-origin CORS, signed handoff routing, concurrent dashboard reads and cross-tenant denial checks.
 
 ## Render environment variables
 
@@ -40,6 +44,10 @@ The Render service has a connected PostgreSQL database. Confirm the following va
 - NODE_ENV=production
 - GUEST_DATA_STORAGE_ENABLED=false until privacy and retention approval and durable storage are in place.
 - STAFF_WEBHOOK_URL and STAFF_WEBHOOK_SECRET: optional signed staff-notification receiver.
+- PLATFORM_PROVISIONING_TOKEN: separate high-entropy operator-only secret used by the hotel provisioning endpoint. Never put it in browser code or public documentation.
+- STORAGE_OAUTH_REDIRECT_BASE and STORAGE_TOKEN_ENCRYPTION_KEY: public callback origin and base64-encoded 32-byte encryption key for per-hotel OAuth tokens.
+- GOOGLE_OAUTH_CLIENT_ID/SECRET and MICROSOFT_OAUTH_CLIENT_ID/SECRET: provider application credentials; register the exact callback URL shown in the README and complete provider consent.
+- DURABLE_BACKUPS_VERIFIED, TENANT_ISOLATION_TESTS_PASSED, PROVIDER_OAUTH_TESTED, HOTEL_PRIVACY_APPROVED, STAFF_HANDOFF_TESTED and PILOT_RELEASE_APPROVED: evidence flags. Set them only after the corresponding test/approval is genuinely complete; never set them to make readiness appear green.
 
 Without OPENAI_API_KEY, live AI responses are unavailable. Without both webhook settings, escalations are recorded but staff are not notified automatically.
 
@@ -65,13 +73,20 @@ Without OPENAI_API_KEY, live AI responses are unavailable. Without both webhook 
 
 ## API
 
-- GET /api/health
+- GET /api/health — process health and configuration snapshot; it can return HTTP 200 while pilot readiness is degraded.
+- GET /api/readiness — platform-wide release gate; returns 503 until all required evidence flags and configuration checks pass.
 - POST /api/setup/organization
+- POST /api/platform/organizations — operator-only additional hotel provisioning; requires PLATFORM_PROVISIONING_TOKEN.
 - POST /api/auth/login
 - POST /api/auth/logout
 - GET /api/auth/me
 - GET /api/auth/csrf
-- GET /api/admin/conversations/:id — tenant-scoped conversation transcript\n- DELETE /api/admin/conversations/:id — owner/admin-only, tenant-scoped conversation deletion\n- GET /api/admin/overview
+- GET /api/admin/conversations/:id — tenant-scoped conversation transcript\n- DELETE /api/admin/conversations/:id — owner/admin-only, tenant-scoped conversation deletion\n- GET /api/admin/onboarding — hotel-specific setup and readiness checks.
+- POST /api/admin/integrations/test-ai and POST /api/admin/integrations/test-staff-webhook — per-hotel live integration verification.
+- GET /api/admin/storage/connections and POST /api/admin/storage/connect/:provider — hotel-specific OAuth connection setup.
+- GET /api/admin/storage/files/:provider and POST /api/admin/storage/import/:provider — browse/import supported files for manager review.
+- DELETE /api/admin/storage/connections/:provider — disconnect that hotel's provider account.
+- GET /api/admin/overview
 - GET/POST /api/admin/knowledge
 - PATCH/DELETE /api/admin/knowledge/:id
 - GET /api/admin/escalations
@@ -81,13 +96,14 @@ Without OPENAI_API_KEY, live AI responses are unavailable. Without both webhook 
 
 ## Remaining before a real hotel pilot
 
-- Replace temporary free database hosting with a durable plan; configure backups and prove restoration.
-- Hotel-approved privacy notice, data-processing terms, lawful basis/consent where required, retention and deletion workflow.
-- Verified knowledge source/version history and approval ownership.
-- Test the hotel's actual signed webhook, retries, delivery audit and staff fallback.
-- Email verification, password recovery, MFA, staff invitations and session/device management.
-- PostgreSQL integration tests, tenant isolation tests, prompt-injection tests, abuse tests, security review and load tests.
-- Monitoring, incident response, hotel manager sign-off and supervised pilot with baseline measurement.
+- Replace temporary free database hosting with a durable plan; configure automated backups and prove restoration. The current free database expires on 11 December 2026.
+- Obtain hotel-approved privacy notice, data-processing terms, lawful basis/consent where required, retention and deletion workflow before any real guest data is stored.
+- Test the actual hotel's signed webhook, retries, delivery audit, staff ownership and manual fallback. CI uses only a synthetic test receiver.
+- Complete live AI provider/model verification and separate Google/Microsoft OAuth tests using authorised hotel test accounts.
+- Add email verification, password recovery, MFA, invitation email delivery and subscription billing. Staff invitations exist, but delivery is manual.
+- Complete independent security/privacy review, browser-level end-to-end tests, full role/permission matrix, live-model prompt-injection/answer-quality evaluation, sustained load tests and production abuse monitoring.
+- The main-branch app uses explicit tenant-scoped SQL queries; passing CI is not a substitute for independent security review or database-level tenant-enforcement assurance.
+- Add production monitoring, alerting, incident response, hotel manager sign-off and supervised pilot with baseline measurement.
 
 Do not use real guest data or present this as production-ready until the hotel and responsible adults have approved the operational, legal, privacy and security requirements.
 

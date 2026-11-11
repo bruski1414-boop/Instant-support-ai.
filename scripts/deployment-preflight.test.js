@@ -21,12 +21,12 @@ function fakePool(options = {}) {
       if (sql.includes("information_schema.tables")) {
         return { rows: (options.tables || REQUIRED_TABLES).map((table_name) => ({ table_name })) };
       }
+      if (sql.includes("owned_count")) return { rows: [{ owned_count: options.ownedCount || 0 }] };
       if (sql.includes("FROM pg_class c JOIN pg_namespace")) {
         return { rows: (options.rls || REQUIRED_TABLES.map((table_name) => ({
           table_name, relrowsecurity: true, relforcerowsecurity: true, has_policy: true,
         }))) };
       }
-      if (sql.includes("owned_count")) return { rows: [{ owned_count: options.ownedCount || 0 }] };
       throw new Error("Unexpected SQL in preflight test");
     },
     async end() { ended = true; },

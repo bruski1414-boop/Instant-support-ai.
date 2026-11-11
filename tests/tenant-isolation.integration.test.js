@@ -439,4 +439,17 @@ test("two hotel workspaces remain isolated across live API resources", { skip: !
   });
   assert.equal(alphaGuestChat.status, 503);
   assert.match((await alphaGuestChat.json()).error, /No hotel information has been approved/i, "Alpha should pass its own privacy gate and stop at the next missing prerequisite");
+  const unauthorizedRevoke = await request("/api/platform/organizations/hotel-alpha/privacy-approval", {
+    method: "DELETE",
+    headers: { "X-Platform-Provisioning-Token": "wrong-token" }
+  });
+  assert.equal(unauthorizedRevoke.status, 403, "a hotel approval cannot be revoked without the platform operator token");
+  const revokeAlpha = await request("/api/platform/organizations/hotel-alpha/privacy-approval", {
+    method: "DELETE",
+    headers: { "X-Platform-Provisioning-Token": provisioningToken }
+  });
+  assert.equal(revokeAlpha.status, 200);
+  const alphaAfterRevoke = await request("/api/admin/onboarding", {}, alphaSession);
+  const alphaPrivacyAfterRevoke = (await alphaAfterRevoke.json()).checks.find((check) => check.key === "privacy");
+  assert.equal(alphaPrivacyAfterRevoke.done, false, "revoking approval must close that hotel's privacy gate again");
 });

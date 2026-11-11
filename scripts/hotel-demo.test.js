@@ -16,7 +16,7 @@ test("Northstar demo is clearly fictional and contains the approved guest facts"
 
 test("unknown hotel policies are explicitly marked as unverified", () => {
   for (const topic of ["Wi-Fi password", "room rates", "room availability", "pet policy", "parking policy"]) {
-    assert.match(FAQ, new RegExp(topic.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i"));
+    assert.ok(FAQ.toLowerCase().includes(topic.toLowerCase()), `missing unknown-policy guard: ${topic}`);
   }
   assert.match(FAQ, /staff must confirm the price and availability/i);
   assert.match(FAQ, /Never make bookings, change reservations, confirm availability, quote unverified prices, or issue refunds/i);
@@ -45,5 +45,6 @@ test("live evaluation uses the shared fictional fixture and covers guest-to-staf
   assert.match(source, /cancellation and refund/i);
   assert.match(source, /food allergy/i);
   assert.match(source, /prompt injection/i);
-  assert.match(source, /15 fictional-hotel live evaluations/);
+  assert.match(source, /const cases = \[/);
+  assert.equal((source.match(/name: "/g) || []).length, 15);
 });

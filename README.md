@@ -67,7 +67,15 @@ Important environment variables:
 - `STORAGE_TOKEN_ENCRYPTION_KEY`: base64-encoded 32-byte random key used for AES-256-GCM encryption of per-hotel OAuth tokens. Keep only in hosting secrets; never commit it.
 - `GOOGLE_OAUTH_CLIENT_ID` and `GOOGLE_OAUTH_CLIENT_SECRET`: Google OAuth web application credentials. Register callback `https://<veyra-origin>/api/admin/storage/oauth/callback` and enable the Google Drive API.
 - `MICROSOFT_OAUTH_CLIENT_ID` and `MICROSOFT_OAUTH_CLIENT_SECRET`: Microsoft Entra application credentials. Register the same callback as a Web redirect URI and grant admin-approved delegated permissions `Files.Read.All`, `Sites.Read.All`, `User.Read`, and `offline_access`.
-- `STAFF_WEBHOOK_URL` and `STAFF_WEBHOOK_SECRET`: signed central staff-dispatcher receiver. It must route using the event's `organizationId` and `organizationSlug`; each hotel owner can send a labelled integration test from their workspace.\n- `DURABLE_BACKUPS_VERIFIED=true`: set only after a durable backup and restore test is documented.\n- `TENANT_ISOLATION_TESTS_PASSED=true`: set only after automated tests prove cross-hotel data isolation.\n- `PROVIDER_OAUTH_TESTED=true`: set only after Google/Microsoft OAuth and document access are tested with separate test tenants.\n- `HOTEL_PRIVACY_APPROVED=true`: set only after the pilot hotel has approved its privacy and retention arrangements in writing.\n- `STAFF_HANDOFF_TESTED=true`: set only after a real staff notification and manual fallback have both been tested.\n- `PILOT_RELEASE_APPROVED=true`: final release approval after all evidence above is reviewed. Never set these flags just to make the dashboard green.
+- `STAFF_WEBHOOK_URL` and `STAFF_WEBHOOK_SECRET`: signed central staff-dispatcher receiver. It must route using the event's `organizationId` and `organizationSlug`; each hotel owner can send a labelled integration test from their workspace.
+- `DURABLE_BACKUPS_VERIFIED=true`: set only after a durable backup and restore test is documented.
+- `TENANT_ISOLATION_TESTS_PASSED=true`: set only after automated tests prove cross-hotel data isolation.
+- `PROVIDER_OAUTH_TESTED=true`: set only after Google/Microsoft OAuth and document access are tested with separate test tenants.
+- `PLATFORM_PRIVACY_REVIEWED=true`: platform-wide privacy and data-processing review; it is not a substitute for each hotel's own written approval.
+- `RETENTION_ENFORCEMENT_VERIFIED=true`: set only after automated per-hotel retention enforcement and deletion are implemented and tested. This is not verified yet.
+- `STAFF_HANDOFF_TESTED=true`: set only after a real staff notification and manual fallback have both been tested.
+- `PILOT_RELEASE_APPROVED=true`: final release approval after all evidence above and each hotel's approval record are reviewed. Never set these flags just to make the dashboard green.
+- Per-hotel written privacy approval is recorded only by a platform operator after reviewing the hotel's written approval: `POST /api/platform/organizations/:slug/privacy-approval` with the `X-Platform-Provisioning-Token` header and an `approvalReference` plus `retentionDays` body field. `DELETE` on the same path revokes the record. The record does not prove that automated retention enforcement exists.
 
 Never commit secrets or place them in browser JavaScript.
 

@@ -9,7 +9,7 @@ test("invitation tokens are high entropy and only hashes are stored", () => {
   assert.match(server, /crypto\.randomBytes\(32\)\.toString\("base64url"\)/);
   assert.match(server, /token_hash,expires_at/);
   assert.match(server, /hash\(token\)/);
-  assert.doesNotMatch(server, /INSERT INTO user_invitations[^\n]*\btoken\b[,)]/);
+  assert.match(server, /INSERT INTO user_invitations\(organization_id,email,role,token_hash,expires_at,created_by\)/);
 });
 
 test("invitation creation is workspace-scoped and role-limited", () => {

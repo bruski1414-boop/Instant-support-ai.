@@ -67,6 +67,11 @@ main{padding:28px clamp(16px,4vw,48px);max-width:1450px;width:100%;margin:auto}.
   </div>
   <div class="sectionrow"><h2>Pre-pilot readiness</h2><span id="readinessSummary" class="tag warn">Checking…</span></div>
   <div id="readinessList" style="display:grid;gap:9px"></div>
+  <div class="actions" style="margin-top:12px">
+   <button class="btn" id="testAiIntegration" type="button">Test AI connection</button>
+   <button class="btn" id="testStaffIntegration" type="button">Test staff dispatcher</button>
+  </div>
+  <div id="integrationTestResult" class="notice hidden" role="status"></div>
   <p class="muted" style="font-size:12px;margin-top:14px">This is an operational checklist, not a legal or security certification. Guest-data storage stays disabled until the hotel approves privacy, retention, backups and deletion arrangements in writing.</p>
  </section>
  <section id="panel-storage" class="panel">

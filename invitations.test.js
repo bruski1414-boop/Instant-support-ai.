@@ -87,3 +87,7 @@ test("Render process health stays HTTP 200 while pilot readiness is reported sep
   assert.match(server, /app\.get\("\/api\/readiness".*r\.status\(state\.readyForPilot\?200:503\)/s);
   assert.match(server, /readyForPilot/);
 });
+
+test("pilot readiness counts only approved knowledge that is still in review date", () => {
+  assert.match(server, /approved_count FROM knowledge_documents WHERE organization_id=\$1 AND approved=true AND \(review_due_at IS NULL OR review_due_at>=CURRENT_DATE\)/);
+});

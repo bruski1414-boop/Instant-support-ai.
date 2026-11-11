@@ -159,7 +159,13 @@ test("two hotel workspaces remain isolated across live API resources", { skip: !
     headers: { "X-Forwarded-For": "198.51.100.99, 203.0.113.10" }
   });
   assert.equal(proxyIpCheck.status, 200);
-  assert.equal((await proxyIpCheck.json()).ip, "203.0.113.10", "the configured proxy hop must ignore a forged left-most X-Forwarded-For value");
+  const firstResolvedIp = (await proxyIpCheck.json()).ip;
+  assert.equal(firstResolvedIp, "203.0.113.10", "the configured proxy hop must ignore a forged left-most X-Forwarded-For value");
+  const secondProxyIpCheck = await request("/__test/client-ip", {
+    headers: { "X-Forwarded-For": "198.51.100.99, 203.0.113.11" }
+  });
+  assert.equal((await secondProxyIpCheck.json()).ip, "203.0.113.11");
+  assert.notEqual(firstResolvedIp, "203.0.113.11", "different visitor IPs must remain distinguishable for rate limiting");
 
   const firstSetup = await request("/api/setup/organization", {
     method: "POST",

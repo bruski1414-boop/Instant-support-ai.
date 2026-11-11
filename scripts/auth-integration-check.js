@@ -21,6 +21,7 @@ async function main() {
   let server;
   const slackDeliveries = [];
   const encryptionKey = Buffer.alloc(32, 7).toString("base64");
+  const aiCalls = [];
   try {
     await admin.query(`CREATE ROLE ${ROLE} LOGIN PASSWORD '${PASSWORD}' NOSUPERUSER NOBYPASSRLS`);
     await admin.query(`GRANT CONNECT ON DATABASE postgres TO ${ROLE}`);
@@ -50,7 +51,7 @@ async function main() {
       database: process.env.PGDATABASE || "postgres",
       max: 3,
     });
-    const app = createApp({ dbPool: runtimePool, rateLimitLimit: 1000, env: { NODE_ENV: "test", TENANT_INTEGRATION_ENCRYPTION_KEY: encryptionKey }, fetchImpl: async (url, init) => { slackDeliveries.push({ url, payload: JSON.parse(init.body) }); return { ok: true, status: 200 }; }, openaiClient: { chat: { completions: { create: async () => ({ choices: [{ message: { content: JSON.stringify({ reply: "Breakfast is served from 7 AM to 10 AM.", needsHuman: false, handoffReason: "" }) } }] }) } } }, logger: { error() {} } });
+    const app = createApp({ dbPool: runtimePool, rateLimitLimit: 1000, env: { NODE_ENV: "test", TENANT_INTEGRATION_ENCRYPTION_KEY: encryptionKey }, fetchImpl: async (url, init) => { slackDeliveries.push({ url, payload: JSON.parse(init.body) }); return { ok: true, status: 200 }; }, openaiClient: { chat: { completions: { create: async (payload) => { aiCalls.push(payload); return { choices: [{ message: { content: JSON.stringify({ reply: "Breakfast is served from 7 AM to 10 AM.", needsHuman: false, handoffReason: "" }) } }] }; } } } }, logger: { error() {} } });
     server = app.listen(0, "127.0.0.1");
     await new Promise((resolve, reject) => {
       server.once("listening", resolve);
@@ -137,6 +138,13 @@ async function main() {
     const detail = await fetch(base + "/api/conversations/" + conversation.id, { headers: workspaceHeaders });
     assert.equal(detail.status, 200);
     assert.equal((await detail.json()).messages.length, 1);
+
+    const noteFollowup = await fetch(base + "/api/public/" + TENANT_ID + "/chat", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ conversationId: conversation.id, message: "What time is breakfast?" }) });
+    assert.equal(noteFollowup.status, 200, "guest should be able to continue after an internal staff note");
+    const latestAiPrompt = aiCalls.at(-1);
+    assert.ok(latestAiPrompt, "guest follow-up should invoke the AI provider");
+    assert.equal(latestAiPrompt.messages.some((item) => item.content === "Our team will review this request."), false, "internal staff notes must never be included in guest-facing AI context");
+    assert.ok(latestAiPrompt.messages.some((item) => item.role === "user" && item.content === "What time is breakfast?"), "the current guest message should remain in AI context");
 
     const missingCsrf = await fetch(base + "/api/integrations/slack", { method: "POST", headers: { cookie: cookies, "content-type": "application/json", "x-veyra-workspace": TENANT_ID, origin }, body: JSON.stringify({ webhookUrl: "https://hooks.slack.com/services/test/tenant/secret" }) });
     assert.equal(missingCsrf.status, 403, "authenticated mutations must reject requests without CSRF validation");

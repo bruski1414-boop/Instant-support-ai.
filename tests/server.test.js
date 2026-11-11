@@ -2,6 +2,8 @@ const { test, before, after } = require("node:test");
 const assert = require("node:assert/strict");
 const net = require("node:net");
 const { spawn } = require("node:child_process");
+const fs = require("node:fs");
+const vm = require("node:vm");
 let child;
 let baseUrl;
 async function getFreePort() {
@@ -51,4 +53,30 @@ test("chat does not pretend to be live when the provider key is missing", async 
   assert.equal(response.status, 503);
   assert.equal(body.demo, true);
   assert.equal(body.handoffConfigured, false);
+});
+
+test("dashboard and guest widget JavaScript parse cleanly", () => {
+  const html = fs.readFileSync("dashboard.html", "utf8");
+  const scripts = [...html.matchAll(/<script>([\\s\\S]*?)<\\/script>/g)];
+  assert.ok(scripts.length > 0, "dashboard inline script exists");
+  for (const match of scripts) new vm.Script(match[1]);
+  new vm.Script(fs.readFileSync("widget.js", "utf8"));
+});
+
+test("tenant chat fails closed when database is not configured", async () => {
+  const response = await fetch(`${baseUrl}/api/public/sample-hotel/chat`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ message: "What time is breakfast?" })
+  });
+  assert.equal(response.status, 503);
+});
+
+test("organization bootstrap fails closed when database is not configured", async () => {
+  const response = await fetch(`${baseUrl}/api/setup/organization`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ organizationName: "Sample Hotel", email: "owner@example.com", password: "a-long-test-password" })
+  });
+  assert.equal(response.status, 503);
 });

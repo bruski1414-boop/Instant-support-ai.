@@ -84,7 +84,7 @@ test("two hotel workspaces remain isolated across live API resources", { skip: !
       NODE_ENV: "test",
       DATABASE_URL: databaseUrl,
       DATABASE_SSL: "false",
-      OPENAI_API_KEY: "synthetic-integration-test-key",
+      OPENAI_API_KEY: "",
       BOOTSTRAP_TOKEN: bootstrapToken,
       PLATFORM_PROVISIONING_TOKEN: provisioningToken,
       STAFF_WEBHOOK_URL: webhookUrl,
@@ -380,6 +380,49 @@ test("two hotel workspaces remain isolated across live API resources", { skip: !
   assert.match((await alphaTranscript.text()), /Private Alpha guest message/);
   const betaTranscript = await request(`/api/admin/conversations/${alphaConversation.rows[0].id}`, {}, betaSession);
   assert.equal(betaTranscript.status, 404);
+  if (child && child.exitCode === null) {
+    const originalChild = child;
+    originalChild.kill("SIGTERM");
+    await new Promise((resolve) => originalChild.once("exit", resolve));
+  }
+  const privacyPort = await freePort();
+  baseUrl = `http://127.0.0.1:${privacyPort}`;
+  child = spawn(process.execPath, ["server.js"], {
+    cwd: process.cwd(),
+    env: {
+      ...process.env,
+      PORT: String(privacyPort),
+      NODE_ENV: "test",
+      DATABASE_URL: databaseUrl,
+      DATABASE_SSL: "false",
+      OPENAI_API_KEY: "synthetic-integration-test-key",
+      BOOTSTRAP_TOKEN: bootstrapToken,
+      PLATFORM_PROVISIONING_TOKEN: provisioningToken,
+      STAFF_WEBHOOK_URL: webhookUrl,
+      STAFF_WEBHOOK_SECRET: webhookSecret,
+      GUEST_DATA_STORAGE_ENABLED: "true",
+      DURABLE_BACKUPS_VERIFIED: "true",
+      TENANT_ISOLATION_TESTS_PASSED: "true",
+      PROVIDER_OAUTH_TESTED: "true",
+      PLATFORM_PRIVACY_REVIEWED: "true",
+      RETENTION_ENFORCEMENT_VERIFIED: "true",
+      STAFF_HANDOFF_TESTED: "true",
+      PILOT_RELEASE_APPROVED: "true",
+      ALLOWED_ORIGINS: "http://localhost:3000"
+    },
+    stdio: "ignore"
+  });
+  let privacyServerReady = false;
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    if (child.exitCode !== null) throw new Error("Privacy-gate test server exited during startup");
+    try {
+      const response = await fetch(baseUrl + "/api/health");
+      if (response.ok) { privacyServerReady = true; break; }
+    } catch {}
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  assert.ok(privacyServerReady, "privacy-gate test server should start with synthetic platform approvals");
+
   const betaGuestChat = await request("/api/public/hotel-beta/chat", {
     method: "POST",
     headers: { "content-type": "application/json" },

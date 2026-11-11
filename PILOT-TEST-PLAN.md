@@ -60,6 +60,8 @@ Any cross-workspace data exposure is a release-blocking security defect.
 ## 6. Privacy, reliability and release gates
 
 - [ ] Hotel approves its privacy notice, data-processing terms, lawful basis/consent where applicable, retention schedule and deletion process.
+- [ ] A platform operator records each hotel's written approval separately; Alpha's approval must not satisfy Beta's privacy gate.
+- [ ] Platform-wide privacy review and per-hotel approval are separate. Keep RETENTION_ENFORCEMENT_VERIFIED false until automated per-hotel retention and deletion are implemented and tested.
 - [ ] Durable database hosting, automated backups and a successful restore drill are in place.
 - [ ] Deletion behavior is documented for active records, logs, backups and provider retention.
 - [ ] Secrets are stored only in the hosting provider's secret manager and rotated under an approved procedure.
@@ -78,7 +80,8 @@ A passing CI run proves only that those automated synthetic checks passed for th
 ## Current known limitations
 
 - The deployed web service and PostgreSQL database are on free plans; the database is temporary and scheduled to expire on 11 December 2026. Do not use it for real hotel or guest data.
-- Guest-data storage is disabled by default. Keep it disabled until written hotel privacy/retention approval and durable backup/restore evidence exist.
+- Guest-data storage is disabled by default. Keep it disabled until written hotel privacy/retention approval and durable backup/restore evidence exist. Each hotel now has a separate operator-recorded approval record; a platform-wide flag alone is insufficient.
+- The application records a per-hotel retention target but does not yet enforce automatic retention deletion. RETENTION_ENFORCEMENT_VERIFIED must remain false, so the public guest-chat release gate remains closed.
 - Storage import is limited to small text-based documents and Google Docs; full PDF, Word and spreadsheet extraction, broad sync and incremental sync are not complete.
 - Google/Microsoft app registration, client credentials, consent and live OAuth flows still require authorised setup and testing with separate hotel accounts.
 - The signed staff webhook path is covered with a synthetic test receiver in CI; the actual hotel dispatcher, staff ownership, delivery monitoring and manual fallback still need a supervised live test.

@@ -1,60 +1,141 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="description" content="Veyra AI owner dashboard preview — fictional sample data.">
-<title>Veyra AI | Command Centre Preview</title>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="Veyra AI hotel support workspace">
+<title>Veyra AI | Workspace</title>
 <style>
-:root{color-scheme:dark;--bg:#080b11;--panel:#101722;--panel2:#141e2b;--line:#263344;--text:#f4f7fb;--muted:#94a3b8;--blue:#b9d8f5;--green:#74e0b4;--amber:#f3c879}
-*{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at 70% -20%,#172b42 0,transparent 42%),var(--bg);color:var(--text);font:14px/1.5 Inter,system-ui,-apple-system,Segoe UI,sans-serif}a{color:inherit;text-decoration:none}.shell{display:grid;grid-template-columns:230px 1fr;min-height:100vh}.side{border-right:1px solid var(--line);padding:24px 16px;background:#080c12cc}.brand{display:flex;align-items:center;gap:10px;font-weight:800;letter-spacing:.08em;padding:0 10px 30px}.logo{width:32px;height:32px;border-radius:9px;display:grid;place-items:center;background:linear-gradient(135deg,#eaf4ff,#7aaaff);color:#06101a;font-size:18px}.workspace{margin:0 8px 22px;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--panel)}.workspace small,.muted{color:var(--muted)}.workspace strong{display:block;margin:4px 0}.navlabel{font-size:10px;letter-spacing:.14em;color:#6f8096;padding:15px 12px 7px}.nav a{display:flex;gap:10px;padding:10px 12px;border-radius:9px;color:#aebbd0;margin:3px 0}.nav a.active,.nav a:hover{background:#172536;color:white}.nav a.active{box-shadow:inset 2px 0 var(--blue)}.bottom{margin-top:35px;padding:12px;color:#8190a4;font-size:12px}.main{padding:28px clamp(18px,4vw,48px);max-width:1500px;width:100%;margin:auto}.top{display:flex;justify-content:space-between;gap:16px;align-items:center;margin-bottom:28px}.crumb{font-size:12px;color:var(--muted)}h1{font-size:clamp(26px,3vw,36px);letter-spacing:-.04em;margin:6px 0}.actions{display:flex;gap:10px;flex-wrap:wrap}.btn{border:1px solid #35465b;background:#111a26;color:#eaf2fc;border-radius:9px;padding:10px 14px;font-weight:650;cursor:pointer}.btn.primary{background:linear-gradient(100deg,var(--blue),#aab5ff);color:#08111b;border:0}.notice{display:flex;gap:12px;align-items:center;border:1px solid #3b3441;background:#171520;padding:14px 16px;border-radius:12px;margin-bottom:22px}.notice .dot{width:8px;height:8px;border-radius:50%;background:var(--amber);flex:none}.notice p{margin:0;color:#c2c9d6}.notice strong{color:white}.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}.card{border:1px solid var(--line);background:linear-gradient(145deg,#121b27,#0e141d);border-radius:14px;padding:18px;min-width:0}.metriclabel{color:var(--muted);font-size:12px}.metric{font-size:30px;letter-spacing:-.04em;font-weight:750;margin:9px 0}.delta{font-size:11px;color:var(--green)}.sectionrow{display:flex;justify-content:space-between;align-items:center;gap:14px;margin:30px 0 14px}.sectionrow h2{font-size:18px;margin:0}.sectionrow span{color:var(--muted);font-size:12px}.contentgrid{display:grid;grid-template-columns:1.45fr .8fr;gap:14px}.tablewrap{overflow:auto}.table{width:100%;border-collapse:collapse;min-width:570px}.table th{text-align:left;color:#7f90a6;font-size:11px;font-weight:600;padding:12px 8px;border-bottom:1px solid var(--line)}.table td{padding:14px 8px;border-bottom:1px solid #202b39}.table tr:last-child td{border-bottom:0}.guest{display:flex;align-items:center;gap:10px}.avatar{width:30px;height:30px;border-radius:9px;background:#23364b;display:grid;place-items:center;font-weight:700;color:#d5e9ff}.tag{display:inline-block;padding:4px 8px;border-radius:20px;font-size:10px;background:#182c3b;color:#9fd8ff}.tag.warn{background:#352b1b;color:#f3cb83}.tag.green{background:#15352b;color:#8ee5bd}.alert{display:flex;gap:12px;padding:13px 0;border-bottom:1px solid #202b39}.alert:last-child{border:0}.alerticon{width:32px;height:32px;border-radius:10px;background:#30291d;display:grid;place-items:center;flex:none}.alert h3{font-size:13px;margin:0 0 3px}.alert p{margin:0;color:var(--muted);font-size:12px}.barrow{display:flex;align-items:center;gap:10px;margin:15px 0}.barrow label{width:92px;color:#aab6c7;font-size:12px}.bar{height:7px;flex:1;background:#202b39;border-radius:8px;overflow:hidden}.bar i{display:block;height:100%;background:linear-gradient(90deg,#77c8f5,#8e8cff);border-radius:8px}.barrow b{font-size:11px;color:#d5dfeb;width:28px;text-align:right}.footnote{color:#73839a;font-size:11px;margin-top:22px}.tabbar{display:flex;gap:6px;flex-wrap:wrap}.tab{padding:7px 11px;border:1px solid var(--line);border-radius:20px;background:#0d141d;color:#aebbd0;font-size:12px;cursor:pointer}.tab.active{background:#1d3044;color:#e9f5ff;border-color:#42607e}.hide{display:none}
-@media(max-width:950px){.shell{grid-template-columns:1fr}.side{display:none}.grid{grid-template-columns:repeat(2,1fr)}.contentgrid{grid-template-columns:1fr}.main{padding:20px 16px}}
-@media(max-width:480px){.grid{grid-template-columns:1fr 1fr}.metric{font-size:24px}.top{align-items:flex-start;flex-direction:column}}
+:root{color-scheme:dark;--bg:#080c12;--panel:#101925;--panel2:#152233;--line:#29394d;--text:#f3f7fc;--muted:#9aa9bc;--blue:#c5def8;--green:#7ee0b8;--amber:#f1c879;--red:#ff9c9c}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at 70% -15%,#1a3049 0,transparent 45%),var(--bg);color:var(--text);font:14px/1.5 Inter,system-ui,-apple-system,Segoe UI,sans-serif}button,input,textarea,select{font:inherit}button{cursor:pointer}a{color:inherit;text-decoration:none}
+.shell{min-height:100vh;display:grid;grid-template-columns:235px 1fr}.side{border-right:1px solid var(--line);padding:22px 15px;background:#080d14}.brand{display:flex;align-items:center;gap:10px;font-weight:850;letter-spacing:.12em;padding:3px 10px 26px}.logo{width:34px;height:34px;border-radius:10px;background:linear-gradient(135deg,#edf7ff,#78aaff);display:grid;place-items:center;color:#07111c;font-size:19px}.workspace{padding:12px;border:1px solid var(--line);background:var(--panel);border-radius:12px;margin:0 5px 22px}.workspace small{color:var(--muted);font-size:10px;letter-spacing:.12em}.workspace strong{display:block;margin-top:4px}.navlabel{color:#71839b;font-size:10px;letter-spacing:.15em;padding:15px 12px 7px}.nav button{width:100%;text-align:left;border:0;background:none;color:#aebbd0;padding:11px 12px;border-radius:9px;margin:2px 0}.nav button:hover,.nav button.active{background:#19283a;color:white}.nav button.active{box-shadow:inset 2px 0 var(--blue)}.sidefoot{margin:28px 10px;color:#71839b;font-size:11px}
+main{padding:28px clamp(16px,4vw,48px);max-width:1450px;width:100%;margin:auto}.top{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:24px}.crumb{color:var(--muted);font-size:11px;letter-spacing:.12em}h1{font-size:clamp(25px,3vw,35px);letter-spacing:-.04em;margin:5px 0}.muted{color:var(--muted)}.actions{display:flex;gap:9px;flex-wrap:wrap}.btn{border:1px solid #3a4d65;background:#111d2b;color:#eaf3ff;border-radius:9px;padding:10px 14px;font-weight:650}.btn.primary{background:linear-gradient(100deg,var(--blue),#aebcff);border:0;color:#07111c}.btn.danger{border-color:#633b43;color:#ffc1c1}.notice{border:1px solid #53432b;background:#211c14;color:#ead8b5;padding:12px 15px;border-radius:11px;margin:0 0 20px}.notice.good{border-color:#245542;background:#10241d;color:#b9f0d8}.notice.error{border-color:#6c3c43;background:#29171b;color:#ffc2c2}
+.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:13px}.card{border:1px solid var(--line);background:linear-gradient(145deg,#121d2a,#0e151f);border-radius:14px;padding:17px;min-width:0}.metriclabel{font-size:12px;color:var(--muted)}.metric{font-size:30px;letter-spacing:-.04em;font-weight:800;margin-top:8px}.sectionrow{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:27px 0 12px}.sectionrow h2{font-size:18px;margin:0}.tablewrap{overflow:auto}.table{border-collapse:collapse;width:100%;min-width:600px}.table th{text-align:left;color:#8495aa;font-size:10px;letter-spacing:.1em;font-weight:650;padding:11px 9px;border-bottom:1px solid var(--line)}.table td{padding:13px 9px;border-bottom:1px solid #202d3d;vertical-align:top}.table tr:last-child td{border:0}.tag{display:inline-block;padding:3px 8px;border-radius:20px;background:#1c3043;color:#a8dcff;font-size:11px}.tag.good{background:#15382b;color:#8de4bc}.tag.warn{background:#392e1b;color:#f2cf8b}.tag.bad{background:#3b2026;color:#ffb4b4}
+.panel{display:none}.panel.active{display:block}.formrow{display:grid;grid-template-columns:1fr 1fr;gap:12px}.field{display:flex;flex-direction:column;gap:6px;margin:10px 0}.field label{font-size:12px;color:#b8c5d5}.field input,.field textarea,.field select{width:100%;background:#080e16;border:1px solid #33445b;color:white;border-radius:9px;padding:11px 12px}.field textarea{min-height:115px;resize:vertical}.check{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:12px;margin:10px 0}.empty{padding:22px;color:var(--muted);text-align:center}.loginwrap{max-width:430px;margin:8vh auto;padding:26px}.loginwrap h1{margin:0 0 8px}.loginbox{border:1px solid var(--line);background:var(--panel);border-radius:18px;padding:26px}.loginbrand{display:flex;align-items:center;gap:10px;margin-bottom:25px;font-weight:850;letter-spacing:.12em}.hidden{display:none!important}.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);padding:11px 16px;border:1px solid #425873;background:#172638;color:#eff7ff;border-radius:10px;max-width:90%;z-index:8}
+@media(max-width:900px){.shell{grid-template-columns:1fr}.side{display:none}.grid{grid-template-columns:repeat(2,1fr)}main{padding:18px 14px}}@media(max-width:520px){.grid{grid-template-columns:1fr 1fr}.top{align-items:flex-start;flex-direction:column}.formrow{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
-<div class="shell">
-<aside class="side">
-<a class="brand" href="index.html"><span class="logo">V</span> VEYRA AI</a>
-<div class="workspace"><small>WORKSPACE · DEMO</small><strong>Northstar Hospitality</strong><small>Sample workspace ▾</small></div>
-<div class="navlabel">WORKSPACE</div><nav class="nav"><a class="active" href="#overview">◫ Overview</a><a href="#conversations">☷ Conversations</a><a href="#knowledge">✧ Knowledge base</a><a href="#handoffs">↗ Human handoffs</a><a href="#settings">⚙ Settings</a></nav>
-<div class="navlabel">ACCOUNT</div><nav class="nav"><a href="index.html">↖ Back to website</a></nav>
-<div class="bottom">Veyra AI · Product preview<br><br>Sample data only. Not connected to a real hotel.</div>
-</aside>
-<main class="main">
-<header class="top"><div><div class="crumb">WORKSPACE / OVERVIEW</div><h1>Good evening. Here's your support overview.</h1><div class="muted">A calmer way to see what needs attention.</div></div><div class="actions"><button class="btn" onclick="toast('This preview uses fictional data; no report was exported.')">Export report</button><button class="btn primary" onclick="toast('Business onboarding is a planned feature—not connected yet.')">＋ Add knowledge</button></div></header>
-<div class="notice"><span class="dot"></span><p><strong>Preview mode.</strong> Every metric and conversation below is fictional. Staff alerts, exports, settings and knowledge editing are not connected.</p></div>
-<section id="overview" class="grid">
-<div class="card"><div class="metriclabel">Conversations today</div><div class="metric">146</div><div class="delta">＋ 18% <span class="muted">vs. sample yesterday</span></div></div>
-<div class="card"><div class="metriclabel">First-response time</div><div class="metric">18 sec</div><div class="delta">Sample target: under 1 min</div></div>
-<div class="card"><div class="metriclabel">Resolved in demo</div><div class="metric">82%</div><div class="muted">Illustrative—not measured</div></div>
-<div class="card"><div class="metriclabel">Staff review queue</div><div class="metric">7</div><div class="tag warn">Needs attention</div></div>
-</section>
-<div class="sectionrow" id="conversations"><h2>Recent conversations</h2><div class="tabbar"><button class="tab active" onclick="filterRows('all',this)">All</button><button class="tab" onclick="filterRows('resolved',this)">Resolved</button><button class="tab" onclick="filterRows('handoff',this)">Needs staff</button></div></div>
-<div class="contentgrid">
-<div class="card tablewrap"><table class="table"><thead><tr><th>GUEST</th><th>TOPIC</th><th>STATUS</th><th>TIME</th></tr></thead><tbody id="rows">
-<tr data-status="resolved"><td><div class="guest"><span class="avatar">AM</span><div><strong>Alex Morgan</strong><br><small class="muted">Guest · sample</small></div></div></td><td>Airport transfer</td><td><span class="tag green">Resolved</span></td><td>2 min ago</td></tr>
-<tr data-status="handoff"><td><div class="guest"><span class="avatar">JL</span><div><strong>Jamie Lee</strong><br><small class="muted">Guest · sample</small></div></div></td><td>Special request</td><td><span class="tag warn">Staff review</span></td><td>5 min ago</td></tr>
-<tr data-status="resolved"><td><div class="guest"><span class="avatar">SK</span><div><strong>Sam Kim</strong><br><small class="muted">Guest · sample</small></div></div></td><td>Breakfast hours</td><td><span class="tag green">Resolved</span></td><td>11 min ago</td></tr>
-<tr data-status="handoff"><td><div class="guest"><span class="avatar">RT</span><div><strong>Riley Taylor</strong><br><small class="muted">Guest · sample</small></div></div></td><td>Booking change</td><td><span class="tag warn">Staff review</span></td><td>18 min ago</td></tr>
-<tr data-status="resolved"><td><div class="guest"><span class="avatar">MC</span><div><strong>Morgan Chen</strong><br><small class="muted">Guest · sample</small></div></div></td><td>Pool facilities</td><td><span class="tag green">Resolved</span></td><td>24 min ago</td></tr>
-</tbody></table></div>
-<div class="card" id="handoffs"><div class="sectionrow" style="margin:0 0 10px"><h2>Staff attention</h2><span class="tag warn">2 examples</span></div>
-<div class="alert"><div class="alerticon">!</div><div><h3>Booking change request</h3><p>Requires staff confirmation · 18 min ago</p></div></div>
-<div class="alert"><div class="alerticon">↗</div><div><h3>Special guest request</h3><p>Needs human judgement · 5 min ago</p></div></div>
-<div class="alert"><div class="alerticon">?</div><div><h3>Unverified policy question</h3><p>Answer withheld pending confirmation</p></div></div>
-<p class="footnote">In a real deployment, these would be generated from the business’s workflow and delivered to its authorized team. This preview sends no alerts.</p></div>
+<div id="login" class="loginwrap">
+ <div class="loginbox">
+  <div class="loginbrand"><span class="logo">V</span> VEYRA AI</div>
+  <h1>Welcome back.</h1><p class="muted">Sign in to your hotel's secure workspace.</p>
+  <div id="loginMessage" class="notice hidden"></div>
+  <form id="loginForm">
+   <div class="field"><label for="email">Email</label><input id="email" type="email" autocomplete="username" required maxlength="254"></div>
+   <div class="field"><label for="password">Password</label><input id="password" type="password" autocomplete="current-password" required maxlength="200"></div>
+   <button class="btn primary" style="width:100%;margin-top:8px" type="submit">Sign in</button>
+  </form>
+  <p class="muted" style="font-size:11px;margin-top:18px">Access is created by your Veyra workspace owner. Public self-registration is disabled.</p>
+ </div>
 </div>
-<div class="sectionrow" id="knowledge"><h2>Knowledge coverage</h2><span>Sample category distribution</span></div>
-<div class="card"><div class="barrow"><label>Hotel services</label><div class="bar"><i style="width:88%"></i></div><b>88%</b></div><div class="barrow"><label>Dining & hours</label><div class="bar"><i style="width:72%"></i></div><b>72%</b></div><div class="barrow"><label>Policies</label><div class="bar"><i style="width:56%"></i></div><b>56%</b></div><div class="barrow"><label>Local guide</label><div class="bar"><i style="width:64%"></i></div><b>64%</b></div><div class="footnote">Coverage values are illustrative mock data. The real product should measure approved source coverage and answer quality—not invent percentages.</div></div>
-<div class="sectionrow" id="settings"><h2>What this preview demonstrates</h2><span>Product direction</span></div>
-<div class="grid"><div class="card"><strong>01 · Clarity</strong><p class="muted">See the support workload without drowning in charts.</p></div><div class="card"><strong>02 · Accountability</strong><p class="muted">Keep uncertain or sensitive requests visible for human review.</p></div><div class="card"><strong>03 · Trust</strong><p class="muted">Make sample data, real status, and limitations obvious.</p></div><div class="card"><strong>04 · Control</strong><p class="muted">Businesses should own their knowledge, access, and escalation rules.</p></div></div>
-<p class="footnote">This is a static dashboard concept only. It has no login, database, real customer records, real alerts, billing, or business settings. Do not enter personal or customer information.</p>
-</main></div>
-<div id="toast" style="position:fixed;bottom:20px;left:50%;transform:translateX(-50%);padding:12px 18px;border:1px solid #34465b;background:#172536;color:#edf6ff;border-radius:10px;display:none;max-width:90%;z-index:5"></div>
+<div id="app" class="shell hidden">
+<aside class="side">
+ <a class="brand" href="index.html"><span class="logo">V</span> VEYRA AI</a>
+ <div class="workspace"><small>HOTEL WORKSPACE</small><strong id="orgName">Loading…</strong><small id="userRole">Secure account</small></div>
+ <div class="navlabel">WORKSPACE</div>
+ <nav class="nav">
+  <button class="active" data-panel="overview">◫ Overview</button>
+  <button data-panel="conversations">☷ Conversations</button>
+  <button data-panel="knowledge">✧ Knowledge base</button>
+  <button data-panel="escalations">↗ Staff handoffs</button>
+ </nav>
+ <div class="navlabel">ACCOUNT</div><nav class="nav"><button id="logout">↪ Sign out</button><button onclick="location.href='index.html'">↖ Public website</button></nav>
+ <div class="sidefoot">VEYRA AI · HOTEL SUPPORT PLATFORM<br>Workspace data is private to your organization.</div>
+</aside>
+<main>
+ <header class="top"><div><div class="crumb" id="crumb">WORKSPACE / OVERVIEW</div><h1 id="heading">Support overview</h1><div class="muted" id="subheading">A live view of conversations and staff attention.</div></div><div class="actions"><button class="btn" id="refresh">↻ Refresh</button></div></header>
+ <div id="globalNotice" class="notice hidden"></div>
+ <section id="panel-overview" class="panel active">
+  <div class="grid">
+   <div class="card"><div class="metriclabel">Conversations today</div><div class="metric" id="mToday">—</div></div>
+   <div class="card"><div class="metriclabel">Last 7 days</div><div class="metric" id="mWeek">—</div></div>
+   <div class="card"><div class="metriclabel">Resolved total</div><div class="metric" id="mResolved">—</div></div>
+   <div class="card"><div class="metriclabel">Open staff handoffs</div><div class="metric" id="mOpen">—</div></div>
+  </div>
+  <div class="sectionrow"><h2>Recent conversations</h2><span class="muted">Latest 20</span></div>
+  <div class="card tablewrap"><table class="table"><thead><tr><th>CONVERSATION</th><th>LAST GUEST / ASSISTANT MESSAGE</th><th>STATUS</th><th>STARTED</th></tr></thead><tbody id="recentRows"></tbody></table></div>
+ </section>
+ <section id="panel-conversations" class="panel">
+  <div class="sectionrow"><h2>Recent conversations</h2><span class="muted">Latest 20 · message previews</span></div>
+  <div class="card tablewrap"><table class="table"><thead><tr><th>ID</th><th>LAST MESSAGE</th><th>STATUS</th><th>CHANNEL</th><th>STARTED</th></tr></thead><tbody id="conversationRows"></tbody></table></div>
+ </section>
+ <section id="panel-knowledge" class="panel">
+  <div class="sectionrow"><h2>Approved business knowledge</h2><span class="muted">Only approved documents can inform the guest assistant.</span></div>
+  <div class="card">
+   <h3 style="margin:0 0 6px">Add a knowledge document</h3><p class="muted" style="font-size:12px">Use hotel-approved, current information. Leave it unapproved until a manager checks it.</p>
+   <form id="knowledgeForm">
+    <div class="formrow"><div class="field"><label for="kTitle">Document title</label><input id="kTitle" required maxlength="160" placeholder="e.g. Breakfast hours"></div><div class="field"><label for="kCategory">Category</label><select id="kCategory"><option>general</option><option>rooms</option><option>dining</option><option>facilities</option><option>policies</option><option>transport</option><option>accessibility</option><option>local-area</option></select></div></div>
+    <div class="field"><label for="kContent">Approved facts and policy text</label><textarea id="kContent" required maxlength="12000" placeholder="Write exact facts, times, prices, conditions and who can confirm exceptions."></textarea></div>
+    <label class="check"><input id="kApproved" type="checkbox"> Manager has verified this information and approves it for guest answers.</label>
+    <button class="btn primary" type="submit">＋ Save knowledge</button>
+   </form>
+  </div>
+  <div id="knowledgeList" style="display:grid;gap:10px;margin-top:14px"></div>
+ </section>
+ <section id="panel-escalations" class="panel">
+  <div class="sectionrow"><h2>Staff handoff queue</h2><span class="muted">Urgent, sensitive or uncertain requests</span></div>
+  <div class="card tablewrap"><table class="table"><thead><tr><th>REASON</th><th>STATUS</th><th>CREATED</th><th>ACTION</th></tr></thead><tbody id="escalationRows"></tbody></table></div>
+ </section>
+ <p class="muted" style="font-size:11px;margin-top:25px">Veyra AI · Staff remain responsible for guest decisions. Verify all knowledge before approval. Handoffs are only delivered when a notification integration is configured and confirmed.</p>
+</main>
+</div>
+<div id="toast" class="toast hidden"></div>
 <script>
-function filterRows(status,button){document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));button.classList.add('active');document.querySelectorAll('#rows tr').forEach(row=>row.classList.toggle('hide',status!=='all'&&row.dataset.status!==status));}
-let toastTimer;function toast(text){const el=document.getElementById('toast');el.textContent=text;el.style.display='block';clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.style.display='none',3200);}
+let csrfToken="";
+let activePanel="overview";
+const $=id=>document.getElementById(id);
+const safe=(v)=>String(v==null?"":v);
+function showToast(s){const e=$("toast");e.textContent=s;e.classList.remove("hidden");setTimeout(()=>e.classList.add("hidden"),3200);}
+function notice(s,type){const e=$("globalNotice");e.textContent=s;e.className="notice "+(type||"");e.classList.remove("hidden");}
+function loginError(s){const e=$("loginMessage");e.textContent=s;e.className="notice error";}
+async function api(path,options){
+ options=options||{};options.credentials="same-origin";options.headers=Object.assign({"Content-Type":"application/json"},options.headers||{});
+ if(options.method&&options.method!=="GET"&&options.method!=="HEAD"&&csrfToken)options.headers["X-CSRF-Token"]=csrfToken;
+ const response=await fetch(path,options);let data={};try{data=await response.json();}catch{}
+ if(!response.ok)throw new Error(data.error||"Request failed ("+response.status+").");
+ return data;
+}
+function date(v){try{return new Date(v).toLocaleString();}catch{return "—";}}
+function statusTag(s){const cls=s==="resolved"?"good":s==="escalated"||s==="open"?"warn":"bad";return '<span class="tag '+cls+'">'+safe(s)+'</span>';}
+function switchPanel(name){
+ activePanel=name;
+ document.querySelectorAll(".panel").forEach(x=>x.classList.remove("active"));
+ $("panel-"+name).classList.add("active");
+ document.querySelectorAll("[data-panel]").forEach(x=>x.classList.toggle("active",x.dataset.panel===name));
+ const labels={overview:["OVERVIEW","Support overview","A live view of conversations and staff attention."],conversations:["CONVERSATIONS","Recent conversations","Review the latest guest interactions."],knowledge:["KNOWLEDGE BASE","Hotel knowledge","Control the facts the assistant is allowed to use."],escalations:["STAFF HANDOFFS","Staff handoff queue","Requests that need a member of your team."]};
+ $("crumb").textContent="WORKSPACE / "+labels[name][0];$("heading").textContent=labels[name][1];$("subheading").textContent=labels[name][2];
+ loadPanel(name);
+}
+async function loadOverview(){
+ const d=await api("/api/admin/overview");const m=d.metrics||{};
+ $("mToday").textContent=safe(m.conversations_today||0);$("mWeek").textContent=safe(m.conversations_7d||0);$("mResolved").textContent=safe(m.resolved_total||0);$("mOpen").textContent=safe(m.open_escalations||0);
+ const rows=(d.conversations||[]).map(c=>'<tr><td><strong>'+safe(c.id).slice(0,8)+'</strong></td><td>'+safe(c.latest_message||"No message preview")+'</td><td>'+statusTag(c.status)+'</td><td>'+date(c.started_at)+'</td></tr>').join("");
+ $("recentRows").innerHTML=rows||'<tr><td colspan="4" class="empty">No conversations recorded yet.</td></tr>';
+ $("conversationRows").innerHTML=(d.conversations||[]).map(c=>'<tr><td>'+safe(c.id).slice(0,8)+'</td><td>'+safe(c.latest_message||"—")+'</td><td>'+statusTag(c.status)+'</td><td>'+safe(c.channel)+'</td><td>'+date(c.started_at)+'</td></tr>').join("")||'<tr><td colspan="5" class="empty">No conversations recorded yet.</td></tr>';
+}
+async function loadKnowledge(){
+ const d=await api("/api/admin/knowledge");
+ $("knowledgeList").innerHTML=(d.documents||[]).map(x=>'<article class="card" data-id="'+safe(x.id)+'"><div style="display:flex;justify-content:space-between;gap:12px;align-items:start;flex-wrap:wrap"><div><strong>'+safe(x.title)+'</strong><div class="muted" style="font-size:11px">'+safe(x.category)+' · Updated '+date(x.updated_at)+'</div></div>'+statusTag(x.approved?"approved":"pending review")+'</div><p style="white-space:pre-wrap;color:#bdc9d8">'+safe(x.content)+'</p><div class="actions"><button class="btn" data-action="toggle-knowledge" data-id="'+safe(x.id)+'" data-approved="'+(!x.approved)+'">'+(x.approved?"Unapprove":"Approve after verification")+'</button><button class="btn danger" data-action="delete-knowledge" data-id="'+safe(x.id)+'">Delete</button></div></article>').join("")||'<div class="card empty">No knowledge documents yet. Add hotel-approved information above.</div>';
+}
+async function loadEscalations(){
+ const d=await api("/api/admin/escalations");
+ $("escalationRows").innerHTML=(d.escalations||[]).map(x=>'<tr><td>'+safe(x.reason)+'</td><td>'+statusTag(x.status)+'</td><td>'+date(x.created_at)+'</td><td><select data-action="escalation-status" data-id="'+safe(x.id)+'"><option value="open" '+(x.status==="open"?"selected":"")+'>Open</option><option value="claimed" '+(x.status==="claimed"?"selected":"")+'>Claimed</option><option value="resolved" '+(x.status==="resolved"?"selected":"")+'>Resolved</option></select></td></tr>').join("")||'<tr><td colspan="4" class="empty">No staff handoffs yet.</td></tr>';
+}
+async function loadPanel(name){
+ try{if(name==="overview"||name==="conversations")await loadOverview();if(name==="knowledge")await loadKnowledge();if(name==="escalations")await loadEscalations();$("globalNotice").classList.add("hidden");}
+ catch(e){notice(e.message,"error");}
+}
+async function enterWorkspace(){
+ try{const d=await api("/api/auth/me");$("orgName").textContent=d.organization.name;$("userRole").textContent=d.user.role+" · "+d.user.email;$("login").classList.add("hidden");$("app").classList.remove("hidden");switchPanel("overview");}
+ catch(e){$("login").classList.remove("hidden");$("app").classList.add("hidden");}
+}
+$("loginForm").addEventListener("submit",async e=>{e.preventDefault();try{const d=await api("/api/auth/login",{method:"POST",body:JSON.stringify({email:$("email").value,password:$("password").value})});csrfToken=d.csrfToken;await enterWorkspace();}catch(err){loginError(err.message);}});
+$("logout").addEventListener("click",async()=>{try{await api("/api/auth/logout",{method:"POST",body:"{}"});}catch{}csrfToken="";$("app").classList.add("hidden");$("login").classList.remove("hidden");$("password").value="";});
+$("refresh").addEventListener("click",()=>loadPanel(activePanel));
+document.querySelectorAll("[data-panel]").forEach(b=>b.addEventListener("click",()=>switchPanel(b.dataset.panel)));
+$("knowledgeForm").addEventListener("submit",async e=>{e.preventDefault();try{await api("/api/admin/knowledge",{method:"POST",body:JSON.stringify({title:$("kTitle").value,category:$("kCategory").value,content:$("kContent").value,approved:$("kApproved").checked})});$("knowledgeForm").reset();showToast("Knowledge saved.");await loadKnowledge();}catch(err){notice(err.message,"error");}});
+$("knowledgeList").addEventListener("click",async e=>{const b=e.target.closest("button[data-action]");if(!b)return;try{if(b.dataset.action==="toggle-knowledge"){await api("/api/admin/knowledge/"+encodeURIComponent(b.dataset.id),{method:"PATCH",body:JSON.stringify({approved:b.dataset.approved==="true"})});showToast("Knowledge approval updated.");}else if(b.dataset.action==="delete-knowledge"){if(!confirm("Delete this knowledge document?"))return;await api("/api/admin/knowledge/"+encodeURIComponent(b.dataset.id),{method:"DELETE",body:"{}"});showToast("Knowledge deleted.");}await loadKnowledge();}catch(err){notice(err.message,"error");}});
+$("escalationRows").addEventListener("change",async e=>{const s=e.target.closest('select[data-action="escalation-status"]');if(!s)return;try{await api("/api/admin/escalations/"+encodeURIComponent(s.dataset.id),{method:"PATCH",body:JSON.stringify({status:s.value})});showToast("Handoff status updated.");await loadEscalations();}catch(err){notice(err.message,"error");}});
+enterWorkspace();
 </script>
-</body>
-</html>
+</body></html>

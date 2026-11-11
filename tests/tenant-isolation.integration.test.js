@@ -218,6 +218,8 @@ test("two hotel workspaces remain isolated across live API resources", { skip: !
     const onboardingResponse = await request("/api/admin/onboarding", {}, session);
     assert.equal(onboardingResponse.status, 200);
     const onboarding = await onboardingResponse.json();
+    assert.equal(onboarding.platformReady, false, "missing live AI configuration must keep the platform release gate closed");
+    assert.equal(onboarding.readyForPilot, false, "hotel checks alone must not mark the pilot ready");
     const storageCheck = onboarding.checks.find((check) => check.key === "hotel_storage");
     assert.equal(storageCheck.done, true, "the hotel's own connected OAuth account should satisfy storage readiness");
     assert.match(storageCheck.detail, new RegExp(ownProvider));
@@ -422,6 +424,15 @@ test("two hotel workspaces remain isolated across live API resources", { skip: !
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
   assert.ok(privacyServerReady, "privacy-gate test server should start with synthetic platform approvals");
+
+  const alphaReadyResponse = await request("/api/admin/onboarding", {}, alphaSession);
+  const alphaReady = await alphaReadyResponse.json();
+  assert.equal(alphaReady.platformReady, true);
+  assert.equal(alphaReady.readyForPilot, true, "Alpha should pass both platform and hotel-specific checks when all synthetic gates are satisfied");
+  const betaReadyResponse = await request("/api/admin/onboarding", {}, betaSession);
+  const betaReady = await betaReadyResponse.json();
+  assert.equal(betaReady.platformReady, true);
+  assert.equal(betaReady.readyForPilot, false, "Beta must remain blocked by its own missing privacy approval");
 
   const betaGuestChat = await request("/api/public/hotel-beta/chat", {
     method: "POST",

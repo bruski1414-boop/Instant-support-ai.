@@ -56,7 +56,7 @@ function createStorageRouter({ db, auth, role, audit }) {
   const providerValid = (p) => Object.prototype.hasOwnProperty.call(PROVIDERS, p);
   const callbackUrl = () => redirectBase + "/api/admin/storage/oauth/callback";
 
-  router.get("/connections", auth, async (req, res) => {
+  router.get("/connections", auth, role("owner", "admin"), async (req, res) => {
     try {
       const result = await db.query(
         "SELECT provider,account_email,connected_at,last_sync_at,status FROM storage_connections WHERE organization_id=$1 ORDER BY provider",
@@ -83,6 +83,7 @@ function createStorageRouter({ db, auth, role, audit }) {
     if (!clientId || !clientSecret) return safeError(res, "This storage provider has not been configured yet.", 503);
 
     try {
+      await db.query("DELETE FROM storage_oauth_states WHERE expires_at <= now()");
       const state = crypto.randomBytes(32).toString("base64url");
       const verifier = crypto.randomBytes(32).toString("base64url");
       const challenge = crypto.createHash("sha256").update(verifier).digest("base64url");
@@ -119,6 +120,11 @@ function createStorageRouter({ db, auth, role, audit }) {
       if (!found.rowCount) { await client.query("ROLLBACK"); return res.redirect("/dashboard.html?storage=invalid"); }
       const context = found.rows[0];
       const provider = context.provider;
+      const actor = await client.query("SELECT u.active,u.role,o.status AS organization_status FROM users u JOIN organizations o ON o.id=u.organization_id WHERE u.id=$1 AND u.organization_id=$2", [context.user_id, context.organization_id]);
+      if (!actor.rowCount || !actor.rows[0].active || !["owner", "admin"].includes(actor.rows[0].role) || actor.rows[0].organization_status === "suspended") {
+        await client.query("ROLLBACK");
+        return res.redirect("/dashboard.html?storage=unauthorized");
+      }
       const clientId = provider === "google" ? process.env.GOOGLE_OAUTH_CLIENT_ID : process.env.MICROSOFT_OAUTH_CLIENT_ID;
       const clientSecret = provider === "google" ? process.env.GOOGLE_OAUTH_CLIENT_SECRET : process.env.MICROSOFT_OAUTH_CLIENT_SECRET;
       const form = new URLSearchParams({
@@ -173,7 +179,7 @@ function createStorageRouter({ db, auth, role, audit }) {
     return merged.access_token;
   }
 
-  router.get("/sites/microsoft", auth, async (req, res) => {
+  router.get("/sites/microsoft", auth, role("owner", "admin"), async (req, res) => {
     try {
       const token = await accessToken(req.actor.organization_id, "microsoft");
       const response = await fetch("https://graph.microsoft.com/v1.0/sites?search=*&$select=id,name,webUrl&$top=100", { headers: { authorization: "Bearer " + token }, signal: AbortSignal.timeout(15000) });
@@ -183,7 +189,7 @@ function createStorageRouter({ db, auth, role, audit }) {
     } catch (e) { res.status(502).json({ error: e.message || "Could not list SharePoint sites." }); }
   });
 
-  router.get("/files/:provider", auth, async (req, res) => {
+  router.get("/files/:provider", auth, role("owner", "admin"), async (req, res) => {
     const provider = req.params.provider;
     if (!providerValid(provider)) return safeError(res, "Unsupported storage provider.");
     try {

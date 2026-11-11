@@ -56,7 +56,7 @@ Never commit secrets or place them in browser JavaScript.
 3. Add the AI provider key in Render's service environment. Do not paste secrets into chat or GitHub.
 4. Use `/setup.html` with the one-time bootstrap token to create the first owner.
 5. Remove `BOOTSTRAP_TOKEN` from Render and redeploy.
-6. Sign in at `/dashboard.html`.
+6. Sign in at `/dashboard.html` using the workspace slug shown by the setup page, plus the owner email and password.
 7. Add hotel knowledge as unapproved; a hotel manager must verify it before approval.
 8. Set `ALLOWED_ORIGINS` to the exact hotel website origin.
 9. Test the staff notification receiver and its fallback process.

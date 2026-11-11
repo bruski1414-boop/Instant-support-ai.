@@ -251,7 +251,7 @@ test("public guest chat requires fresh tenant-specific AI, staff and storage ver
   assert.match(server, /verifiedForHotel\.has\("ai_provider"\)/);
   assert.match(server, /verifiedForHotel\.has\("staff_webhook"\)/);
   assert.match(server, /FROM storage_connections WHERE organization_id=\$1 AND status='connected' LIMIT 1/);
-  assert.match(server, /FROM organization_privacy_approvals WHERE organization_id=\$1/);
+  assert.match(server, /FROM organization_privacy_approvals p LEFT JOIN retention_purge_runs r ON r.organization_id=p.organization_id WHERE p.organization_id=\$1 AND p.revoked_at IS NULL/);
   assert.match(server, /SELECT status,provider FROM storage_connections WHERE organization_id=\$1 AND status='connected'/);
   assert.doesNotMatch(server, /FROM organization_storage_connections WHERE organization_id=\$1 AND status='connected'/);
   const storage = fs.readFileSync("storage-integrations.js", "utf8");

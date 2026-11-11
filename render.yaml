@@ -26,6 +26,8 @@ services:
         generateValue: true
       - key: NODE_ENV
         value: production
+      - key: GUEST_DATA_STORAGE_ENABLED
+        value: "false"
 
 databases:
   - name: veyra-core-db

@@ -181,16 +181,25 @@ test("two hotel workspaces remain isolated across live API resources", { skip: !
     [alphaId, alphaUser.rows[0].id, betaId, betaUser.rows[0].id]
   );
   await pool.query(
-    "INSERT INTO organization_storage_connections(organization_id,provider,workspace_reference,status) VALUES($1,'google_drive','alpha-drive','connected'),($2,'microsoft_sharepoint','beta-sharepoint','connected')",
-    [alphaId, betaId]
-  );
-  await pool.query(
     "INSERT INTO storage_connections(organization_id,provider,account_email,encrypted_tokens,status) VALUES($1,'google','storage@alpha.test','encrypted-alpha-placeholder','connected'),($2,'microsoft','storage@beta.test','encrypted-beta-placeholder','connected')",
     [alphaId, betaId]
   );
 
   const alphaSession = await login("hotel-alpha", "owner@alpha.test");
   const betaSession = await login("hotel-beta", "owner@beta.test");
+  for (const [session, ownProvider, otherProvider] of [
+    [alphaSession, "google", "microsoft"],
+    [betaSession, "microsoft", "google"]
+  ]) {
+    const onboardingResponse = await request("/api/admin/onboarding", {}, session);
+    assert.equal(onboardingResponse.status, 200);
+    const onboarding = await onboardingResponse.json();
+    const storageCheck = onboarding.checks.find((check) => check.key === "hotel_storage");
+    assert.equal(storageCheck.done, true, "the hotel's own connected OAuth account should satisfy storage readiness");
+    assert.match(storageCheck.detail, new RegExp(ownProvider));
+    assert.doesNotMatch(storageCheck.detail, new RegExp(otherProvider), "another hotel's storage provider must not leak into this workspace");
+  }
+
 
   const normalizedAlphaSettings = await request("/api/admin/settings", {
     method: "PUT",

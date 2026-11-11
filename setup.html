@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Veyra AI | First workspace setup</title>
+<style>
+*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:22px;background:radial-gradient(ellipse at 70% -15%,#1a3049 0,transparent 45%),#080c12;color:#f3f7fc;font:14px/1.5 Inter,system-ui,sans-serif}.card{width:min(100%,520px);padding:28px;border:1px solid #29394d;border-radius:18px;background:#101925}.brand{font-weight:850;letter-spacing:.14em;margin-bottom:26px}.logo{display:inline-grid;place-items:center;width:34px;height:34px;border-radius:10px;background:#c5def8;color:#07111c;margin-right:9px}.muted{color:#9aa9bc}h1{font-size:28px;letter-spacing:-.04em;margin:0 0 8px}.field{display:grid;gap:6px;margin:15px 0}.field label{color:#b8c5d5;font-size:12px}.field input{width:100%;background:#080e16;border:1px solid #33445b;color:white;border-radius:9px;padding:12px;font:inherit}.btn{width:100%;margin-top:10px;border:0;border-radius:9px;padding:12px;background:#c5def8;color:#07111c;font-weight:750;font:inherit;cursor:pointer}.notice{padding:12px;border-radius:9px;margin:14px 0;background:#211c14;color:#ead8b5;border:1px solid #53432b}.notice.good{background:#10241d;color:#b9f0d8;border-color:#245542}.notice.bad{background:#29171b;color:#ffc2c2;border-color:#6c3c43}.fine{font-size:11px;color:#91a4b9;margin-top:18px}.hidden{display:none}a{color:#c5def8}
+</style></head><body><main class="card">
+<div class="brand"><span class="logo">V</span>VEYRA AI</div>
+<h1>Create the first workspace</h1><p class="muted">This one-time setup creates the first hotel organisation and its owner account. It is not public registration.</p>
+<div id="notice" class="notice hidden" role="status"></div>
+<form id="setup">
+<div class="field"><label for="token">One-time setup token</label><input id="token" type="password" autocomplete="off" required maxlength="256"></div>
+<div class="field"><label for="org">Hotel / organisation name</label><input id="org" required maxlength="100" placeholder="Example Hotel"></div>
+<div class="field"><label for="email">Owner email</label><input id="email" type="email" autocomplete="email" required maxlength="254"></div>
+<div class="field"><label for="password">Create password (at least 12 characters)</label><input id="password" type="password" autocomplete="new-password" required minlength="12" maxlength="200"></div>
+<div class="field"><label for="confirm">Confirm password</label><input id="confirm" type="password" autocomplete="new-password" required minlength="12" maxlength="200"></div>
+<button class="btn" type="submit">Create secure workspace</button>
+</form>
+<p class="fine">Only the account administrator should complete this step. Keep the setup token private. After setup, ask the Render account owner to remove BOOTSTRAP_TOKEN from the service environment and redeploy. Do not enter real guest data until the hotel's privacy, retention and staff-response arrangements have been approved.</p>
+<p class="fine"><a href="/dashboard.html">Return to sign in</a></p>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+function show(message,kind){const e=$("notice");e.textContent=message;e.className="notice "+(kind||"");}
+$("setup").addEventListener("submit",async e=>{
+ e.preventDefault();
+ const token=$("token").value,organizationName=$("org").value.trim(),email=$("email").value.trim(),password=$("password").value;
+ if(password!==$("confirm").value){show("The passwords do not match.","bad");return;}
+ const button=e.submitter;button.disabled=true;button.textContent="Creating workspace…";
+ try{
+  const response=await fetch("/api/setup/organization",{method:"POST",headers:{"Content-Type":"application/json","X-Bootstrap-Token":token},body:JSON.stringify({organizationName,email,password})});
+  const data=await response.json();
+  if(!response.ok)throw new Error(data.error||"Setup failed.");
+  $("setup").classList.add("hidden");
+  show("Workspace created for "+data.organization.name+". Now remove BOOTSTRAP_TOKEN in Render, then sign in at the dashboard. The owner account is "+data.owner.email+".","good");
+ }catch(error){show(error.message,"bad");}
+ finally{button.disabled=false;button.textContent="Create secure workspace";}
+});
+</script></body></html>

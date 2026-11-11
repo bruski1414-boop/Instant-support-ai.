@@ -96,7 +96,11 @@ Before connecting a hosted database or enabling customer traffic, run `npm run p
 
 The application service must use a dedicated restricted runtime database login. A separate authorised database administrator must apply migrations and provision the first owner; never give the web service the database-owner connection string. Do not run the preflight against a database containing real guest information until an authorised adult/operator has reviewed the configuration.
 
-## Fictional hotel demo and guest scenarios\n\nThe shared demo fixture is in `fixtures/northstar-hotel.js`. It defines fictional check-in/check-out, breakfast, pool and fitness-room facts, while explicitly leaving Wi-Fi credentials, room rates, room availability, pet policy, parking policy and dinner-menu details unverified. `npm test` includes offline checks for this fixture and deterministic staff-escalation rules. `npm run test:live` evaluates 15 synthetic guest questions covering known FAQs, unknown facts, booking and refund requests, allergies, complaints, prompt injection and false booking claims. Live evaluation is opt-in and may incur AI-provider charges; it does not test a live hotel or real guest data.\n\n## Browser end-to-end checks
+## Fictional hotel demo and guest scenarios
+
+The shared demo fixture is in `fixtures/northstar-hotel.js`. It defines fictional check-in/check-out, breakfast, pool and fitness-room facts, while explicitly leaving Wi-Fi credentials, room rates, room availability, pet policy, parking policy and dinner-menu details unverified. `npm test` includes offline checks for this fixture and deterministic staff-escalation rules. `npm run test:live` evaluates 15 synthetic guest questions covering known FAQs, unknown facts, booking and refund requests, allergies, complaints, prompt injection and false booking claims. Live evaluation is opt-in and may incur AI-provider charges; it does not test a live hotel or real guest data.
+
+## Browser end-to-end checks
 
 The CI workflow installs a pinned Playwright version and Chromium to exercise the guest chat and hosted launcher in a real browser. These tests use a local static server and mocked chat responses; they do not verify the live hotel database, live AI provider, real Slack delivery, production hosting, or a hotel's actual website.
 

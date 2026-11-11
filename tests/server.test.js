@@ -29,7 +29,7 @@ after(() => { if (child && child.exitCode === null) child.kill("SIGTERM"); });
 test("health endpoint reports demo mode when no API key is configured", async () => {
   const response = await fetch(`${baseUrl}/api/health`);
   const body = await response.json();
-  assert.equal(response.status, 503);
+  assert.equal(response.status, 200);
   assert.equal(body.status, "degraded");
   assert.equal(body.readyForPilot, false);
   assert.equal(body.checks.database, false);
@@ -38,6 +38,13 @@ test("health endpoint reports demo mode when no API key is configured", async ()
   assert.equal(body.humanHandoff, "not-configured");
   assert.equal(body.guestDataStorage, false);
   assert.equal(body.database, "not-configured");
+});
+test("pilot readiness remains blocked separately from process health", async () => {
+  const response = await fetch(`${baseUrl}/api/readiness`);
+  const body = await response.json();
+  assert.equal(response.status, 503);
+  assert.equal(body.status, "not-ready");
+  assert.equal(body.readyForPilot, false);
 });
 test("chat rejects an empty message", async () => {
   const response = await fetch(`${baseUrl}/api/chat`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ message: "   " }) });

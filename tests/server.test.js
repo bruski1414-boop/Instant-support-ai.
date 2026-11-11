@@ -33,6 +33,7 @@ test("health endpoint reports demo mode when no API key is configured", async ()
   assert.equal(body.status, "ok");
   assert.equal(body.mode, "demo-no-api-key");
   assert.equal(body.humanHandoff, "not-configured");
+  assert.equal(body.guestDataStorage, false);
   assert.equal(body.database, "not-configured");
 });
 test("chat rejects an empty message", async () => {

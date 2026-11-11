@@ -104,3 +104,12 @@ test("initial workspace bootstrap has a dedicated attempt limit", async () => {
   }
   assert.equal(last.status, 429);
 });
+
+test("guest widget reuses its server-issued conversation id", () => {
+  const widget = fs.readFileSync("widget.js", "utf8");
+  const server = fs.readFileSync("server.js", "utf8");
+  assert.match(widget, /conversationId:conversationId/);
+  assert.match(widget, /conversationId=data\.conversationId\|\|conversationId/);
+  assert.match(server, /WHERE id=\$1 AND organization_id=\$2/);
+  assert.match(server, /LIMIT 8/);
+});

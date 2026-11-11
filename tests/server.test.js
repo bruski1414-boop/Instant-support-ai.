@@ -251,3 +251,12 @@ test("AI and staff integrations require live verification before onboarding mark
   assert.match(server, /verified_at,verified_by/);
   assert.match(server, /handoffVerified=Boolean\(handoffConfigured&&verified\.staff_webhook\)/);
 });
+
+
+test("hotel setup dashboard exposes AI and staff dispatcher verification actions", () => {
+  const dashboard = fs.readFileSync("dashboard.html", "utf8");
+  assert.match(dashboard, /id="testAiIntegration"/);
+  assert.match(dashboard, /id="testStaffIntegration"/);
+  assert.match(dashboard, /api\("\/api\/admin\/integrations\/test-/);
+  assert.match(dashboard, /Signed test event accepted for this hotel/);
+});

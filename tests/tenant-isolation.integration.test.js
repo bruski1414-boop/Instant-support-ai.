@@ -202,9 +202,13 @@ test("two hotel workspaces remain isolated across live API resources", { skip: !
   const alphaCors = await fetch(baseUrl + "/api/public/hotel-alpha/chat", { method: "OPTIONS", headers: { Origin: "https://alpha.test", "Access-Control-Request-Method": "POST", "Access-Control-Request-Headers": "content-type" } });
   const betaCors = await fetch(baseUrl + "/api/public/hotel-beta/chat", { method: "OPTIONS", headers: { Origin: "https://beta.test", "Access-Control-Request-Method": "POST", "Access-Control-Request-Headers": "content-type" } });
   const unknownCors = await fetch(baseUrl + "/api/public/hotel-alpha/chat", { method: "OPTIONS", headers: { Origin: "https://unregistered.test", "Access-Control-Request-Method": "POST", "Access-Control-Request-Headers": "content-type" } });
+  const alphaToBetaCors = await fetch(baseUrl + "/api/public/hotel-beta/chat", { method: "OPTIONS", headers: { Origin: "https://alpha.test", "Access-Control-Request-Method": "POST", "Access-Control-Request-Headers": "content-type" } });
+  const betaToAlphaCors = await fetch(baseUrl + "/api/public/hotel-alpha/chat", { method: "OPTIONS", headers: { Origin: "https://beta.test", "Access-Control-Request-Method": "POST", "Access-Control-Request-Headers": "content-type" } });
   assert.equal(alphaCors.headers.get("access-control-allow-origin"), "https://alpha.test", "Hotel Alpha's saved website origin should be allowed");
   assert.equal(betaCors.headers.get("access-control-allow-origin"), "https://beta.test", "Hotel Beta's saved website origin should be allowed");
   assert.equal(unknownCors.headers.get("access-control-allow-origin"), null, "unregistered websites must not be allowed");
+  assert.equal(alphaToBetaCors.headers.get("access-control-allow-origin"), null, "Hotel Alpha's website must not be allowed to call Hotel Beta's guest API");
+  assert.equal(betaToAlphaCors.headers.get("access-control-allow-origin"), null, "Hotel Beta's website must not be allowed to call Hotel Alpha's guest API");
 
   const alphaAiCheck = await request("/api/admin/integrations/test-ai", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" }, alphaSession);
   assert.equal(alphaAiCheck.status, 503, "missing provider key must be reported rather than pretending AI is verified");

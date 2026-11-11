@@ -51,3 +51,15 @@ test("hotel onboarding readiness checks real configuration and privacy gate", ()
   assert.match(dashboard, /api\("\/api\/admin\/onboarding"\)/);
   assert.match(dashboard, /settingsForm/);
 });
+
+test("hotel knowledge records its source and review date, and expired documents are excluded from AI context", () => {
+  assert.match(server, /source_reference TEXT NOT NULL DEFAULT ''/);
+  assert.match(server, /review_due_at DATE/);
+  assert.match(server, /reviewed_at TIMESTAMPTZ/);
+  assert.match(server, /ALTER TABLE knowledge_documents ADD COLUMN IF NOT EXISTS review_due_at DATE/);
+  assert.match(server, /review_due_at>=CURRENT_DATE/);
+  assert.match(server, /knowledge_document_versions\(organization_id,document_id,title,category,content,approved,source_reference,review_due_at,reviewed_at/);
+  assert.match(dashboard, /id="kSource"/);
+  assert.match(dashboard, /id="kReviewDue"/);
+  assert.match(dashboard, /source_reference/);
+});

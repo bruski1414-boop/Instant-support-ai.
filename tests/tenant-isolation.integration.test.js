@@ -98,7 +98,8 @@ test("two hotel workspaces remain isolated across live API resources", { skip: !
       RETENTION_WORKER_ENABLED: "false",
       STAFF_HANDOFF_TESTED: "true",
       PILOT_RELEASE_APPROVED: "true",
-      ALLOWED_ORIGINS: "http://localhost:3000"
+      // Deliberately include both hotel domains: the public guest API must still enforce the matching tenant's saved website origin.
+      ALLOWED_ORIGINS: "https://alpha.test,https://beta.test,http://localhost:3000"
     },
     stdio: "ignore"
   });
@@ -441,7 +442,8 @@ test("two hotel workspaces remain isolated across live API resources", { skip: !
       RETENTION_WORKER_ENABLED: "true",
       STAFF_HANDOFF_TESTED: "true",
       PILOT_RELEASE_APPROVED: "true",
-      ALLOWED_ORIGINS: "http://localhost:3000"
+      // Deliberately include both hotel domains: the public guest API must still enforce the matching tenant's saved website origin.
+      ALLOWED_ORIGINS: "https://alpha.test,https://beta.test,http://localhost:3000"
     },
     stdio: "ignore"
   });

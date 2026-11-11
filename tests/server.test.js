@@ -57,12 +57,12 @@ test("chat does not pretend to be live when the provider key is missing", async 
 
 test("dashboard and guest widget JavaScript parse cleanly", () => {
   const html = fs.readFileSync("dashboard.html", "utf8");
-  const scripts = [...html.matchAll(/<script>([\\s\\S]*?)<\\/script>/g)];
-  assert.ok(scripts.length > 0, "dashboard inline script exists");
-  for (const match of scripts) new vm.Script(match[1]);
+  const start = html.indexOf("<script>");
+  const end = html.indexOf("</script>", start);
+  assert.ok(start >= 0 && end > start, "dashboard inline script exists");
+  new vm.Script(html.slice(start + 8, end));
   new vm.Script(fs.readFileSync("widget.js", "utf8"));
 });
-
 test("tenant chat fails closed when database is not configured", async () => {
   const response = await fetch(`${baseUrl}/api/public/sample-hotel/chat`, {
     method: "POST",

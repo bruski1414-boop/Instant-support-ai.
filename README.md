@@ -60,7 +60,7 @@ Important environment variables:
 - `OPENAI_API_KEY`: provider secret stored only in Render.
 - `OPENAI_MODEL`: defaults to `gpt-4.1-mini`.
 - `BOOTSTRAP_TOKEN`: one-time first-workspace setup secret; remove it after the first owner is created.
-- `PLATFORM_PROVISIONING_TOKEN`: separate high-entropy server-side secret required to create each additional hotel workspace through `POST /api/platform/organizations`. Keep it only in hosting secrets and never put it in browser code or public documentation.
+- `PLATFORM_PROVISIONING_TOKEN`: separate high-entropy server-side secret required to create each additional hotel workspace and record/revoke per-hotel privacy approvals through the protected platform API. Keep it only in hosting secrets and never put it in browser code or public documentation.
 - `ALLOWED_ORIGINS`: exact platform/admin origins permitted to call the API. A hotel's own saved HTTPS origin is also dynamically allowed for its own embeddable guest widget.
 - `GUEST_DATA_STORAGE_ENABLED`: defaults to false. Do not enable until platform privacy review, each hotel's separately recorded written approval, durable backups and verified automated retention/deletion are in place.
 - `STORAGE_OAUTH_REDIRECT_BASE`: public HTTPS origin of this Veyra deployment, for example `https://veyra-ai-prototype.onrender.com`.
@@ -104,7 +104,7 @@ Never commit secrets or place them in browser JavaScript.
 ## API endpoints
 
 - `GET /api/health` — process health for the hosting platform; returns HTTP 200 while reporting dependency status
-- `GET /api/readiness` — full hotel pilot readiness; returns HTTP 503 until all required checks pass
+- `GET /api/readiness` — platform-wide release readiness; per-hotel readiness is combined with this by `GET /api/admin/onboarding`
 - `POST /api/setup/organization` — one-time first-owner bootstrap
 - `POST /api/platform/organizations` — protected creation of additional hotel workspaces and owner accounts
 - `POST /api/platform/organizations/:slug/privacy-approval` — platform-operator-only record of a hotel's written approval and retention target

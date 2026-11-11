@@ -4,7 +4,7 @@
 A controlled evaluation of Veyra's multi-tenant hotel-support prototype. Each hotel has a separate workspace, owner/staff accounts, approved knowledge, conversations and OAuth storage connection. Automated tests exercise two synthetic hotels, but this is not an enterprise-certified SaaS platform, a property-management-system integration, or an automated booking/refund agent.
 
 ## Non-negotiable launch gates
-- A parent or guardian helps manage hosting, provider accounts, contracts, and billing because the founder is under 18.
+- A parent/guardian or authorised adult manages hosting, provider accounts, contracts and billing.
 - The hotel gives written permission to use its name, approved FAQs, website widget, and any test data.
 - A hotel manager approves every answer source: breakfast times, check-in/out, facilities, parking, transport, accessibility, and contact routes.
 - Do not ingest guest names, passport details, payment data, rooming lists, medical details, or private booking records for this pilot.

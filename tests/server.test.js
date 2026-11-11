@@ -243,6 +243,16 @@ test("hotel website origins are allowed dynamically from each tenant's saved HTT
   assert.match(server, /u\.protocol==="https:"&&u\.origin===p\.website_url/);
 });
 
+test("public guest chat requires fresh tenant-specific AI, staff and storage verification", () => {
+  const server = fs.readFileSync("server.js", "utf8");
+  assert.match(server, /verified_at>now\(\)-interval '30 days'/);
+  assert.match(server, /verifiedForHotel\.has\("ai_provider"\)/);
+  assert.match(server, /verifiedForHotel\.has\("staff_webhook"\)/);
+  assert.match(server, /FROM storage_connections WHERE organization_id=\$1 AND status='connected'/);
+  assert.match(server, /This hotel's AI and staff notification integrations must be verified/);
+  assert.match(server, /This hotel must connect and authorize its own storage provider/);
+});
+
 test("AI and staff integrations require live verification before onboarding marks them complete", () => {
   const server = fs.readFileSync("server.js", "utf8");
   assert.match(server, /organization_integration_checks/);

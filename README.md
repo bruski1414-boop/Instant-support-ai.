@@ -22,6 +22,7 @@ The web service and database are currently on Render's free plans. The database 
 - Tenant-scoped dashboard APIs for overview, knowledge and staff handoffs.
 - Owner/admin/staff/viewer roles; scrypt password hashing; opaque session tokens; HttpOnly/SameSite cookies; CSRF checks; and session expiry.
 - One-time first-owner bootstrap endpoint and setup page.
+- Tenant-scoped staff invitations: hashed single-use tokens, 24-hour expiry, revocation, role restrictions and a dedicated acceptance page. Invitation delivery is manual; no email provider is connected.
 - Owner dashboard for conversations, knowledge approval and escalation status.
 - Embeddable guest chat widget with multi-turn conversation continuity, bounded history and a per-conversation access token stored only as a hash server-side.
 - Public file allowlist so source files, tests and internal documentation are not served as website assets.
@@ -76,6 +77,8 @@ Never commit secrets or place them in browser JavaScript.
 - `POST /api/setup/organization` — one-time owner bootstrap
 - `POST /api/auth/login`
 - `POST /api/auth/logout`
+- `GET/POST/DELETE /api/admin/invitations` — owner/admin invitation management
+- `POST /api/invitations/accept` — single-use invitation acceptance
 - `GET /api/auth/me`
 - `GET /api/auth/csrf`
 - `GET /api/admin/conversations/:id` — tenant-scoped conversation transcript\n- `DELETE /api/admin/conversations/:id` — owner/admin-only, tenant-scoped conversation deletion\n- `GET /api/admin/overview`
@@ -94,7 +97,7 @@ This is an active prototype, not a certified or production-approved hotel system
 - Hotel-approved privacy notice, data-processing terms, lawful basis/consent where required, retention and deletion workflow.
 - Verified hotel knowledge, source/version history and named approval responsibility.
 - Verified staff notification integration, retries, delivery audit and an operational fallback.
-- Email verification, password recovery, MFA, staff invitations and session/device management.
+- Email verification, password recovery, MFA and session/device management.
 - PostgreSQL integration tests, tenant-isolation tests, prompt-injection and abuse tests, security review and load tests.
 - Monitoring, incident response, hotel manager sign-off and a supervised pilot measured against a baseline.
 

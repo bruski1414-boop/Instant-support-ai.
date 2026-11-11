@@ -157,6 +157,16 @@ function createStorageRouter({ db, auth, role, audit }) {
     return merged.access_token;
   }
 
+  router.get("/sites/microsoft", auth, async (req, res) => {
+    try {
+      const token = await accessToken(req.actor.organization_id, "microsoft");
+      const response = await fetch("https://graph.microsoft.com/v1.0/sites?search=*&$select=id,name,webUrl&$top=100", { headers: { authorization: "Bearer " + token }, signal: AbortSignal.timeout(15000) });
+      const body = await response.json();
+      if (!response.ok) throw new Error("Could not list SharePoint sites.");
+      res.json({ sites: (body.value || []).map(site => ({ id: site.id, name: site.name, webUrl: site.webUrl || "" })) });
+    } catch (e) { res.status(502).json({ error: e.message || "Could not list SharePoint sites." }); }
+  });
+
   router.get("/files/:provider", auth, async (req, res) => {
     const provider = req.params.provider;
     if (!providerValid(provider)) return safeError(res, "Unsupported storage provider.");
@@ -174,11 +184,14 @@ function createStorageRouter({ db, auth, role, audit }) {
         if (!response.ok) throw new Error("Google Drive could not list files.");
         files = (body.files || []).map(f => ({ id: f.id, name: f.name, mimeType: f.mimeType, modifiedTime: f.modifiedTime, webUrl: f.webViewLink || "" }));
       } else {
-        const url = "https://graph.microsoft.com/v1.0/me/drive/root/search(q='')?$top=100&$select=id,name,file,lastModifiedDateTime,webUrl";
-        const response = await fetch(url, { headers: { authorization: "Bearer " + token }, signal: AbortSignal.timeout(15000) });
+        const siteId = typeof req.query.siteId === "string" ? req.query.siteId.slice(0, 300) : "";
+        const endpoint = siteId
+          ? "https://graph.microsoft.com/v1.0/sites/" + encodeURIComponent(siteId) + "/drive/root/children?$top=100&$select=id,name,file,lastModifiedDateTime,webUrl"
+          : "https://graph.microsoft.com/v1.0/me/drive/root/children?$top=100&$select=id,name,file,lastModifiedDateTime,webUrl";
+        const response = await fetch(endpoint, { headers: { authorization: "Bearer " + token }, signal: AbortSignal.timeout(15000) });
         const body = await response.json();
         if (!response.ok) throw new Error("Microsoft storage could not list files.");
-        files = (body.value || []).filter(f => f.file && (f.file.mimeType === "text/plain")).map(f => ({ id: f.id, name: f.name, mimeType: f.file.mimeType, modifiedTime: f.lastModifiedDateTime, webUrl: f.webUrl || "" }));
+        files = (body.value || []).filter(f => f.file && f.file.mimeType === "text/plain").map(f => ({ id: f.id, name: f.name, mimeType: f.file.mimeType, modifiedTime: f.lastModifiedDateTime, webUrl: f.webUrl || "", siteId }));
       }
       await db.query("UPDATE storage_connections SET last_sync_at=now(),last_error=NULL WHERE organization_id=$1 AND provider=$2", [req.actor.organization_id, provider]);
       res.json({ provider, files });
@@ -191,6 +204,7 @@ function createStorageRouter({ db, auth, role, audit }) {
   router.post("/import/:provider", auth, role("owner", "admin"), async (req, res) => {
     const provider = req.params.provider;
     const fileId = req.body?.fileId;
+    const siteId = typeof req.body?.siteId === "string" ? req.body.siteId.slice(0, 300) : "";
     if (!providerValid(provider) || typeof fileId !== "string" || !fileId || fileId.length > 500) return safeError(res, "Choose a valid file.");
     try {
       const token = await accessToken(req.actor.organization_id, provider);
@@ -206,11 +220,12 @@ function createStorageRouter({ db, auth, role, audit }) {
         if (!response.ok) throw new Error("Could not download the selected Google document.");
         content = await response.text();
       } else {
-        const metaResponse = await fetch("https://graph.microsoft.com/v1.0/me/drive/items/" + encodeURIComponent(fileId) + "?$select=id,name,file,webUrl", { headers: { authorization: "Bearer " + token }, signal: AbortSignal.timeout(12000) });
+        const driveBase = siteId ? "https://graph.microsoft.com/v1.0/sites/" + encodeURIComponent(siteId) + "/drive" : "https://graph.microsoft.com/v1.0/me/drive";
+        const metaResponse = await fetch(driveBase + "/items/" + encodeURIComponent(fileId) + "?$select=id,name,file,webUrl", { headers: { authorization: "Bearer " + token }, signal: AbortSignal.timeout(12000) });
         const meta = await metaResponse.json();
         if (!metaResponse.ok || meta.file?.mimeType !== "text/plain") return safeError(res, "Only plain-text files can be imported from Microsoft storage in this release.");
         name = meta.name;
-        const response = await fetch("https://graph.microsoft.com/v1.0/me/drive/items/" + encodeURIComponent(fileId) + "/content", { headers: { authorization: "Bearer " + token }, redirect: "manual", signal: AbortSignal.timeout(20000) });
+        const response = await fetch(driveBase + "/items/" + encodeURIComponent(fileId) + "/content", { headers: { authorization: "Bearer " + token }, redirect: "manual", signal: AbortSignal.timeout(20000) });
         if (![200, 302, 303].includes(response.status)) throw new Error("Could not download the selected Microsoft document.");
         const downloadUrl = response.status === 200 ? null : response.headers.get("location");
         const contentResponse = response.status === 200 ? response : await fetch(downloadUrl, { signal: AbortSignal.timeout(20000) });

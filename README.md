@@ -62,6 +62,8 @@ Important environment variables:
 - `BOOTSTRAP_TOKEN`: one-time first-workspace setup secret; remove it after the first owner is created.
 - `PLATFORM_PROVISIONING_TOKEN`: separate high-entropy server-side secret required to create each additional hotel workspace and record/revoke per-hotel privacy approvals through the protected platform API. Keep it only in hosting secrets and never put it in browser code or public documentation.
 - `ALLOWED_ORIGINS`: exact platform/admin origins permitted to call the API. A hotel's own saved HTTPS origin is also dynamically allowed for its own embeddable guest widget.
+- `TRUST_PROXY_HOPS`: exact numeric proxy hop count measured from the live Render request path; do not guess or set Express `trust proxy` to `true` blindly.
+- `CLIENT_IP_RATE_LIMIT_VERIFIED=true`: set only after the measured hop count is configured and separate real visitor IPs resolve to separate rate-limit identities. Public guest chat stays blocked until this evidence exists.
 - `GUEST_DATA_STORAGE_ENABLED`: defaults to false. Do not enable until platform privacy review, each hotel's separately recorded written approval, durable backups and verified automated retention/deletion are in place.
 - `STORAGE_OAUTH_REDIRECT_BASE`: public HTTPS origin of this Veyra deployment, for example `https://veyra-ai-prototype.onrender.com`.
 - `STORAGE_TOKEN_ENCRYPTION_KEY`: base64-encoded 32-byte random key used for AES-256-GCM encryption of per-hotel OAuth tokens. Keep only in hosting secrets; never commit it.

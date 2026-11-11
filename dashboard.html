@@ -36,7 +36,7 @@ main{padding:28px clamp(16px,4vw,48px);max-width:1450px;width:100%;margin:auto}.
  <div class="navlabel">WORKSPACE</div>
  <nav class="nav">
   <button class="active" data-panel="overview">◫ Overview</button>
-  <button data-panel="setup">⚙ Hotel setup</button>
+  <button data-panel="setup">⚙ Hotel setup</button><button data-panel="storage" id="storageNav">▤ Hotel storage</button>
   <button data-panel="conversations">☷ Conversations</button>
   <button data-panel="knowledge">✧ Knowledge base</button>
   <button data-panel="escalations">↗ Staff handoffs</button>
@@ -69,7 +69,16 @@ main{padding:28px clamp(16px,4vw,48px);max-width:1450px;width:100%;margin:auto}.
   <div id="readinessList" style="display:grid;gap:9px"></div>
   <p class="muted" style="font-size:12px;margin-top:14px">This is an operational checklist, not a legal or security certification. Guest-data storage stays disabled until the hotel approves privacy, retention, backups and deletion arrangements in writing.</p>
  </section>
- <section id="panel-overview" class="panel active">
+ <section id="panel-storage" class="panel">
+<div class="sectionrow"><h2>Hotel document storage</h2><span class="muted">Private to this hotel workspace</span></div>
+<div class="notice">Read-only connection. Select documents individually. Every import stays unapproved until a hotel manager verifies it.</div>
+<div class="grid" style="grid-template-columns:repeat(2,minmax(0,1fr))">
+<article class="card"><h3>Google Drive</h3><p class="muted">Browse plain-text files and Google Docs.</p><div id="googleStorageStatus" class="muted">Checking…</div><div class="actions"><button class="btn primary" data-storage-connect="google">Connect Google Drive</button><button class="btn" data-storage-browse="google">Browse files</button><button class="btn danger" data-storage-disconnect="google">Disconnect</button></div></article>
+<article class="card"><h3>Microsoft OneDrive / SharePoint</h3><p class="muted">Browse OneDrive or choose a SharePoint site.</p><div id="microsoftStorageStatus" class="muted">Checking…</div><div class="field"><label for="sharepointSite">SharePoint site</label><select id="sharepointSite"><option value="">Personal OneDrive root</option></select></div><div class="actions"><button class="btn primary" data-storage-connect="microsoft">Connect Microsoft</button><button class="btn" data-storage-sites>Load SharePoint sites</button><button class="btn" data-storage-browse="microsoft">Browse files</button><button class="btn danger" data-storage-disconnect="microsoft">Disconnect</button></div></article>
+</div>
+<div class="sectionrow"><h2>Available documents</h2></div><div id="storageFiles" class="card tablewrap"><div class="empty">Connect a storage account, then browse its files.</div></div>
+<p class="muted">Initial release supports plain-text files and Google Docs. PDF, Word, Excel, automatic sync and folder-wide imports are not enabled.</p>
+</section><section id="panel-overview" class="panel active">
   <div class="grid">
    <div class="card"><div class="metriclabel">Conversations today</div><div class="metric" id="mToday">—</div></div>
    <div class="card"><div class="metriclabel">Last 7 days</div><div class="metric" id="mWeek">—</div></div>
@@ -150,7 +159,7 @@ function switchPanel(name){
  document.querySelectorAll(".panel").forEach(x=>x.classList.remove("active"));
  $("panel-"+name).classList.add("active");
  document.querySelectorAll("[data-panel]").forEach(x=>x.classList.toggle("active",x.dataset.panel===name));
- const labels={setup:["HOTEL SETUP","Hotel setup","Configure the hotel profile and review the real pre-pilot requirements."],team:["TEAM ACCESS","Team access","Invite employees and manage pending invitations."],overview:["OVERVIEW","Support overview","A live view of conversations and staff attention."],conversations:["CONVERSATIONS","Recent conversations","Review the latest guest interactions."],knowledge:["KNOWLEDGE BASE","Hotel knowledge","Control the facts the assistant is allowed to use."],escalations:["STAFF HANDOFFS","Staff handoff queue","Requests that need a member of your team."]};
+ const labels={storage:["HOTEL STORAGE","Hotel storage","Connect hotel document repositories and choose source documents."],setup:["HOTEL SETUP","Hotel setup","Configure the hotel profile and review the real pre-pilot requirements."],team:["TEAM ACCESS","Team access","Invite employees and manage pending invitations."],overview:["OVERVIEW","Support overview","A live view of conversations and staff attention."],conversations:["CONVERSATIONS","Recent conversations","Review the latest guest interactions."],knowledge:["KNOWLEDGE BASE","Hotel knowledge","Control the facts the assistant is allowed to use."],escalations:["STAFF HANDOFFS","Staff handoff queue","Requests that need a member of your team."]};
  $("crumb").textContent="WORKSPACE / "+labels[name][0];$("heading").textContent=labels[name][1];$("subheading").textContent=labels[name][2];
  loadPanel(name);
 }
@@ -171,11 +180,11 @@ async function loadEscalations(){
  $("escalationRows").innerHTML=(d.escalations||[]).map(x=>'<tr><td>'+safe(x.reason)+'</td><td>'+statusTag(x.status)+'</td><td><span class="tag '+(x.notification_status==="delivered"?"good":x.notification_status==="failed"?"bad":"warn")+'">'+safe(x.notification_status||"not_configured")+'</span>'+(x.notification_status==="failed"?' <button class="btn" data-action="retry-notification" data-id="'+safe(x.id)+'">Retry</button>':"")+'</td><td>'+date(x.created_at)+'</td><td><select data-action="escalation-status" data-id="'+safe(x.id)+'"><option value="open" '+(x.status==="open"?"selected":"")+' >Open</option><option value="claimed" '+(x.status==="claimed"?"selected":"")+' >Claimed</option><option value="resolved" '+(x.status==="resolved"?"selected":"")+' >Resolved</option></select></td></tr>').join("")||'<tr><td colspan="5" class="empty">No staff handoffs yet.</td></tr>';
 }
 async function loadPanel(name){
- try{if(name==="overview"||name==="conversations")await loadOverview();if(name==="knowledge")await loadKnowledge();if(name==="escalations")await loadEscalations();if(name==="team")await loadInvitations();if(name==="setup")await loadSetup();$("globalNotice").classList.add("hidden");}
+ try{if(name==="overview"||name==="conversations")await loadOverview();if(name==="knowledge")await loadKnowledge();if(name==="escalations")await loadEscalations();if(name==="team")await loadInvitations();if(name==="setup")await loadSetup();if(name==="storage")await loadStorage();$("globalNotice").classList.add("hidden");}
  catch(e){notice(e.message,"error");}
 }
 async function enterWorkspace(){
- try{const c=await api("/api/auth/csrf");csrfToken=c.csrfToken;const d=await api("/api/auth/me");currentRole=d.user.role;$("teamNav").classList.toggle("hidden",!["owner","admin"].includes(currentRole));$("settingsForm").classList.toggle("hidden",!["owner","admin"].includes(currentRole));$("orgName").textContent=d.organization.name;$("userRole").textContent=d.user.role+" · "+d.user.email;$("login").classList.add("hidden");$("app").classList.remove("hidden");switchPanel("overview");}
+ try{const c=await api("/api/auth/csrf");csrfToken=c.csrfToken;const d=await api("/api/auth/me");currentRole=d.user.role;$("teamNav").classList.toggle("hidden",!["owner","admin"].includes(currentRole));$("storageNav").classList.toggle("hidden",!["owner","admin"].includes(currentRole));$("settingsForm").classList.toggle("hidden",!["owner","admin"].includes(currentRole));$("orgName").textContent=d.organization.name;$("userRole").textContent=d.user.role+" · "+d.user.email;$("login").classList.add("hidden");$("app").classList.remove("hidden");switchPanel("overview");}
  catch(e){$("login").classList.remove("hidden");$("app").classList.add("hidden");}
 }
 $("loginForm").addEventListener("submit",async e=>{e.preventDefault();try{const d=await api("/api/auth/login",{method:"POST",body:JSON.stringify({organizationSlug:$("workspaceSlug").value.trim().toLowerCase(),email:$("email").value,password:$("password").value})});csrfToken=d.csrfToken;await enterWorkspace();}catch(err){loginError(err.message);}});
@@ -184,6 +193,31 @@ $("refresh").addEventListener("click",()=>loadPanel(activePanel));
 document.querySelectorAll("[data-panel]").forEach(b=>b.addEventListener("click",()=>switchPanel(b.dataset.panel)));
 
 
+async function loadStorage(){
+ const d=await api("/api/admin/storage/connections");
+ const by=Object.fromEntries((d.connections||[]).map(x=>[x.provider,x]));
+ $("googleStorageStatus").textContent=by.google?"Connected · "+(by.google.account_email||"Google account"):"Not connected";
+ $("microsoftStorageStatus").textContent=by.microsoft?"Connected · "+(by.microsoft.account_email||"Microsoft account"):"Not connected";
+ document.querySelectorAll("[data-storage-connect]").forEach(b=>{const p=b.dataset.storageConnect;b.disabled=!d.configured[p]||!d.configured.encryption||!d.configured.redirect;});
+ if(!d.configured.encryption||!d.configured.redirect)notice("Storage integrations need OAuth credentials, callback URL and encryption key in hosting settings.","error");
+}
+async function browseStorage(provider){
+ const siteId=provider==="microsoft"?$("sharepointSite").value:"";
+ const d=await api("/api/admin/storage/files/"+provider+(siteId?"?siteId="+encodeURIComponent(siteId):""));
+ const rows=(d.files||[]).map(f=>'<tr><td>'+safe(f.name)+'</td><td>'+safe(f.mimeType)+'</td><td>'+date(f.modifiedTime)+'</td><td><button class="btn primary" data-storage-import="'+safe(provider)+'" data-file-id="'+safe(f.id)+'" data-site-id="'+safe(f.siteId||"")+'">Import for review</button></td></tr>').join("");
+ $("storageFiles").innerHTML='<table class="table"><thead><tr><th>DOCUMENT</th><th>TYPE</th><th>MODIFIED</th><th>ACTION</th></tr></thead><tbody>'+(rows||'<tr><td colspan="4" class="empty">No supported text documents found.</td></tr>')+'</tbody></table>';
+}
+$("panel-storage").addEventListener("click",async e=>{
+ const b=e.target.closest("button[data-storage-connect],button[data-storage-browse],button[data-storage-disconnect],button[data-storage-sites],button[data-storage-import]");
+ if(!b)return;b.disabled=true;
+ try{
+  if(b.dataset.storageConnect){const d=await api("/api/admin/storage/connect/"+b.dataset.storageConnect,{method:"POST",body:"{}"});location.assign(d.authorizationUrl);return;}
+  if(b.dataset.storageBrowse){await browseStorage(b.dataset.storageBrowse);return;}
+  if(b.dataset.storageSites){const d=await api("/api/admin/storage/sites/microsoft");$("sharepointSite").innerHTML='<option value="">Personal OneDrive root</option>'+(d.sites||[]).map(x=>'<option value="'+safe(x.id)+'">'+safe(x.name)+'</option>').join("");showToast("SharePoint sites loaded.");return;}
+  if(b.dataset.storageDisconnect){if(!confirm("Disconnect this hotel storage account?"))return;await api("/api/admin/storage/connections/"+b.dataset.storageDisconnect,{method:"DELETE",body:"{}"});showToast("Storage disconnected.");await loadStorage();$("storageFiles").innerHTML='<div class="empty">Browse files after reconnecting.</div>';return;}
+  if(b.dataset.storageImport){const payload={fileId:b.dataset.fileId};if(b.dataset.siteId)payload.siteId=b.dataset.siteId;await api("/api/admin/storage/import/"+b.dataset.storageImport,{method:"POST",body:JSON.stringify(payload)});showToast("Imported as unapproved knowledge. Manager review required.");await browseStorage(b.dataset.storageImport);return;}
+ }catch(err){notice(err.message,"error");}finally{b.disabled=false;}
+});
 async function loadSetup(){
  const [s,o]=await Promise.all([api("/api/admin/settings"),api("/api/admin/onboarding")]);
  $("hotelWebsite").value=s.settings.website_url||"";
@@ -223,5 +257,6 @@ $("conversationDetail").addEventListener("click",e=>{if(e.target.closest('button
 $("escalationRows").addEventListener("change",async e=>{const s=e.target.closest('select[data-action="escalation-status"]');if(!s)return;try{await api("/api/admin/escalations/"+encodeURIComponent(s.dataset.id),{method:"PATCH",body:JSON.stringify({status:s.value})});showToast("Handoff status updated.");await loadEscalations();}catch(err){notice(err.message,"error");}});
 $("escalationRows").addEventListener("click",async e=>{const b=e.target.closest('button[data-action="retry-notification"]');if(!b)return;b.disabled=true;try{const d=await api("/api/admin/escalations/"+encodeURIComponent(b.dataset.id)+"/notify",{method:"POST",body:"{}"});showToast(d.delivered?"Hotel notification delivered.":"Notification still not confirmed.");await loadEscalations();}catch(err){notice(err.message,"error");b.disabled=false;}});
 enterWorkspace();
+const storageState=new URLSearchParams(location.search).get("storage");if(storageState){history.replaceState(null,"",location.pathname);if(storageState==="connected")showToast("Storage account connected.");else if(storageState!=="cancelled")notice("Storage connection was not completed. Please retry.","error");}
 </script>
 </body></html>

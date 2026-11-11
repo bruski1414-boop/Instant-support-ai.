@@ -41,6 +41,18 @@ function createStorageRouter({ db, auth, role, audit }) {
     return JSON.parse(Buffer.concat([decipher.update(Buffer.from(body, "base64url")), decipher.final()]).toString("utf8"));
   };
   const safeError = (res, error, status = 400) => res.status(status).json({ error });
+  const readTextLimited = async (response, maxBytes = 12000) => {
+    const declared = Number(response.headers.get("content-length") || 0);
+    if (declared > maxBytes) throw new Error("The selected file is larger than the 12 KB knowledge-document limit.");
+    if (!response.ok || !response.body) throw new Error("Could not download the selected document.");
+    const chunks = []; let total = 0;
+    for await (const chunk of response.body) {
+      total += chunk.length;
+      if (total > maxBytes) throw new Error("The selected file is larger than the 12 KB knowledge-document limit.");
+      chunks.push(Buffer.from(chunk));
+    }
+    return Buffer.concat(chunks).toString("utf8");
+  };
   const providerValid = (p) => Object.prototype.hasOwnProperty.call(PROVIDERS, p);
   const callbackUrl = () => redirectBase + "/api/admin/storage/oauth/callback";
 
@@ -72,9 +84,11 @@ function createStorageRouter({ db, auth, role, audit }) {
 
     try {
       const state = crypto.randomBytes(32).toString("base64url");
+      const verifier = crypto.randomBytes(32).toString("base64url");
+      const challenge = crypto.createHash("sha256").update(verifier).digest("base64url");
       await db.query(
-        "INSERT INTO storage_oauth_states(state_hash,organization_id,user_id,provider,expires_at) VALUES($1,$2,$3,$4,now()+interval '10 minutes')",
-        [crypto.createHash("sha256").update(state).digest("hex"), req.actor.organization_id, req.actor.user_id, provider]
+        "INSERT INTO storage_oauth_states(state_hash,organization_id,user_id,provider,expires_at,code_verifier) VALUES($1,$2,$3,$4,now()+interval '10 minutes',$5)",
+        [crypto.createHash("sha256").update(state).digest("hex"), req.actor.organization_id, req.actor.user_id, provider, verifier]
       );
       const config = PROVIDERS[provider];
       const url = new URL(config.authorize);
@@ -83,6 +97,8 @@ function createStorageRouter({ db, auth, role, audit }) {
       url.searchParams.set("response_type", "code");
       url.searchParams.set("scope", config.scope);
       url.searchParams.set("state", state);
+      url.searchParams.set("code_challenge", challenge);
+      url.searchParams.set("code_challenge_method", "S256");
       url.searchParams.set("prompt", "consent");
       if (provider === "google") url.searchParams.set("access_type", "offline");
       res.json({ authorizationUrl: url.toString() });
@@ -91,13 +107,13 @@ function createStorageRouter({ db, auth, role, audit }) {
 
   router.get("/oauth/callback", async (req, res) => {
     const { code, state, error } = req.query;
-    if (error || typeof code !== "string" || typeof state !== "string") return res.redirect("/dashboard.html?storage=cancelled");
+    if (error || typeof code !== "string" || code.length > 4096 || typeof state !== "string" || state.length > 200) return res.redirect("/dashboard.html?storage=cancelled");
     const stateHash = crypto.createHash("sha256").update(state).digest("hex");
     const client = await db.connect();
     try {
       await client.query("BEGIN");
       const found = await client.query(
-        "DELETE FROM storage_oauth_states WHERE state_hash=$1 AND expires_at>now() RETURNING organization_id,user_id,provider",
+        "DELETE FROM storage_oauth_states WHERE state_hash=$1 AND expires_at>now() RETURNING organization_id,user_id,provider,code_verifier",
         [stateHash]
       );
       if (!found.rowCount) { await client.query("ROLLBACK"); return res.redirect("/dashboard.html?storage=invalid"); }
@@ -107,7 +123,7 @@ function createStorageRouter({ db, auth, role, audit }) {
       const clientSecret = provider === "google" ? process.env.GOOGLE_OAUTH_CLIENT_SECRET : process.env.MICROSOFT_OAUTH_CLIENT_SECRET;
       const form = new URLSearchParams({
         client_id: clientId, client_secret: clientSecret, code,
-        redirect_uri: callbackUrl(), grant_type: "authorization_code",
+        redirect_uri: callbackUrl(), grant_type: "authorization_code", code_verifier: context.code_verifier,
       });
       if (provider === "microsoft") form.set("scope", PROVIDERS.microsoft.scope);
       const tokenResponse = await fetch(PROVIDERS[provider].token, {
@@ -217,8 +233,7 @@ function createStorageRouter({ db, auth, role, audit }) {
         const exportMode = meta.mimeType === "application/vnd.google-apps.document";
         const url = exportMode ? "https://www.googleapis.com/drive/v3/files/" + encodeURIComponent(fileId) + "/export?mimeType=text/plain" : "https://www.googleapis.com/drive/v3/files/" + encodeURIComponent(fileId) + "?alt=media";
         const response = await fetch(url, { headers: { authorization: "Bearer " + token }, signal: AbortSignal.timeout(20000) });
-        if (!response.ok) throw new Error("Could not download the selected Google document.");
-        content = await response.text();
+        content = await readTextLimited(response);
       } else {
         const driveBase = siteId ? "https://graph.microsoft.com/v1.0/sites/" + encodeURIComponent(siteId) + "/drive" : "https://graph.microsoft.com/v1.0/me/drive";
         const metaResponse = await fetch(driveBase + "/items/" + encodeURIComponent(fileId) + "?$select=id,name,file,webUrl", { headers: { authorization: "Bearer " + token }, signal: AbortSignal.timeout(12000) });
@@ -228,8 +243,9 @@ function createStorageRouter({ db, auth, role, audit }) {
         const response = await fetch(driveBase + "/items/" + encodeURIComponent(fileId) + "/content", { headers: { authorization: "Bearer " + token }, redirect: "manual", signal: AbortSignal.timeout(20000) });
         if (![200, 302, 303].includes(response.status)) throw new Error("Could not download the selected Microsoft document.");
         const downloadUrl = response.status === 200 ? null : response.headers.get("location");
+        if (response.status !== 200 && !downloadUrl) throw new Error("Microsoft storage returned an invalid download redirect.");
         const contentResponse = response.status === 200 ? response : await fetch(downloadUrl, { signal: AbortSignal.timeout(20000) });
-        content = await contentResponse.text();
+        content = await readTextLimited(contentResponse);
       }
       if (!content.trim() || Buffer.byteLength(content, "utf8") > 12000) return safeError(res, "The selected file is empty or larger than the 12 KB knowledge-document limit.");
       name = String(name || "Imported hotel document").slice(0, 160);

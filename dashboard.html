@@ -235,6 +235,25 @@ async function loadSetup(){
  $("readinessList").innerHTML=o.checks.map(x=>'<article class="card" style="display:flex;align-items:flex-start;gap:12px"><span class="tag '+(x.done?"good":"warn")+'">'+(x.done?"Complete":"Action needed")+'</span><div><strong>'+safe(x.label)+'</strong><div class="muted" style="font-size:12px;margin-top:4px">'+safe(x.detail)+'</div></div></article>').join("");
 }
 $("settingsForm").addEventListener("submit",async e=>{e.preventDefault();try{await api("/api/admin/settings",{method:"PUT",body:JSON.stringify({website_url:$("hotelWebsite").value,support_email:$("supportEmail").value,timezone:$("hotelTimezone").value,language:$("hotelLanguage").value,fallback_instructions:$("fallbackInstructions").value})});showToast("Hotel profile saved.");await loadSetup();}catch(err){notice(err.message,"error");}});
+async function runIntegrationTest(kind){
+ const button=$(kind==="ai"?"testAiIntegration":"testStaffIntegration");
+ const result=$("integrationTestResult");
+ button.disabled=true;
+ result.classList.remove("hidden");
+ result.className="notice";
+ result.textContent="Checking connection…";
+ try{
+  const d=await api("/api/admin/integrations/test-"+(kind==="ai"?"ai":"staff-webhook"),{method:"POST",body:"{}"});
+  result.className="notice good";
+  result.textContent=kind==="ai"?"AI provider verified. Model: "+safe(d.model):"Signed test event accepted for this hotel: "+safe(d.organizationSlug);
+  await loadSetup();
+ }catch(err){
+  result.className="notice error";
+  result.textContent=err.message;
+ }finally{button.disabled=false;}
+}
+$("testAiIntegration").addEventListener("click",()=>runIntegrationTest("ai"));
+$("testStaffIntegration").addEventListener("click",()=>runIntegrationTest("staff"));
 async function loadInvitations(){
  const d=await api("/api/admin/invitations");
  const rows=(d.invitations||[]).map(x=>{const state=x.accepted_at?"Accepted":x.revoked_at?"Revoked":new Date(x.expires_at)<=new Date()?"Expired":"Pending";return '<tr><td>'+safe(x.email)+'</td><td>'+safe(x.role)+'</td><td>'+safe(state)+'</td><td>'+date(x.expires_at)+'</td><td>'+(state==="Pending"?'<button class="btn danger" data-action="revoke-invitation" data-id="'+safe(x.id)+'">Revoke</button>':"—")+'</td></tr>';}).join("");

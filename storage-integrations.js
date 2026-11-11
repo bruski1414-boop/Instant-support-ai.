@@ -48,7 +48,7 @@ function createStorageRouter({ db, auth, role, audit }) {
   router.post("/connect/:provider", auth, role("owner", "admin"), async (req, res) => {
     const provider = req.params.provider;
     if (!providerValid(provider)) return safeError(res, "Unsupported storage provider.");
-    if (!redirectBase || !key) return safeError(res, "Storage OAuth is not configured by the platform administrator.", 503);
+    if (!redirectBase || !tokenCipher.configured) return safeError(res, "Storage OAuth is not configured by the platform administrator.", 503);
     const clientId = provider === "google" ? process.env.GOOGLE_OAUTH_CLIENT_ID : process.env.MICROSOFT_OAUTH_CLIENT_ID;
     const clientSecret = provider === "google" ? process.env.GOOGLE_OAUTH_CLIENT_SECRET : process.env.MICROSOFT_OAUTH_CLIENT_SECRET;
     if (!clientId || !clientSecret) return safeError(res, "This storage provider has not been configured yet.", 503);

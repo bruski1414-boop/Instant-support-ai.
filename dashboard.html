@@ -116,6 +116,8 @@ main{padding:28px clamp(16px,4vw,48px);max-width:1450px;width:100%;margin:auto}.
   <div id="invitationList" class="card tablewrap"><div class="empty">Loading invitations…</div></div>
   <div class="sectionrow"><h2>Workspace members</h2><span class="muted">Deactivate access when someone leaves</span></div>
   <div id="memberList" class="card tablewrap"><div class="empty">Loading team members…</div></div>
+  <div class="sectionrow"><h2>Recent security activity</h2><span class="muted">Latest 100 workspace events</span></div>
+  <div id="auditList" class="card tablewrap"><div class="empty">Loading activity…</div></div>
  </section>
  <section id="panel-escalations" class="panel">
   <div class="sectionrow"><h2>Staff handoff queue</h2><span class="muted">Urgent, sensitive or uncertain requests</span></div>
@@ -199,6 +201,11 @@ async function loadInvitations(){
  const rows=(d.invitations||[]).map(x=>{const state=x.accepted_at?"Accepted":x.revoked_at?"Revoked":new Date(x.expires_at)<=new Date()?"Expired":"Pending";return '<tr><td>'+safe(x.email)+'</td><td>'+safe(x.role)+'</td><td>'+safe(state)+'</td><td>'+date(x.expires_at)+'</td><td>'+(state==="Pending"?'<button class="btn danger" data-action="revoke-invitation" data-id="'+safe(x.id)+'">Revoke</button>':"—")+'</td></tr>';}).join("");
  $("invitationList").innerHTML='<table class="table"><thead><tr><th>EMAIL</th><th>ROLE</th><th>STATUS</th><th>EXPIRES</th><th>ACTION</th></tr></thead><tbody>'+(rows||'<tr><td colspan="5" class="empty">No invitations yet.</td></tr>')+'</tbody></table>';
  await loadUsers();
+}
+async function loadAudit(){
+ const d=await api("/api/admin/audit");
+ const rows=(d.events||[]).map(x=>'<tr><td>'+date(x.created_at)+'</td><td>'+safe(x.actor_email)+'</td><td>'+safe(x.action)+'</td><td>'+safe(x.target_type||"—")+'</td><td>'+safe(x.target_id||"—")+'</td></tr>').join("");
+ $("auditList").innerHTML='<table class="table"><thead><tr><th>TIME</th><th>ACTOR</th><th>EVENT</th><th>TYPE</th><th>REFERENCE</th></tr></thead><tbody>'+(rows||'<tr><td colspan="5" class="empty">No activity recorded yet.</td></tr>')+'</tbody></table>';
 }
 async function loadUsers(){
  const d=await api("/api/admin/users");

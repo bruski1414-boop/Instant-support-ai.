@@ -269,7 +269,7 @@ function createApp(options = {}) {
         if (conversationId && !conversation.rows[0]) return { notFound: true };
         const current = conversationId || (await client.query("INSERT INTO conversations (tenant_id, channel) VALUES ($1, 'website') RETURNING id", [tenantId])).rows[0].id;
         await client.query("INSERT INTO messages (tenant_id, conversation_id, sender_type, body) VALUES ($1, $2, 'guest', $3)", [tenantId, current, message]);
-        const history = await client.query("SELECT sender_type, body FROM messages WHERE tenant_id = $1 AND conversation_id = $2 ORDER BY created_at DESC LIMIT 7", [tenantId, current]);
+        const history = await client.query("SELECT sender_type, body FROM messages WHERE tenant_id = $1 AND conversation_id = $2 AND sender_type IN ('guest', 'assistant') ORDER BY created_at DESC LIMIT 7", [tenantId, current]);
         return { conversationId: current, documents, history: history.rows.reverse(), integration };
       });
       if (scoped.unavailable) return res.status(404).json({ error: "This support channel has no approved information yet." });

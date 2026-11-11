@@ -32,6 +32,8 @@ The web service and database are currently on Render's free plans. The database 
 - Public file allowlist so source files, tests and internal documentation are not served as website assets.
 - Baseline browser security headers (content-type sniffing, framing, referrer and permissions policies).
 - Tenant-scoped owner/admin conversation deletion from active database records (backup/provider retention may differ) with an audit record.
+- Tenant-scoped, read-only Google Drive and Microsoft OneDrive/SharePoint OAuth connectors. OAuth tokens are encrypted at rest with AES-256-GCM; each workspace stores its own provider connection; OAuth state is single-use and expires after ten minutes.
+- Hotel owners/admins can browse plain-text documents and Google Docs, choose individual files, and import them into that hotel's knowledge base. Imports are unapproved by default and must be manager-verified before guest use. SharePoint site discovery and site-root text-file browsing are included.
 - AI answer generation constrained to each hotel's approved knowledge, with conservative escalation for uncertain or sensitive requests.
 - Optional signed staff webhook with persisted delivery status, attempt count and a dashboard retry action for failed notifications.
 - Separate rate limits for public guest chat and first-owner bootstrap.
@@ -50,6 +52,10 @@ Important environment variables:
 - `BOOTSTRAP_TOKEN`: one-time setup secret; remove it after the first owner is created.
 - `ALLOWED_ORIGINS`: exact website origins permitted to call the API.
 - `GUEST_DATA_STORAGE_ENABLED`: defaults to false. Do not enable until hotel privacy, data-processing and retention arrangements are approved and durable storage is in place.
+- `STORAGE_OAUTH_REDIRECT_BASE`: public HTTPS origin of this Veyra deployment, for example `https://veyra-ai-prototype.onrender.com`.
+- `STORAGE_TOKEN_ENCRYPTION_KEY`: base64-encoded 32-byte random key used for AES-256-GCM encryption of per-hotel OAuth tokens. Keep only in hosting secrets; never commit it.
+- `GOOGLE_OAUTH_CLIENT_ID` and `GOOGLE_OAUTH_CLIENT_SECRET`: Google OAuth web application credentials. Register callback `https://<veyra-origin>/api/admin/storage/oauth/callback` and enable the Google Drive API.
+- `MICROSOFT_OAUTH_CLIENT_ID` and `MICROSOFT_OAUTH_CLIENT_SECRET`: Microsoft Entra application credentials. Register the same callback as a Web redirect URI and grant admin-approved delegated permissions `Files.Read.All`, `Sites.Read.All`, `User.Read`, and `offline_access`.
 - `STAFF_WEBHOOK_URL` and `STAFF_WEBHOOK_SECRET`: optional signed escalation receiver.
 
 Never commit secrets or place them in browser JavaScript.
@@ -84,6 +90,13 @@ Never commit secrets or place them in browser JavaScript.
 - `POST /api/auth/logout`
 - `GET/POST/DELETE /api/admin/invitations` — owner/admin invitation management
 - `GET /api/admin/users` and `PATCH /api/admin/users/:id` — view team and activate/deactivate access
+- `GET /api/admin/storage/connections` — workspace-specific storage connection status
+- `POST /api/admin/storage/connect/google|microsoft` — start provider OAuth
+- `GET /api/admin/storage/oauth/callback` — one-time OAuth callback
+- `GET /api/admin/storage/sites/microsoft` — discover SharePoint sites
+- `GET /api/admin/storage/files/google|microsoft` — list supported documents (optional `siteId` for SharePoint)
+- `POST /api/admin/storage/import/google|microsoft` — import one selected document as unapproved knowledge
+- `DELETE /api/admin/storage/connections/google|microsoft` — disconnect and delete stored provider tokens
 - `GET /api/admin/audit` — latest 100 tenant-scoped audit events for owners/admins
 - `GET/PUT /api/admin/settings` — hotel profile settings (owner/admin can edit)
 - `GET /api/admin/onboarding` — live pre-pilot readiness checks
@@ -108,6 +121,7 @@ This is an active prototype, not a certified or production-approved hotel system
 - Verified hotel knowledge, source/version history and named approval responsibility.
 - Verified staff notification integration, retries, delivery audit and an operational fallback.
 - Email verification, password recovery, MFA and session/device management.
+- Finish storage connector hardening and tests: Microsoft tenant consent and real SharePoint library coverage, provider pagination, large-file streaming, Word/PDF/Excel extraction, automated incremental sync/webhooks and revoked-token handling.
 - PostgreSQL integration tests, tenant-isolation tests, prompt-injection and abuse tests, security review and load tests.
 - Monitoring, incident response, hotel manager sign-off and a supervised pilot measured against a baseline.
 

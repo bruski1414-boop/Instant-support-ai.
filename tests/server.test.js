@@ -32,8 +32,8 @@ test("health endpoint reports demo mode when no API key is configured", async ()
   assert.equal(response.status, 200);
   assert.equal(body.status, "degraded");
   assert.equal(body.readyForPilot, false);
-  assert.equal(body.checks.database, false);
-  assert.equal(body.checks.ai, false);
+  assert.equal(body.checks.databaseConnected, false);
+  assert.equal(body.checks.aiConfigured, false);
   assert.equal(body.mode, "demo-no-api-key");
   assert.equal(body.humanHandoff, "not-configured");
   assert.equal(body.guestDataStorage, false);
@@ -198,7 +198,18 @@ test("health endpoint cannot report pilot readiness with missing prerequisites",
   const response = await fetch(`${baseUrl}/api/health`);
   const body = await response.json();
   assert.equal(body.readyForPilot, false);
-  assert.deepEqual(body.checks, { database: false, ai: false, guestDataStorage: false, humanHandoff: false });
+  assert.deepEqual(body.checks, {
+    databaseConnected: false,
+    aiConfigured: false,
+    guestDataStorageEnabled: false,
+    staffWebhookConfigured: false,
+    durableBackupsVerified: false,
+    tenantIsolationTestsPassed: false,
+    providerOAuthTested: false,
+    hotelPrivacyApproved: false,
+    staffHandoffTested: false,
+    pilotReleaseApproved: false,
+  });
 });
 
 test("knowledge documents retain tenant-scoped version history", () => {

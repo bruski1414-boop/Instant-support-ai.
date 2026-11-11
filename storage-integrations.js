@@ -1,5 +1,6 @@
 const express = require("express");
 const crypto = require("node:crypto");
+const { createTokenCipher, readTextLimited } = require("./storage-security");
 
 const PROVIDERS = {
   google: {
@@ -19,40 +20,10 @@ const PROVIDERS = {
 function createStorageRouter({ db, auth, role, audit }) {
   const router = express.Router();
   const redirectBase = (process.env.STORAGE_OAUTH_REDIRECT_BASE || "").replace(/\/+$/, "");
-  const keyText = process.env.STORAGE_TOKEN_ENCRYPTION_KEY || "";
-  let key = null;
-  try {
-    const decoded = Buffer.from(keyText, "base64");
-    if (decoded.length === 32) key = decoded;
-  } catch {}
-
-  const encrypt = (value) => {
-    if (!key) throw new Error("STORAGE_TOKEN_ENCRYPTION_KEY must be a base64-encoded 32-byte key.");
-    const iv = crypto.randomBytes(12);
-    const cipher = crypto.createCipheriv("aes-256-gcm", key, iv);
-    const body = Buffer.concat([cipher.update(JSON.stringify(value), "utf8"), cipher.final()]);
-    return [iv.toString("base64url"), cipher.getAuthTag().toString("base64url"), body.toString("base64url")].join(".");
-  };
-  const decrypt = (value) => {
-    if (!key) throw new Error("Storage encryption key is unavailable.");
-    const [iv, tag, body] = String(value).split(".");
-    const decipher = crypto.createDecipheriv("aes-256-gcm", key, Buffer.from(iv, "base64url"));
-    decipher.setAuthTag(Buffer.from(tag, "base64url"));
-    return JSON.parse(Buffer.concat([decipher.update(Buffer.from(body, "base64url")), decipher.final()]).toString("utf8"));
-  };
+  const tokenCipher = createTokenCipher(process.env.STORAGE_TOKEN_ENCRYPTION_KEY || "");
+  const encrypt = tokenCipher.encrypt;
+  const decrypt = tokenCipher.decrypt;
   const safeError = (res, error, status = 400) => res.status(status).json({ error });
-  const readTextLimited = async (response, maxBytes = 12000) => {
-    const declared = Number(response.headers.get("content-length") || 0);
-    if (declared > maxBytes) throw new Error("The selected file is larger than the 12 KB knowledge-document limit.");
-    if (!response.ok || !response.body) throw new Error("Could not download the selected document.");
-    const chunks = []; let total = 0;
-    for await (const chunk of response.body) {
-      total += chunk.length;
-      if (total > maxBytes) throw new Error("The selected file is larger than the 12 KB knowledge-document limit.");
-      chunks.push(Buffer.from(chunk));
-    }
-    return Buffer.concat(chunks).toString("utf8");
-  };
   const providerValid = (p) => Object.prototype.hasOwnProperty.call(PROVIDERS, p);
   const callbackUrl = () => redirectBase + "/api/admin/storage/oauth/callback";
 
@@ -67,7 +38,7 @@ function createStorageRouter({ db, auth, role, audit }) {
         configured: {
           google: Boolean(process.env.GOOGLE_OAUTH_CLIENT_ID && process.env.GOOGLE_OAUTH_CLIENT_SECRET),
           microsoft: Boolean(process.env.MICROSOFT_OAUTH_CLIENT_ID && process.env.MICROSOFT_OAUTH_CLIENT_SECRET),
-          encryption: Boolean(key),
+          encryption: tokenCipher.configured,
           redirect: Boolean(redirectBase),
         },
       });

@@ -42,7 +42,7 @@ The Render service has a connected PostgreSQL database. Confirm the following va
 - BOOTSTRAP_TOKEN: long random one-time setup secret; remove after owner setup.
 - ALLOWED_ORIGINS: exact trusted hotel website origins, comma-separated.
 - NODE_ENV=production
-- GUEST_DATA_STORAGE_ENABLED=false until privacy and retention approval and durable storage are in place.
+- GUEST_DATA_STORAGE_ENABLED=false until platform privacy review, separate written approval for each hotel, durable backups and verified automated retention/deletion are in place.
 - STAFF_WEBHOOK_URL and STAFF_WEBHOOK_SECRET: optional signed staff-notification receiver.
 - PLATFORM_PROVISIONING_TOKEN: separate high-entropy operator-only secret used by the hotel provisioning endpoint. Never put it in browser code or public documentation.
 - STORAGE_OAUTH_REDIRECT_BASE and STORAGE_TOKEN_ENCRYPTION_KEY: public callback origin and base64-encoded 32-byte encryption key for per-hotel OAuth tokens.

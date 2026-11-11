@@ -86,6 +86,7 @@ app.post("/api/auth/login",requireDb,async(q,r,n)=>{
 });
 app.post("/api/auth/logout",requireDb,auth,async(q,r,n)=>{try{await db.query("DELETE FROM sessions WHERE id=$1",[q.actor.session_id]);r.clearCookie(cookie,{path:"/",secure:prod,sameSite:"strict"});r.json({ok:true});}catch(e){n(e);}});
 app.get("/api/auth/me",requireDb,auth,(q,r)=>r.json({user:{email:q.actor.email,role:q.actor.role},organization:{name:q.actor.organization_name,slug:q.actor.organization_slug}}));
+app.get("/api/auth/csrf",requireDb,auth,async(q,r,n)=>{try{const token=crypto.randomBytes(24).toString("base64url");await db.query("UPDATE sessions SET csrf_hash=$1 WHERE id=$2",[hash(token),q.actor.session_id]);r.json({csrfToken:token});}catch(e){n(e);}});
 app.get("/api/admin/overview",requireDb,auth,async(q,r,n)=>{try{const org=q.actor.organization_id;const [m,e,c]=await Promise.all([
  db.query("SELECT count(*) FILTER(WHERE started_at>=date_trunc('day',now()))::int AS conversations_today,count(*) FILTER(WHERE started_at>=now()-interval '7 days')::int AS conversations_7d,count(*) FILTER(WHERE status='resolved')::int AS resolved_total FROM conversations WHERE organization_id=$1",[org]),
  db.query("SELECT count(*)::int AS open_escalations FROM escalations WHERE organization_id=$1 AND status<>'resolved'",[org]),
@@ -112,6 +113,7 @@ app.post("/api/public/:slug/chat",async(q,r,n)=>{
  {role:"user",content:msg.trim()}]});
  let answer;try{answer=JSON.parse(completion.choices[0]?.message?.content||"");}catch{answer={reply:"I cannot prepare a reliable answer. Please contact hotel staff.",needsHuman:true,handoffReason:"Response validation failed."};}
  const reply=typeof answer.reply==="string"?answer.reply.slice(0,4000):"Please contact hotel staff.";const flagHuman=Boolean(flag||answer.needsHuman);
+ if(process.env.GUEST_DATA_STORAGE_ENABLED!=="true")return r.status(503).json({error:"Guest data storage is disabled until the hotel has approved its privacy notice, retention period and data-processing terms."});
  const c=await db.connect();let cid,eid;try{await c.query("BEGIN");const x=await c.query("INSERT INTO conversations(organization_id,channel,status) VALUES($1,'website',$2) RETURNING id",[org.id,flagHuman?"escalated":"open"]);cid=x.rows[0].id;
  await c.query("INSERT INTO messages(conversation_id,role,content) VALUES($1,'guest',$2),($1,'assistant',$3)",[cid,msg.trim(),reply]);
  if(flagHuman){const e=await c.query("INSERT INTO escalations(organization_id,conversation_id,reason) VALUES($1,$2,$3) RETURNING id",[org.id,cid,String(answer.handoffReason||"Staff review required").slice(0,300)]);eid=e.rows[0].id;}

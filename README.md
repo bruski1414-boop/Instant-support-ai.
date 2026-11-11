@@ -25,7 +25,8 @@ The web service and database are currently on Render's free plans. The database 
 - Owner dashboard for conversations, knowledge approval and escalation status.
 - Embeddable guest chat widget.
 - AI answer generation constrained to each hotel's approved knowledge, with conservative escalation for uncertain or sensitive requests.
-- Optional signed staff webhook; the app reports whether notification delivery succeeded.
+- Optional signed staff webhook with persisted delivery status, attempt count and a dashboard retry action for failed notifications.
+- Separate rate limits for public guest chat and first-owner bootstrap.
 - Guest conversation storage is disabled by default until privacy and retention arrangements are approved.
 - GitHub Actions CI and automated API/frontend smoke tests.
 

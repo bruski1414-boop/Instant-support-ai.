@@ -186,24 +186,15 @@ test("editing approved hotel knowledge requires reapproval", () => {
   assert.match(server, /body\.content\.length>12000/);
 });
 
-test("health endpoint cannot report pilot readiness with missing prerequisites", async () => {
-  const response = await fetch(`${baseUrl}/api/health`);
-  const body = await response.json();
-  assert.equal(body.readyForPilot, false);
-  assert.equal(body.multiTenant, false, "database connectivity alone must not claim tenant isolation is verified");
-  assert.deepEqual(body.checks, {
-    databaseConnected: false,
-    aiConfigured: false,
-    guestDataStorageEnabled: false,
-    staffWebhookConfigured: false,
-    durableBackupsVerified: false,
-    tenantIsolationTestsPassed: false,
-    providerOAuthTested: false,
-    platformPrivacyReviewPassed: false,
-    retentionEnforcementVerified: false,
-    staffHandoffTested: false,
-    pilotReleaseApproved: false,
-  });
+test("process health stays live while public pilot readiness remains closed", async () => {
+  const [healthResponse, readinessResponse] = await Promise.all([
+    fetch(`${baseUrl}/api/health`),
+    fetch(`${baseUrl}/api/readiness`)
+  ]);
+  assert.equal(healthResponse.status, 200, "process liveness must remain separate from pilot readiness");
+  assert.deepEqual(await healthResponse.json(), { status: "ok" }, "health must not disclose internal tenant or release-gate configuration");
+  assert.equal(readinessResponse.status, 503, "missing production prerequisites must keep the public readiness gate closed");
+  assert.deepEqual(await readinessResponse.json(), { status: "not-ready", readyForPilot: false });
 });
 
 test("knowledge documents retain tenant-scoped version history", () => {

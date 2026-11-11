@@ -551,13 +551,13 @@ test("two hotel workspaces remain isolated across live API resources", { skip: !
   assert.equal(betaGuestChat.status, 503);
   assert.match((await betaGuestChat.json()).error, /privacy and retention approval/i, "a different hotel's approval must not unlock Beta guest chat");
 
-  const alphaGuestChat = await request("/api/public/hotel-alpha/chat", {
+  const alphaApprovedKnowledgeChat = await request("/api/public/hotel-alpha/chat", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ message: "What time is breakfast?" })
   });
-  assert.equal(alphaGuestChat.status, 200, "Alpha can use its own verified configuration and approved knowledge: " + await alphaGuestChat.clone().text());
-  const alphaGuestBody = await alphaGuestChat.json();
+  assert.equal(alphaApprovedKnowledgeChat.status, 200, "Alpha can use its own verified configuration and approved knowledge: " + await alphaApprovedKnowledgeChat.clone().text());
+  const alphaGuestBody = await alphaApprovedKnowledgeChat.json();
   assert.equal(alphaGuestBody.reply, "Breakfast is served at 7am.");
   assert.equal(alphaGuestBody.needsHuman, false);
   const alphaSystemPrompt = modelRequests.at(-1).messages.find((message) => message.role === "system").content;

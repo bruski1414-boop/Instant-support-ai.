@@ -114,3 +114,21 @@ test("guest widget reuses its server-issued conversation id", () => {
   assert.match(server, /LIMIT 8/);
   assert.match(server, /requestedConversation!==null/);
 });
+
+test("conversation deletion fails closed without a database", async () => {
+  const response = await fetch(`${baseUrl}/api/admin/conversations/123e4567-e89b-42d3-a456-426614174000`, {
+    method: "DELETE",
+    headers: { "content-type": "application/json" },
+    body: "{}"
+  });
+  assert.equal(response.status, 503);
+});
+
+test("conversation deletion is tenant scoped and owner controlled", () => {
+  const server = fs.readFileSync("server.js", "utf8");
+  const dashboard = fs.readFileSync("dashboard.html", "utf8");
+  assert.match(server, /app\.delete\("\/api\/admin\/conversations\/:id",requireDb,auth,role\("owner","admin"\)/);
+  assert.match(server, /DELETE FROM conversations WHERE id=\$1 AND organization_id=\$2/);
+  assert.match(server, /conversation\.deleted/);
+  assert.match(dashboard, /delete-conversation/);
+});

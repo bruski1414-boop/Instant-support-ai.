@@ -42,7 +42,8 @@ Compare with a pre-pilot baseline. Do not claim extra revenue or labour savings 
 - Per-hotel knowledge source references, review dates and version history; overdue or unapproved material is excluded from guest-answer context.
 - Per-hotel Google Drive and Microsoft OAuth connections with encrypted tokens. The current importer supports small plain-text files and Google Docs; imports require manager approval.
 - Signed staff-dispatcher events include stable organization ID and slug. Delivery state and retry counts are stored per escalation.
-- Hotel-specific website-origin CORS, public-chat rate limits, bounded message/history sizes and guest conversation tokens stored as hashes.
+- Public guest-chat CORS is checked against the matching hotel's saved HTTPS origin; a globally allowed origin cannot call another hotel's guest-chat route. Public-chat rate limits, bounded message/history sizes and hashed guest conversation tokens are also implemented.
+- Hotel storage readiness requires a successful provider file listing within the last 30 days; an OAuth connection record alone does not satisfy the release gate.
 - CI includes syntax/unit checks and a PostgreSQL-backed two-hotel API integration test covering tenant separation, CORS, signed handoff routing and concurrent dashboard reads. These tests use synthetic data and a test receiver.
 
 ## What remains before a real guest pilot or scalable subscription
@@ -55,6 +56,8 @@ Compare with a pre-pilot baseline. Do not claim extra revenue or labour savings 
 - Live AI provider/model verification, each hotel's own OAuth authorization, and the actual signed staff dispatcher tested with the hotel team and manual fallback.
 - Independent security/privacy review. The current main-branch application relies on explicit tenant-scoped queries; CI coverage is valuable but is not a security certification.
 - Live-model answer-quality and prompt-injection evaluation, browser-level end-to-end tests, sustained load testing and a full owner/admin/staff/viewer permission review.
+- The Express app has not yet verified client-IP extraction behind Render's Cloudflare/load-balancer chain. Render documents that inbound traffic passes through its edge proxies and the app sees a proxy IP by default; measure the actual forwarded hop chain and configure a narrowly trusted proxy count before relying on per-IP limits. Never blindly trust the full forwarded chain. A shared rate-limit store is also required before running multiple app instances.
+- Server-side detection/redaction of guest payment, passport, health and other sensitive information is not implemented. The widget warns guests not to submit it, but that warning is not enforcement. Keep real guest data disabled until an approved data scope, privacy review and appropriate server-side handling are completed.
 - Production monitoring, alerting, incident response, support ownership and a tested rollback procedure.
 - Distributed/per-tenant abuse controls; the current rate limits are application-level and are not a substitute for a production-wide abuse strategy.
 - Email verification, password recovery, MFA, invitation email delivery and subscription billing are not complete. Invitation links are currently delivered manually.

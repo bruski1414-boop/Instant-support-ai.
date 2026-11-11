@@ -7,6 +7,7 @@ const crypto=require("node:crypto");
 const path=require("node:path");
 const {promisify}=require("node:util");
 const {Pool}=require("pg");
+const {createStorageRouter}=require("./storage-integrations");
 const app=express();
 const PORT=Number(process.env.PORT||3000);
 const MODEL=process.env.OPENAI_MODEL||"gpt-4.1-mini";
@@ -57,6 +58,9 @@ const schema=[
 "CREATE INDEX IF NOT EXISTS user_invitations_org_time_idx ON user_invitations(organization_id,created_at DESC)",
 "CREATE TABLE IF NOT EXISTS organization_settings(organization_id UUID PRIMARY KEY REFERENCES organizations(id) ON DELETE CASCADE,website_url TEXT NOT NULL DEFAULT '',support_email TEXT NOT NULL DEFAULT '',timezone TEXT NOT NULL DEFAULT 'UTC',language TEXT NOT NULL DEFAULT 'en',fallback_instructions TEXT NOT NULL DEFAULT '',updated_by UUID REFERENCES users(id) ON DELETE SET NULL,updated_at TIMESTAMPTZ NOT NULL DEFAULT now())",
 "CREATE TABLE IF NOT EXISTS organization_storage_connections(id UUID PRIMARY KEY DEFAULT gen_random_uuid(),organization_id UUID NOT NULL UNIQUE REFERENCES organizations(id) ON DELETE CASCADE,provider TEXT NOT NULL CHECK(provider IN ('google_drive','microsoft_sharepoint')),workspace_reference TEXT NOT NULL DEFAULT '',root_folder_reference TEXT NOT NULL DEFAULT '',status TEXT NOT NULL DEFAULT 'pending_authorization' CHECK(status IN ('pending_authorization','connected','paused','error')),scopes TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],connected_by UUID REFERENCES users(id) ON DELETE SET NULL,connected_at TIMESTAMPTZ,last_sync_at TIMESTAMPTZ,last_sync_status TEXT NOT NULL DEFAULT 'never',last_sync_error TEXT NOT NULL DEFAULT '',created_at TIMESTAMPTZ NOT NULL DEFAULT now(),updated_at TIMESTAMPTZ NOT NULL DEFAULT now())",
+"CREATE TABLE IF NOT EXISTS storage_connections(organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,provider TEXT NOT NULL CHECK(provider IN ('google','microsoft')),account_email TEXT NOT NULL DEFAULT '',encrypted_tokens TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'connected',connected_by UUID REFERENCES users(id) ON DELETE SET NULL,connected_at TIMESTAMPTZ NOT NULL DEFAULT now(),last_sync_at TIMESTAMPTZ,last_error TEXT,PRIMARY KEY(organization_id,provider))",
+"CREATE TABLE IF NOT EXISTS storage_oauth_states(state_hash TEXT PRIMARY KEY,organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,provider TEXT NOT NULL CHECK(provider IN ('google','microsoft')),expires_at TIMESTAMPTZ NOT NULL)",
+"CREATE INDEX IF NOT EXISTS storage_oauth_states_expiry_idx ON storage_oauth_states(expires_at)",
 "CREATE TABLE IF NOT EXISTS audit_logs(id UUID PRIMARY KEY DEFAULT gen_random_uuid(),organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,actor_user_id UUID REFERENCES users(id) ON DELETE SET NULL,action TEXT NOT NULL,target_type TEXT,target_id TEXT,created_at TIMESTAMPTZ NOT NULL DEFAULT now())"
 ].join(";\n")+";";
 function hash(v){return crypto.createHash("sha256").update(v).digest("hex");}
@@ -79,6 +83,7 @@ async function auth(q,r,n){
 }
 function role(){const ok=Array.from(arguments);return(q,r,n)=>ok.includes(q.actor.role)?n():r.status(403).json({error:"Insufficient permissions."});}
 async function audit(a,action,type,id){await db.query("INSERT INTO audit_logs(organization_id,actor_user_id,action,target_type,target_id) VALUES($1,$2,$3,$4,$5)",[a.organization_id,a.user_id,action,type||null,id||null]);}
+app.use("/api/admin/storage",requireDb,createStorageRouter({db,auth,role,audit}));
 function escalate(s){return /\b(human|real person|staff|manager|urgent|emergency|complaint|cancel|refund|medical|allergy|allergic|injury|unsafe|harassment|discrimination|lost child|fire|police|ambulance|payment)\b/i.test(s);}
 async function notify(org,cid,reason){
  if(!process.env.STAFF_WEBHOOK_URL||!process.env.STAFF_WEBHOOK_SECRET)return{configured:false,delivered:false,status:"not_configured"};

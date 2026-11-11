@@ -23,7 +23,7 @@ The web service and database are currently on Render's free plans. The database 
 - Owner/admin/staff/viewer roles; scrypt password hashing; opaque session tokens; HttpOnly/SameSite cookies; CSRF checks; and session expiry.
 - One-time first-owner bootstrap endpoint and setup page.
 - Owner dashboard for conversations, knowledge approval and escalation status.
-- Embeddable guest chat widget with multi-turn conversation continuity and bounded history.
+- Embeddable guest chat widget with multi-turn conversation continuity, bounded history and a per-conversation access token stored only as a hash server-side.
 - Public file allowlist so source files, tests and internal documentation are not served as website assets.
 - Baseline browser security headers (content-type sniffing, framing, referrer and permissions policies).
 - Tenant-scoped owner/admin conversation deletion from active database records (backup/provider retention may differ) with an audit record.

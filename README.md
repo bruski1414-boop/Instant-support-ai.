@@ -23,6 +23,7 @@ The web service and database are currently on Render's free plans. The database 
 - Owner/admin/staff/viewer roles; scrypt password hashing; opaque session tokens; HttpOnly/SameSite cookies; CSRF checks; and session expiry.
 - One-time first-owner bootstrap endpoint and setup page.
 - Tenant-scoped staff invitations: hashed single-use tokens, 24-hour expiry, revocation, role restrictions and a dedicated acceptance page. Invitation delivery is manual; no email provider is connected.
+- Hotel workspace profile and live pre-pilot readiness checklist for website origin, approved knowledge, AI configuration, staff notification and privacy/storage gate.
 - Owner dashboard for conversations, knowledge approval and escalation status.
 - Embeddable guest chat widget with multi-turn conversation continuity, bounded history and a per-conversation access token stored only as a hash server-side.
 - Public file allowlist so source files, tests and internal documentation are not served as website assets.
@@ -78,6 +79,8 @@ Never commit secrets or place them in browser JavaScript.
 - `POST /api/auth/login`
 - `POST /api/auth/logout`
 - `GET/POST/DELETE /api/admin/invitations` — owner/admin invitation management
+- `GET/PUT /api/admin/settings` — hotel profile settings (owner/admin can edit)
+- `GET /api/admin/onboarding` — live pre-pilot readiness checks
 - `POST /api/invitations/accept` — single-use invitation acceptance
 - `GET /api/auth/me`
 - `GET /api/auth/csrf`

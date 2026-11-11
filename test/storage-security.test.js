@@ -53,17 +53,16 @@ test("document reader accepts content exactly at its byte limit", async () => {
 
 test("document reader rejects a declared oversized download before reading", async () => {
   let read = false;
-  const body = new ReadableStream({
-    pull(controller) {
-      read = true;
-      controller.enqueue(new Uint8Array([1, 2, 3, 4, 5]));
-      controller.close();
+  const response = {
+    ok: true,
+    headers: new Headers({ "content-length": "5" }),
+    body: {
+      async *[Symbol.asyncIterator]() {
+        read = true;
+        yield new Uint8Array([1, 2, 3, 4, 5]);
+      },
     },
-  });
-  const response = new Response(body, {
-    status: 200,
-    headers: { "content-length": "5" },
-  });
+  };
 
   await assert.rejects(readTextLimited(response, 4), /larger than the 12 KB/);
   assert.equal(read, false);

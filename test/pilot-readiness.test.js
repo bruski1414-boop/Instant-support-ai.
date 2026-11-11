@@ -7,7 +7,7 @@ const allEvidence = Object.fromEntries(REQUIRED_PILOT_CHECKS.map((key) => [key, 
 test("pilot readiness requires every release gate", () => {
   const result = buildPilotReadiness(allEvidence);
   assert.equal(result.readyForPilot, true);
-  assert.equal(Object.keys(result.checks).length, 10);
+  assert.equal(Object.keys(result.checks).length, 11);
   assert.ok(Object.values(result.checks).every(Boolean));
 });
 
@@ -19,7 +19,7 @@ test("missing tenant isolation evidence blocks pilot readiness", () => {
 });
 
 test("missing privacy, backups or handoff evidence blocks pilot readiness", () => {
-  for (const key of ["hotelPrivacyApproved", "durableBackupsVerified", "staffHandoffTested"]) {
+  for (const key of ["platformPrivacyReviewPassed", "retentionEnforcementVerified", "durableBackupsVerified", "staffHandoffTested"]) {
     const evidence = { ...allEvidence, [key]: false };
     assert.equal(buildPilotReadiness(evidence).readyForPilot, false, key);
   }

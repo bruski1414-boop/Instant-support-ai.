@@ -99,3 +99,6 @@ This is an active prototype, not a certified or production-approved hotel system
 - Monitoring, incident response, hotel manager sign-off and a supervised pilot measured against a baseline.
 
 Never promise a booking, refund, room availability, completed notification, staff replacement or revenue improvement unless the required integration and result have actually been verified.
+
+
+Knowledge documents retain a version history. The dashboard can review saved versions, and history access is restricted to the document's hotel workspace. Content edits automatically revoke approval until reverified.

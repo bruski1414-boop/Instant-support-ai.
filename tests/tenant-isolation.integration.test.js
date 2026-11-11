@@ -192,6 +192,35 @@ test("two hotel workspaces remain isolated across live API resources", { skip: !
   const alphaSession = await login("hotel-alpha", "owner@alpha.test");
   const betaSession = await login("hotel-beta", "owner@beta.test");
 
+  const alphaCors = await fetch(baseUrl + "/api/public/hotel-alpha/chat", { method: "OPTIONS", headers: { Origin: "https://alpha.test", "Access-Control-Request-Method": "POST", "Access-Control-Request-Headers": "content-type" } });
+  const betaCors = await fetch(baseUrl + "/api/public/hotel-beta/chat", { method: "OPTIONS", headers: { Origin: "https://beta.test", "Access-Control-Request-Method": "POST", "Access-Control-Request-Headers": "content-type" } });
+  const unknownCors = await fetch(baseUrl + "/api/public/hotel-alpha/chat", { method: "OPTIONS", headers: { Origin: "https://unregistered.test", "Access-Control-Request-Method": "POST", "Access-Control-Request-Headers": "content-type" } });
+  assert.equal(alphaCors.headers.get("access-control-allow-origin"), "https://alpha.test", "Hotel Alpha's saved website origin should be allowed");
+  assert.equal(betaCors.headers.get("access-control-allow-origin"), "https://beta.test", "Hotel Beta's saved website origin should be allowed");
+  assert.equal(unknownCors.headers.get("access-control-allow-origin"), null, "unregistered websites must not be allowed");
+
+  const alphaAiCheck = await request("/api/admin/integrations/test-ai", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" }, alphaSession);
+  assert.equal(alphaAiCheck.status, 503, "missing provider key must be reported rather than pretending AI is verified");
+
+  for (const [session, expectedSlug, expectedId] of [
+    [alphaSession, "hotel-alpha", alphaId],
+    [betaSession, "hotel-beta", betaId]
+  ]) {
+    const check = await request("/api/admin/integrations/test-staff-webhook", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" }, session);
+    assert.equal(check.status, 200, "each hotel owner should be able to verify the shared signed dispatcher");
+    const body = await check.json();
+    assert.equal(body.verified, true);
+    assert.equal(body.organizationSlug, expectedSlug);
+    const event = webhookEvents.at(-1);
+    assert.equal(event.payload.event, "veyra.integration.test");
+    assert.equal(event.payload.organizationId, expectedId);
+    assert.equal(event.payload.organizationSlug, expectedSlug);
+    assert.equal(event.payload.test, true);
+    assert.equal(event.signature, crypto.createHmac("sha256", webhookSecret).update(JSON.stringify(event.payload)).digest("hex"));
+  }
+  const verifiedChecks = await pool.query("SELECT organization_id,integration FROM organization_integration_checks WHERE integration='staff_webhook' ORDER BY organization_id");
+  assert.equal(verifiedChecks.rowCount, 2, "staff integration verification must be stored separately for each hotel");
+
   for (const [session, escalationId, expectedOrganizationId, expectedSlug] of [
     [alphaSession, alphaEscalation.rows[0].id, alphaId, "hotel-alpha"],
     [betaSession, betaEscalation.rows[0].id, betaId, "hotel-beta"]
@@ -220,7 +249,7 @@ test("two hotel workspaces remain isolated across live API resources", { skip: !
   const betaRetryState = await pool.query("SELECT notification_status,notification_attempts FROM escalations WHERE id=$1", [betaEscalation.rows[0].id]);
   assert.deepEqual(alphaRetryState.rows[0], { notification_status: "delivered", notification_attempts: 1 });
   assert.deepEqual(betaRetryState.rows[0], { notification_status: "delivered", notification_attempts: 1 });
-  assert.equal(webhookEvents.length, 2, "each hotel's handoff should reach the dispatcher exactly once");
+  assert.equal(webhookEvents.length, 4, "each hotel's test event and escalation should reach the dispatcher exactly once");
 
   for (const [session, ownTitle, otherTitle, ownUrl, otherUrl, ownEmail, otherEmail, ownEvent, otherEvent, ownStorage, otherStorage] of [
     [alphaSession, "Alpha breakfast", "Beta breakfast", "https://alpha.test", "https://beta.test", "owner@alpha.test", "owner@beta.test", "alpha.private_event", "beta.private_event", "google", "microsoft"],

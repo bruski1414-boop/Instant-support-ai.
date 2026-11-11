@@ -22,7 +22,8 @@ A parent or guardian must manage hosting accounts, any paid upgrades and API-pro
 - Conservative escalation for sensitive/uncertain requests.
 - Optional signed webhook; delivery status and attempt count are persisted on each escalation, and failed notifications can be retried from the dashboard (maximum five attempts).
 - Separate rate limits protect public guest chat and initial workspace bootstrap.
-- Embeddable guest chat widget.
+- Embeddable guest chat widget with multi-turn conversation continuity and bounded history.
+- Tenant-scoped owner/admin conversation deletion with an audit record.
 - Guest-data storage gate is disabled unless explicitly enabled after hotel privacy and retention approval.
 
 ## Render environment variables
@@ -69,7 +70,7 @@ Without OPENAI_API_KEY, live AI responses are unavailable. Without both webhook 
 - POST /api/auth/logout
 - GET /api/auth/me
 - GET /api/auth/csrf
-- GET /api/admin/overview
+- DELETE /api/admin/conversations/:id — owner/admin-only, tenant-scoped conversation deletion\n- GET /api/admin/overview
 - GET/POST /api/admin/knowledge
 - PATCH/DELETE /api/admin/knowledge/:id
 - GET /api/admin/escalations

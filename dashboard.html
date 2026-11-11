@@ -74,7 +74,7 @@ main{padding:28px clamp(16px,4vw,48px);max-width:1450px;width:100%;margin:auto}.
  </section>
  <section id="panel-escalations" class="panel">
   <div class="sectionrow"><h2>Staff handoff queue</h2><span class="muted">Urgent, sensitive or uncertain requests</span></div>
-  <div class="card tablewrap"><table class="table"><thead><tr><th>REASON</th><th>STATUS</th><th>CREATED</th><th>ACTION</th></tr></thead><tbody id="escalationRows"></tbody></table></div>
+  <div class="card tablewrap"><table class="table"><thead><tr><th>REASON</th><th>STATUS</th><th>NOTIFICATION</th><th>CREATED</th><th>ACTION</th></tr></thead><tbody id="escalationRows"></tbody></table></div>
  </section>
  <p class="muted" style="font-size:11px;margin-top:25px">Veyra AI · Staff remain responsible for guest decisions. Verify all knowledge before approval. Handoffs are only delivered when a notification integration is configured and confirmed.</p>
 </main>
@@ -136,6 +136,7 @@ document.querySelectorAll("[data-panel]").forEach(b=>b.addEventListener("click",
 $("knowledgeForm").addEventListener("submit",async e=>{e.preventDefault();try{await api("/api/admin/knowledge",{method:"POST",body:JSON.stringify({title:$("kTitle").value,category:$("kCategory").value,content:$("kContent").value,approved:$("kApproved").checked})});$("knowledgeForm").reset();showToast("Knowledge saved.");await loadKnowledge();}catch(err){notice(err.message,"error");}});
 $("knowledgeList").addEventListener("click",async e=>{const b=e.target.closest("button[data-action]");if(!b)return;try{if(b.dataset.action==="toggle-knowledge"){await api("/api/admin/knowledge/"+encodeURIComponent(b.dataset.id),{method:"PATCH",body:JSON.stringify({approved:b.dataset.approved==="true"})});showToast("Knowledge approval updated.");}else if(b.dataset.action==="delete-knowledge"){if(!confirm("Delete this knowledge document?"))return;await api("/api/admin/knowledge/"+encodeURIComponent(b.dataset.id),{method:"DELETE",body:"{}"});showToast("Knowledge deleted.");}await loadKnowledge();}catch(err){notice(err.message,"error");}});
 $("escalationRows").addEventListener("change",async e=>{const s=e.target.closest('select[data-action="escalation-status"]');if(!s)return;try{await api("/api/admin/escalations/"+encodeURIComponent(s.dataset.id),{method:"PATCH",body:JSON.stringify({status:s.value})});showToast("Handoff status updated.");await loadEscalations();}catch(err){notice(err.message,"error");}});
+$("escalationRows").addEventListener("click",async e=>{const b=e.target.closest('button[data-action="retry-notification"]');if(!b)return;b.disabled=true;try{const d=await api("/api/admin/escalations/"+encodeURIComponent(b.dataset.id)+"/notify",{method:"POST",body:"{}"});showToast(d.delivered?"Hotel notification delivered.":"Notification still not confirmed.");await loadEscalations();}catch(err){notice(err.message,"error");b.disabled=false;}});
 enterWorkspace();
 </script>
 </body></html>

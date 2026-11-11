@@ -57,7 +57,7 @@ main{padding:28px clamp(16px,4vw,48px);max-width:1450px;width:100%;margin:auto}.
  </section>
  <section id="panel-conversations" class="panel">
   <div class="sectionrow"><h2>Recent conversations</h2><span class="muted">Latest 20 · message previews</span></div>
-  <div class="card tablewrap"><table class="table"><thead><tr><th>ID</th><th>LAST MESSAGE</th><th>STATUS</th><th>CHANNEL</th><th>STARTED</th></tr></thead><tbody id="conversationRows"></tbody></table></div>
+  <div class="card tablewrap"><table class="table"><thead><tr><th>ID</th><th>LAST MESSAGE</th><th>STATUS</th><th>CHANNEL</th><th>STARTED</th><th>ACTION</th></tr></thead><tbody id="conversationRows"></tbody></table></div>
  </section>
  <section id="panel-knowledge" class="panel">
   <div class="sectionrow"><h2>Approved business knowledge</h2><span class="muted">Only approved documents can inform the guest assistant.</span></div>
@@ -82,6 +82,7 @@ main{padding:28px clamp(16px,4vw,48px);max-width:1450px;width:100%;margin:auto}.
 <div id="toast" class="toast hidden"></div>
 <script>
 let csrfToken="";
+let currentRole="";
 let activePanel="overview";
 const $=id=>document.getElementById(id);
 const safe=(v)=>String(v==null?"":v).replace(/[&<>"\']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","\'":"&#39;"}[c];});
@@ -111,7 +112,8 @@ async function loadOverview(){
  $("mToday").textContent=safe(m.conversations_today||0);$("mWeek").textContent=safe(m.conversations_7d||0);$("mResolved").textContent=safe(m.resolved_total||0);$("mOpen").textContent=safe(m.open_escalations||0);
  const rows=(d.conversations||[]).map(c=>'<tr><td><strong>'+safe(c.id).slice(0,8)+'</strong></td><td>'+safe(c.latest_message||"No message preview")+'</td><td>'+statusTag(c.status)+'</td><td>'+date(c.started_at)+'</td></tr>').join("");
  $("recentRows").innerHTML=rows||'<tr><td colspan="4" class="empty">No conversations recorded yet.</td></tr>';
- $("conversationRows").innerHTML=(d.conversations||[]).map(c=>'<tr><td>'+safe(c.id).slice(0,8)+'</td><td>'+safe(c.latest_message||"—")+'</td><td>'+statusTag(c.status)+'</td><td>'+safe(c.channel)+'</td><td>'+date(c.started_at)+'</td></tr>').join("")||'<tr><td colspan="5" class="empty">No conversations recorded yet.</td></tr>';
+ const canDeleteConversations=["owner","admin"].includes(currentRole);
+ $("conversationRows").innerHTML=(d.conversations||[]).map(c=>'<tr><td>'+safe(c.id).slice(0,8)+'</td><td>'+safe(c.latest_message||"—")+'</td><td>'+statusTag(c.status)+'</td><td>'+safe(c.channel)+'</td><td>'+date(c.started_at)+'</td><td>'+(canDeleteConversations?'<button class="btn danger" data-action="delete-conversation" data-id="'+safe(c.id)+'">Delete</button>':"—")+'</td></tr>').join("")||'<tr><td colspan="6" class="empty">No conversations recorded yet.</td></tr>';
 }
 async function loadKnowledge(){
  const d=await api("/api/admin/knowledge");
@@ -126,7 +128,7 @@ async function loadPanel(name){
  catch(e){notice(e.message,"error");}
 }
 async function enterWorkspace(){
- try{const c=await api("/api/auth/csrf");csrfToken=c.csrfToken;const d=await api("/api/auth/me");$("orgName").textContent=d.organization.name;$("userRole").textContent=d.user.role+" · "+d.user.email;$("login").classList.add("hidden");$("app").classList.remove("hidden");switchPanel("overview");}
+ try{const c=await api("/api/auth/csrf");csrfToken=c.csrfToken;const d=await api("/api/auth/me");currentRole=d.user.role;$("orgName").textContent=d.organization.name;$("userRole").textContent=d.user.role+" · "+d.user.email;$("login").classList.add("hidden");$("app").classList.remove("hidden");switchPanel("overview");}
  catch(e){$("login").classList.remove("hidden");$("app").classList.add("hidden");}
 }
 $("loginForm").addEventListener("submit",async e=>{e.preventDefault();try{const d=await api("/api/auth/login",{method:"POST",body:JSON.stringify({email:$("email").value,password:$("password").value})});csrfToken=d.csrfToken;await enterWorkspace();}catch(err){loginError(err.message);}});
@@ -135,6 +137,7 @@ $("refresh").addEventListener("click",()=>loadPanel(activePanel));
 document.querySelectorAll("[data-panel]").forEach(b=>b.addEventListener("click",()=>switchPanel(b.dataset.panel)));
 $("knowledgeForm").addEventListener("submit",async e=>{e.preventDefault();try{await api("/api/admin/knowledge",{method:"POST",body:JSON.stringify({title:$("kTitle").value,category:$("kCategory").value,content:$("kContent").value,approved:$("kApproved").checked})});$("knowledgeForm").reset();showToast("Knowledge saved.");await loadKnowledge();}catch(err){notice(err.message,"error");}});
 $("knowledgeList").addEventListener("click",async e=>{const b=e.target.closest("button[data-action]");if(!b)return;try{if(b.dataset.action==="toggle-knowledge"){await api("/api/admin/knowledge/"+encodeURIComponent(b.dataset.id),{method:"PATCH",body:JSON.stringify({approved:b.dataset.approved==="true"})});showToast("Knowledge approval updated.");}else if(b.dataset.action==="delete-knowledge"){if(!confirm("Delete this knowledge document?"))return;await api("/api/admin/knowledge/"+encodeURIComponent(b.dataset.id),{method:"DELETE",body:"{}"});showToast("Knowledge deleted.");}await loadKnowledge();}catch(err){notice(err.message,"error");}});
+$("conversationRows").addEventListener("click",async e=>{const b=e.target.closest('button[data-action="delete-conversation"]');if(!b)return;if(!confirm("Permanently delete this conversation and its messages and handoffs?"))return;b.disabled=true;try{await api("/api/admin/conversations/"+encodeURIComponent(b.dataset.id),{method:"DELETE",body:"{}"});showToast("Conversation deleted.");await loadOverview();}catch(err){notice(err.message,"error");b.disabled=false;}});
 $("escalationRows").addEventListener("change",async e=>{const s=e.target.closest('select[data-action="escalation-status"]');if(!s)return;try{await api("/api/admin/escalations/"+encodeURIComponent(s.dataset.id),{method:"PATCH",body:JSON.stringify({status:s.value})});showToast("Handoff status updated.");await loadEscalations();}catch(err){notice(err.message,"error");}});
 $("escalationRows").addEventListener("click",async e=>{const b=e.target.closest('button[data-action="retry-notification"]');if(!b)return;b.disabled=true;try{const d=await api("/api/admin/escalations/"+encodeURIComponent(b.dataset.id)+"/notify",{method:"POST",body:"{}"});showToast(d.delivered?"Hotel notification delivered.":"Notification still not confirmed.");await loadEscalations();}catch(err){notice(err.message,"error");b.disabled=false;}});
 enterWorkspace();

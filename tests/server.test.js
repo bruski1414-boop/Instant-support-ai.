@@ -80,3 +80,27 @@ test("organization bootstrap fails closed when database is not configured", asyn
   });
   assert.equal(response.status, 503);
 });
+
+test("public hotel chat has a dedicated abuse limit", async () => {
+  let last;
+  for (let i = 0; i < 11; i += 1) {
+    last = await fetch(`${baseUrl}/api/public/sample-hotel/chat`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ message: "What time is breakfast?" })
+    });
+  }
+  assert.equal(last.status, 429);
+});
+
+test("initial workspace bootstrap has a dedicated attempt limit", async () => {
+  let last;
+  for (let i = 0; i < 6; i += 1) {
+    last = await fetch(`${baseUrl}/api/setup/organization`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ organizationName: "Sample Hotel", email: "owner@example.com", password: "a-long-test-password" })
+    });
+  }
+  assert.equal(last.status, 429);
+});

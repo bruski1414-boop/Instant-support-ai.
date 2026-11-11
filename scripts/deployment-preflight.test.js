@@ -5,6 +5,7 @@ const { REQUIRED_TABLES, validateEnvironment, runPreflight } = require("./deploy
 const goodEnv = {
   NODE_ENV: "production",
   DATABASE_URL: "postgres://runtime:example@localhost:5432/veyra",
+  DATABASE_SSL: "true",
   OPENAI_API_KEY: "test-key-not-used",
   TENANT_INTEGRATION_ENCRYPTION_KEY: Buffer.alloc(32, 9).toString("base64"),
   APP_ORIGIN: "https://veyra-staging.example",
@@ -84,4 +85,11 @@ test("preflight rejects non-HTTPS origins and malformed encryption keys", () => 
   assert.ok(validateEnvironment({ ...goodEnv, APP_ORIGIN: "http://veyra.example" }).some((issue) => issue.includes("APP_ORIGIN")));
   assert.ok(validateEnvironment({ ...goodEnv, TENANT_INTEGRATION_ENCRYPTION_KEY: "not-a-key" }).some((issue) => issue.includes("32 random bytes")));
   assert.ok(validateEnvironment({ ...goodEnv, APP_ORIGIN: "https://veyra.example/path" }).some((issue) => issue.includes("APP_ORIGIN")));
+});
+
+
+test("preflight rejects production database connections without verified TLS", () => {
+  const { DATABASE_SSL, ...withoutTls } = goodEnv;
+  assert.ok(validateEnvironment(withoutTls).some((issue) => issue.includes("DATABASE_SSL must be true")));
+  assert.ok(validateEnvironment({ ...goodEnv, DATABASE_SSL: "false" }).some((issue) => issue.includes("DATABASE_SSL must be true")));
 });

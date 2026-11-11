@@ -132,3 +132,17 @@ test("conversation deletion is tenant scoped and owner controlled", () => {
   assert.match(server, /conversation\.deleted/);
   assert.match(dashboard, /delete-conversation/);
 });
+
+test("conversation transcript endpoint fails closed without a database", async () => {
+  const response = await fetch(`${baseUrl}/api/admin/conversations/123e4567-e89b-42d3-a456-426614174000`);
+  assert.equal(response.status, 503);
+});
+
+test("conversation transcript reads are tenant scoped", () => {
+  const server = fs.readFileSync("server.js", "utf8");
+  const dashboard = fs.readFileSync("dashboard.html", "utf8");
+  assert.match(server, /app\.get\("\/api\/admin\/conversations\/:id",requireDb,auth/);
+  assert.match(server, /SELECT id,status,channel,started_at,last_message_at FROM conversations WHERE id=\$1 AND organization_id=\$2/);
+  assert.match(server, /messages:m\.rows\.reverse\(\)/);
+  assert.match(dashboard, /view-conversation/);
+});

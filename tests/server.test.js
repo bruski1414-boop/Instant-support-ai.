@@ -260,3 +260,9 @@ test("hotel setup dashboard exposes AI and staff dispatcher verification actions
   assert.match(dashboard, /api\("\/api\/admin\/integrations\/test-/);
   assert.match(dashboard, /Signed test event accepted for this hotel/);
 });
+
+
+test("hotel profile email validation accepts ordinary staff email addresses", () => {
+  const server = fs.readFileSync("server.js", "utf8");
+  assert.ok(server.includes(String.raw`if(email&&!/^[-.+\w]+@[-.\w]+\.[A-Za-z]{2,}$/.test(email))`));
+});

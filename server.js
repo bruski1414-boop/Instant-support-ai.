@@ -173,7 +173,28 @@ app.post("/api/platform/organizations",requireDb,async(q,r,n)=>{
   }catch(e){await c.query("ROLLBACK");if(e.code==="23505")return r.status(409).json({error:"That hotel workspace or owner email already exists."});throw e;}finally{c.release();}
  }catch(e){n(e);}
 });
-app.post("/api/platform/organizations/:slug/privacy-approval",requireDb,async(q,r,n)=>{try{const secret=process.env.PLATFORM_PROVISIONING_TOKEN;if(!secret||!equal(q.get("X-Platform-Provisioning-Token"),secret))return r.status(403).json({error:"Platform privacy approval is not authorized."});if(!/^[a-z0-9-]{1,48}$/.test(q.params.slug))return r.status(400).json({error:"Invalid hotel workspace slug."});const b=q.body||{},reference=typeof b.approvalReference==="string"?b.approvalReference.trim():"",retentionDays=b.retentionDays;if(reference.length<3||reference.length>300||/[\r\n<>]/.test(reference)||!Number.isInteger(retentionDays)||retentionDays<1||retentionDays>730)return r.status(400).json({error:"Provide a valid approval reference and retention period from 1 to 730 days."});const org=await db.query("SELECT id FROM organizations WHERE slug=$1 AND status<>'suspended'",[q.params.slug]);if(!org.rowCount)return r.status(404).json({error:"Hotel workspace not found."});const saved=await db.query("INSERT INTO organization_privacy_approvals(organization_id,approval_reference,retention_days,approved_by_operator) VALUES($1,$2,$3,'platform_operator') ON CONFLICT(organization_id) DO UPDATE SET approval_reference=EXCLUDED.approval_reference,retention_days=EXCLUDED.retention_days,approved_by_operator='platform_operator',approved_at=now(),revoked_at=NULL,revoked_by_operator=NULL,updated_at=now() RETURNING approval_reference,retention_days,approved_at",[org.rows[0].id,reference,retentionDays]);await db.query("INSERT INTO audit_logs(organization_id,action,target_type,target_id) VALUES($1,'privacy.approval_recorded','organization_privacy_approval',$2)",[org.rows[0].id,org.rows[0].id]);r.status(201).json({approved:true,approval:saved.rows[0]});}catch(e){n(e);}});
+app.post("/api/platform/organizations/:slug/privacy-approval",requireDb,async(q,r,n)=>{
+ try{
+  const secret=process.env.PLATFORM_PROVISIONING_TOKEN;
+  if(!secret||!equal(q.get("X-Platform-Provisioning-Token"),secret))return r.status(403).json({error:"Platform privacy approval is not authorized."});
+  if(!/^[a-z0-9-]{1,48}$/.test(q.params.slug))return r.status(400).json({error:"Invalid hotel workspace slug."});
+  const b=q.body||{},reference=typeof b.approvalReference==="string"?b.approvalReference.trim():"",retentionDays=b.retentionDays;
+  if(reference.length<3||reference.length>300||/[\r\n<>]/.test(reference)||!Number.isInteger(retentionDays)||retentionDays<1||retentionDays>730)return r.status(400).json({error:"Provide a valid approval reference and retention period from 1 to 730 days."});
+  const c=await db.connect();
+  try{
+   await c.query("BEGIN");
+   await c.query("SELECT pg_advisory_xact_lock(20261113)");
+   const org=await c.query("SELECT id FROM organizations WHERE slug=$1 AND status<>'suspended'",[q.params.slug]);
+   if(!org.rowCount){await c.query("ROLLBACK");return r.status(404).json({error:"Hotel workspace not found."});}
+   const organizationId=org.rows[0].id;
+   const saved=await c.query("INSERT INTO organization_privacy_approvals(organization_id,approval_reference,retention_days,approved_by_operator) VALUES($1,$2,$3,'platform_operator') ON CONFLICT(organization_id) DO UPDATE SET approval_reference=EXCLUDED.approval_reference,retention_days=EXCLUDED.retention_days,approved_by_operator='platform_operator',approved_at=now(),revoked_at=NULL,revoked_by_operator=NULL,updated_at=now() RETURNING approval_reference,retention_days,approved_at",[organizationId,reference,retentionDays]);
+   await c.query("UPDATE retention_purge_runs SET last_success_at=NULL,last_error='',updated_at=now() WHERE organization_id=$1",[organizationId]);
+   await c.query("INSERT INTO audit_logs(organization_id,action,target_type,target_id) VALUES($1,'privacy.approval_recorded','organization_privacy_approval',$2)",[organizationId,organizationId]);
+   await c.query("COMMIT");
+   r.status(201).json({approved:true,approval:saved.rows[0]});
+  }catch(e){try{await c.query("ROLLBACK");}catch{}throw e;}finally{c.release();}
+ }catch(e){n(e);}
+});
 app.delete("/api/platform/organizations/:slug/privacy-approval",requireDb,async(q,r,n)=>{try{const secret=process.env.PLATFORM_PROVISIONING_TOKEN;if(!secret||!equal(q.get("X-Platform-Provisioning-Token"),secret))return r.status(403).json({error:"Platform privacy approval is not authorized."});if(!/^[a-z0-9-]{1,48}$/.test(q.params.slug))return r.status(400).json({error:"Invalid hotel workspace slug."});const org=await db.query("SELECT id FROM organizations WHERE slug=$1",[q.params.slug]);if(!org.rowCount)return r.status(404).json({error:"Hotel workspace not found."});const removed=await db.query("UPDATE organization_privacy_approvals SET revoked_at=now(),revoked_by_operator='platform_operator',updated_at=now() WHERE organization_id=$1 AND revoked_at IS NULL RETURNING organization_id",[org.rows[0].id]);if(!removed.rowCount)return r.status(404).json({error:"No active hotel privacy approval was recorded."});await db.query("INSERT INTO audit_logs(organization_id,action,target_type,target_id) VALUES($1,'privacy.approval_revoked','organization_privacy_approval',$2)",[org.rows[0].id,org.rows[0].id]);r.json({approved:false,revoked:true,retentionPurgeContinues:true});}catch(e){n(e);}});
 app.post("/api/auth/login",requireDb,async(q,r,n)=>{
  try{const b=q.body||{};if(typeof b.email!=="string"||typeof b.password!=="string"||typeof b.organizationSlug!=="string"||b.email.length>254||b.password.length>200||!/^[a-z0-9-]{1,48}$/.test(b.organizationSlug))return r.status(400).json({error:"Enter workspace slug, email and password."});

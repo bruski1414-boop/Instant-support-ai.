@@ -23,7 +23,7 @@ A parent or guardian must manage hosting accounts, any paid upgrades and API-pro
 - Optional signed webhook; delivery status and attempt count are persisted on each escalation, and failed notifications can be retried from the dashboard (maximum five attempts).
 - Separate rate limits protect public guest chat and initial workspace bootstrap.
 - Embeddable guest chat widget with multi-turn conversation continuity and bounded history.
-- Tenant-scoped owner/admin conversation deletion with an audit record.
+- Tenant-scoped owner/admin conversation deletion from active database records (backup/provider retention may differ) with an audit record.
 - Guest-data storage gate is disabled unless explicitly enabled after hotel privacy and retention approval.
 
 ## Render environment variables
@@ -74,6 +74,7 @@ Without OPENAI_API_KEY, live AI responses are unavailable. Without both webhook 
 - GET/POST /api/admin/knowledge
 - PATCH/DELETE /api/admin/knowledge/:id
 - GET /api/admin/escalations
+- POST /api/admin/escalations/:id/notify — retry a failed notification (maximum five attempts)
 - PATCH /api/admin/escalations/:id
 - POST /api/public/:slug/chat
 

@@ -69,12 +69,21 @@ Any cross-workspace data exposure is a release-blocking security defect.
 - [ ] A supervised pilot is run with synthetic or explicitly approved limited data before broader guest use.
 - [ ] Results are measured against a pre-pilot baseline; do not promise revenue or staffing outcomes without evidence.
 
+## Automated CI baseline
+
+The main-branch Veyra CI workflow runs Node.js 20 tests against a disposable PostgreSQL 16 service. The current automated suite includes syntax checks, unit/source regression tests and a live two-hotel API integration test using synthetic Hotel Alpha and Hotel Beta workspaces. That integration test covers separate owner sign-ins; tenant-scoped knowledge, settings, users, audit events, escalations, storage connections and overview data; hotel-specific CORS; signed staff-dispatcher test events and retry routing; parallel dashboard requests; and negative cross-tenant reads, edits and deletes.
+
+A passing CI run proves only that those automated synthetic checks passed for the tested commit. It does not prove that the live Render environment has the required secrets, that a real hotel's OAuth or staff receiver works, that the live AI answers correctly, or that backups can be restored.
+
 ## Current known limitations
 
-- The deployed service and database are on free plans; the database is temporary and scheduled to expire on 11 December 2026.
-- Guest-data storage is disabled by default.
+- The deployed web service and PostgreSQL database are on free plans; the database is temporary and scheduled to expire on 11 December 2026. Do not use it for real hotel or guest data.
+- Guest-data storage is disabled by default. Keep it disabled until written hotel privacy/retention approval and durable backup/restore evidence exist.
 - Storage import is limited to small text-based documents and Google Docs; full PDF, Word and spreadsheet extraction, broad sync and incremental sync are not complete.
-- Google and Microsoft app registrations, client credentials, consent and live provider flows have not been verified.
-- Current CI runs syntax checks and Node's test discovery, but comprehensive API, frontend, OAuth and two-tenant isolation integration tests are still required.
+- Google/Microsoft app registration, client credentials, consent and live OAuth flows still require authorised setup and testing with separate hotel accounts.
+- The signed staff webhook path is covered with a synthetic test receiver in CI; the actual hotel dispatcher, staff ownership, delivery monitoring and manual fallback still need a supervised live test.
+- Live AI model verification and answer-quality evaluation, browser-level end-to-end tests, sustained load tests, production monitoring, incident response and independent security/privacy review remain outstanding.
+- The main-branch application uses explicit tenant-scoped SQL queries. Automated cross-tenant tests are important evidence, but they are not a substitute for independent review or a database-level security certification.
+- The Render database is not reachable through the connected read-only database tool because its external IP allowlist is empty. Do not weaken the database allowlist to make an inspection tool work; use the authorised Render dashboard or a trusted operator environment when database inspection is required.
 
 Do not describe Veyra as production-ready or hotel-ready until every applicable release gate has been tested and signed off.

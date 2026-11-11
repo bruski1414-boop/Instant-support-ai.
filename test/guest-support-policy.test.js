@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { requiresStaffEscalation, buildGuestSupportSystemPrompt, normalizeGuestSupportAnswer } = require("../guest-support-policy");
+const { requiresStaffEscalation, buildGuestSupportSystemPrompt, normalizeGuestSupportAnswer, generateSafeGuestSupportAnswer } = require("../guest-support-policy");
 
 test("sensitive and urgent guest requests require staff escalation", () => {
   for (const message of [
@@ -90,4 +90,20 @@ test("valid staff escalation receives a bounded fallback reason", () => {
   }));
   assert.equal(answer.needsHuman, true);
   assert.equal(answer.handoffReason, "Staff review requested by assistant.");
+});
+
+
+test("AI provider failures return a safe staff-escalation fallback", async () => {
+  let diagnosticRecorded = false;
+  const answer = await generateSafeGuestSupportAnswer(
+    async () => { throw new Error("synthetic provider outage"); },
+    (error) => { diagnosticRecorded = error.message === "synthetic provider outage"; }
+  );
+  assert.deepEqual(answer, {
+    reply: "I cannot prepare a reliable answer right now. Please contact hotel staff.",
+    needsHuman: true,
+    handoffReason: "Live AI is temporarily unavailable. Staff review is required."
+  });
+  assert.equal(diagnosticRecorded, true);
+  assert.equal(JSON.stringify(answer).includes("synthetic provider outage"), false);
 });

@@ -83,7 +83,7 @@ Never commit secrets or place them in browser JavaScript.
 ## Initial workspace setup
 
 1. A parent or guardian should manage the hosting account, provider billing and any paid upgrade.
-2. Confirm the Render service has `DATABASE_URL` configured and `/api/health` reports `database: connected`. Check `/api/readiness` separately; it will remain degraded until every pilot requirement is satisfied.
+2. Confirm the Render service has `DATABASE_URL` configured. `/api/health` is a minimal process-liveness check; use `/api/readiness` for a minimal platform release status and the authenticated `/api/admin/onboarding` endpoint for per-hotel setup details.
 3. Add the AI provider key in Render's service environment. Do not paste secrets into chat or GitHub.
 4. Use `/setup.html` with the one-time bootstrap token to create the first owner.
 5. Remove `BOOTSTRAP_TOKEN` from Render and redeploy.
@@ -104,8 +104,8 @@ Never commit secrets or place them in browser JavaScript.
 
 ## API endpoints
 
-- `GET /api/health` — process health for the hosting platform; returns HTTP 200 while reporting dependency status
-- `GET /api/readiness` — platform-wide release readiness; per-hotel readiness is combined with this by `GET /api/admin/onboarding`
+- `GET /api/health` — minimal process liveness for the hosting platform; returns HTTP 200 without exposing internal configuration flags
+- `GET /api/readiness` — minimal platform-wide `ready` / `not-ready` status; detailed per-hotel checks require authentication through `GET /api/admin/onboarding`
 - `POST /api/setup/organization` — one-time first-owner bootstrap
 - `POST /api/platform/organizations` — protected creation of additional hotel workspaces and owner accounts
 - `POST /api/platform/organizations/:slug/privacy-approval` — platform-operator-only record of a hotel's written approval and retention target

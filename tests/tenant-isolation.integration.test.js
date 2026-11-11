@@ -3,7 +3,6 @@ const assert = require("node:assert/strict");
 const { spawn } = require("node:child_process");
 const net = require("node:net");
 const crypto = require("node:crypto");
-const { promisify } = require("node:util");
 const { Pool } = require("pg");
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
@@ -12,7 +11,6 @@ test("two hotel workspaces remain isolated across live API resources", { skip: !
   let child;
   let baseUrl;
   const password = "test-password-for-hotel-owner";
-  const scrypt = promisify(crypto.scrypt);
 
   async function freePort() {
     const server = net.createServer();
@@ -58,6 +56,7 @@ test("two hotel workspaces remain isolated across live API resources", { skip: !
   const port = await freePort();
   baseUrl = `http://127.0.0.1:${port}`;
   const bootstrapToken = crypto.randomBytes(24).toString("hex");
+  const provisioningToken = crypto.randomBytes(24).toString("hex");
   child = spawn(process.execPath, ["server.js"], {
     cwd: process.cwd(),
     env: {
@@ -68,6 +67,7 @@ test("two hotel workspaces remain isolated across live API resources", { skip: !
       DATABASE_SSL: "false",
       OPENAI_API_KEY: "",
       BOOTSTRAP_TOKEN: bootstrapToken,
+      PLATFORM_PROVISIONING_TOKEN: provisioningToken,
       GUEST_DATA_STORAGE_ENABLED: "false",
       ALLOWED_ORIGINS: "http://localhost:3000"
     },
@@ -94,16 +94,28 @@ test("two hotel workspaces remain isolated across live API resources", { skip: !
   const alpha = await pool.query("SELECT id,slug FROM organizations WHERE slug='hotel-alpha'");
   assert.equal(alpha.rowCount, 1);
 
-  const salt = crypto.randomBytes(16).toString("hex");
-  const passwordHash = salt + ":" + Buffer.from(await scrypt(password, salt, 64)).toString("hex");
-  const betaOrg = await pool.query(
-    "INSERT INTO organizations(name,slug) VALUES('Hotel Beta','hotel-beta') RETURNING id,slug"
-  );
-  const betaUser = await pool.query(
-    "INSERT INTO users(organization_id,email,password_hash,role) VALUES($1,'owner@beta.test',$2,'owner') RETURNING id",
-    [betaOrg.rows[0].id, passwordHash]
-  );
+  const deniedProvision = await request("/api/platform/organizations", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ organizationName: "Hotel Beta", email: "owner@beta.test", password })
+  });
+  assert.equal(deniedProvision.status, 403, "additional hotel creation must require the platform provisioning secret");
 
+  const provisionBeta = await request("/api/platform/organizations", {
+    method: "POST",
+    headers: { "content-type": "application/json", "X-Platform-Provisioning-Token": provisioningToken },
+    body: JSON.stringify({ organizationName: "Hotel Beta", email: "owner@beta.test", password })
+  });
+  assert.equal(provisionBeta.status, 201, "platform operator should be able to create another hotel workspace");
+  const duplicateProvision = await request("/api/platform/organizations", {
+    method: "POST",
+    headers: { "content-type": "application/json", "X-Platform-Provisioning-Token": provisioningToken },
+    body: JSON.stringify({ organizationName: "Hotel Beta", email: "owner@other-beta.test", password })
+  });
+  assert.equal(duplicateProvision.status, 409, "duplicate hotel slugs must be rejected");
+
+  const betaOrg = await pool.query("SELECT id,slug FROM organizations WHERE slug='hotel-beta'");
+  const betaUser = await pool.query("SELECT id FROM users WHERE organization_id=$1 AND email='owner@beta.test'", [betaOrg.rows[0].id]);
   const alphaId = alpha.rows[0].id;
   const betaId = betaOrg.rows[0].id;
   const alphaUser = await pool.query("SELECT id FROM users WHERE organization_id=$1 AND email='owner@alpha.test'", [alphaId]);

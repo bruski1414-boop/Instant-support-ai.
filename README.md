@@ -90,19 +90,24 @@ Without an API key, the website still displays sample demo responses, but the ba
 - BUSINESS_NAME: business name used by the assistant.
 - BUSINESS_FAQ: approved facts and policies for the business.
 
+## Production deployment preflight
+
+Before connecting a hosted database or enabling customer traffic, run `npm run preflight:production` from a trusted terminal with the production environment variables available. The check verifies that the application is using a separate, non-superuser, non-BYPASSRLS database login; that the required tables and forced row-level security policies exist; that the app login does not own its tables; and that production secrets, the HTTPS app origin, and the 32-byte integration-encryption key are configured. It reports missing configuration without printing secret values or database connection strings. It does not replace a security review, backups/restore test, live-provider evaluation, or a real staging deployment.
+
+The application service must use a dedicated restricted runtime database login. A separate authorised database administrator must apply migrations and provision the first owner; never give the web service the database-owner connection string. Do not run the preflight against a database containing real guest information until an authorised adult/operator has reviewed the configuration.
+
 ## Browser end-to-end checks
 
 The CI workflow installs a pinned Playwright version and Chromium to exercise the guest chat and hosted launcher in a real browser. These tests use a local static server and mocked chat responses; they do not verify the live hotel database, live AI provider, real Slack delivery, production hosting, or a hotel's actual website.
 
 ## Next engineering milestones
 
-1. Expand browser end-to-end coverage to the authenticated dashboard, staff handoff inbox, and mobile viewport.
-2. Add automatic conversation retention and deletion policies, export, and documented privacy controls.
-3. Add delivery retries/monitoring and additional staff channels only after the Slack workflow is validated.
-4. Improve source-grounded answers, confidence checks, and broader synthetic evaluation coverage.
-5. Add usage monitoring and explainable operational analytics before any ROI claims.
-6. Provision and validate a hosted database, secrets, backups, restoration, and monitoring with an authorised adult operator.
-7. Complete browser end-to-end testing and an independent security/privacy review before a real hotel pilot.
+1. Prepare an isolated staging environment with a hosted database, dedicated restricted runtime login, secrets, and a first owner provisioned by an authorised adult/operator.
+2. Run `npm run preflight:production`, then verify the deployed health/readiness endpoints and database-backed login, knowledge approval, guest chat, staff handoff, and website launcher.
+3. Run the live-model evaluation only after an adult account owner approves the AI-provider account and usage budget; use fictional hotel facts and synthetic questions only.
+4. Test backup restoration, privacy/deletion behavior, alert delivery, and operational monitoring.
+5. Complete an independent security/privacy review and a supervised pilot with one hotel before using real guest data or making ROI claims.
+6. Improve delivery retries, source-grounded answer evaluation, and explainable analytics based on pilot evidence.
 
 ## Safety and reliability principles
 

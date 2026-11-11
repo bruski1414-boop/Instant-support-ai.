@@ -20,7 +20,7 @@ before(async () => {
   let ready = false;
   for (let attempt = 0; attempt < 60; attempt += 1) {
     if (child.exitCode !== null) throw new Error("Veyra server exited before tests started");
-    try { const response = await fetch(`${baseUrl}/api/health`); if (response.ok) { ready = true; break; } } catch {}
+    try { const response = await fetch(`${baseUrl}/api/health`); if (response.ok || response.status === 503) { ready = true; break; } } catch {}
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
   if (!ready) throw new Error("Veyra server did not become ready");
@@ -29,8 +29,11 @@ after(() => { if (child && child.exitCode === null) child.kill("SIGTERM"); });
 test("health endpoint reports demo mode when no API key is configured", async () => {
   const response = await fetch(`${baseUrl}/api/health`);
   const body = await response.json();
-  assert.equal(response.status, 200);
-  assert.equal(body.status, "ok");
+  assert.equal(response.status, 503);
+  assert.equal(body.status, "degraded");
+  assert.equal(body.readyForPilot, false);
+  assert.equal(body.checks.database, false);
+  assert.equal(body.checks.ai, false);
   assert.equal(body.mode, "demo-no-api-key");
   assert.equal(body.humanHandoff, "not-configured");
   assert.equal(body.guestDataStorage, false);
@@ -182,4 +185,11 @@ test("editing approved hotel knowledge requires reapproval", () => {
   assert.match(server, /knowledge\.edited_unapproved/);
   assert.match(server, /typeof body\.approved!=="boolean"/);
   assert.match(server, /body\.content\.length>12000/);
+});
+
+test("health endpoint cannot report pilot readiness with missing prerequisites", async () => {
+  const response = await fetch(`${baseUrl}/api/health`);
+  const body = await response.json();
+  assert.equal(body.readyForPilot, false);
+  assert.deepEqual(body.checks, { database: false, ai: false, guestDataStorage: false, humanHandoff: false });
 });

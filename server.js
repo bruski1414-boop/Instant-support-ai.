@@ -729,7 +729,8 @@ function createApp(options = {}) {
       }
     }
     const ready = checks.aiProviderConfigured && checks.databaseConfigured &&
-      checks.databaseReachable && checks.tenantSchemaReady && checks.restrictedDatabaseRole;
+      checks.databaseReachable && checks.tenantSchemaReady && checks.restrictedDatabaseRole &&
+      checks.tenantIntegrationEncryptionConfigured;
     res.status(ready ? 200 : 503).json({ ready, checks });
   });
 

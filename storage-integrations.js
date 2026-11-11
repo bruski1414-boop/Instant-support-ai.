@@ -178,7 +178,7 @@ function createStorageRouter({ db, auth, role, audit }) {
         url.searchParams.set("pageSize", "100");
         url.searchParams.set("orderBy", "modifiedTime desc");
         url.searchParams.set("q", "trashed=false and (mimeType='text/plain' or mimeType='application/vnd.google-apps.document')");
-        url.searchParams.set("fields", "files(id,name,mimeType,m modifiedTime,webViewLink),nextPageToken".replace("m modifiedTime", "modifiedTime"));
+        url.searchParams.set("fields", "files(id,name,mimeType,modifiedTime,webViewLink),nextPageToken");
         const response = await fetch(url, { headers: { authorization: "Bearer " + token }, signal: AbortSignal.timeout(15000) });
         const body = await response.json();
         if (!response.ok) throw new Error("Google Drive could not list files.");
@@ -232,6 +232,7 @@ function createStorageRouter({ db, auth, role, audit }) {
         content = await contentResponse.text();
       }
       if (!content.trim() || Buffer.byteLength(content, "utf8") > 12000) return safeError(res, "The selected file is empty or larger than the 12 KB knowledge-document limit.");
+      name = String(name || "Imported hotel document").slice(0, 160);
       const source = provider + ":" + fileId;
       const existing = await db.query("SELECT * FROM knowledge_documents WHERE organization_id=$1 AND source_reference=$2", [req.actor.organization_id, source]);
       let document;

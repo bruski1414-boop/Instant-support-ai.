@@ -677,16 +677,60 @@ function createApp(options = {}) {
     });
   });
 
-  // A running process can be live but not ready to answer guest questions.
-  app.get("/api/ready", (_req, res) => {
-    const ready = Boolean(openai && businessFaq);
-    res.status(ready ? 200 : 503).json({
-      ready,
-      checks: {
-        aiProviderConfigured: Boolean(openai),
-        approvedBusinessKnowledgeConfigured: Boolean(businessFaq),
-      },
-    });
+  // Readiness for the tenant-based product requires a reachable, correctly
+  // migrated database and a restricted runtime role, not only a configured AI key.
+  app.get("/api/ready", async (_req, res) => {
+    const checks = {
+      aiProviderConfigured: Boolean(openai),
+      databaseConfigured: Boolean(dbPool),
+      databaseReachable: false,
+      tenantSchemaReady: false,
+      restrictedDatabaseRole: false,
+      tenantIntegrationEncryptionConfigured: Boolean(tenantIntegrationKey),
+      approvedBusinessKnowledgeConfigured: Boolean(businessFaq),
+    };
+    if (dbPool) {
+      try {
+        const roleResult = await dbPool.query(
+          "SELECT rolsuper, rolbypassrls, rolcreatedb, rolcreaterole FROM pg_roles WHERE rolname = current_user"
+        );
+        const role = roleResult.rows[0];
+        checks.databaseReachable = true;
+        checks.restrictedDatabaseRole = Boolean(role) &&
+          !role.rolsuper && !role.rolbypassrls && !role.rolcreatedb && !role.rolcreaterole;
+
+        const requiredTables = [
+          "organizations", "users", "memberships", "user_sessions", "auth_credentials",
+          "knowledge_documents", "conversations", "messages", "audit_events",
+          "tenant_integrations", "tenant_widget_settings",
+        ];
+        const tableResult = await dbPool.query(
+          "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE' AND table_name = ANY($1::text[])",
+          [requiredTables]
+        );
+        const foundTables = new Set(tableResult.rows.map((row) => row.table_name));
+        const rlsResult = await dbPool.query(
+          "SELECT c.relname AS table_name, c.relrowsecurity, c.relforcerowsecurity, EXISTS (SELECT 1 FROM pg_policies p WHERE p.schemaname = 'public' AND p.tablename = c.relname) AS has_policy FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND c.relname = ANY($1::text[])",
+          [requiredTables]
+        );
+        const rlsByTable = new Map(rlsResult.rows.map((row) => [row.table_name, row]));
+        const rlsReady = requiredTables.every((table) => {
+          const state = rlsByTable.get(table);
+          return state && state.relrowsecurity && state.relforcerowsecurity && state.has_policy;
+        });
+        const ownershipResult = await dbPool.query(
+          "SELECT count(*)::int AS owned_count FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace JOIN pg_roles r ON r.oid = c.relowner WHERE n.nspname = 'public' AND c.relname = ANY($1::text[]) AND r.rolname = current_user",
+          [requiredTables]
+        );
+        checks.tenantSchemaReady = requiredTables.every((table) => foundTables.has(table)) &&
+          rlsReady && Number(ownershipResult.rows[0]?.owned_count || 0) === 0;
+      } catch (error) {
+        logger.error("Veyra readiness database check failed:", error?.message || "Unknown error");
+      }
+    }
+    const ready = checks.aiProviderConfigured && checks.databaseConfigured &&
+      checks.databaseReachable && checks.tenantSchemaReady && checks.restrictedDatabaseRole;
+    res.status(ready ? 200 : 503).json({ ready, checks });
   });
 
   app.post("/api/chat", async (req, res) => {

@@ -1,0 +1,57 @@
+name: Veyra tests
+
+on:
+  push:
+    branches: ["main", "build/veyra-real-demo"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: postgres
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install
+      - run: npm test
+      - name: Install Chromium for browser checks
+        run: |
+          npm install --no-save --package-lock=false playwright@1.56.1
+          npx playwright install --with-deps chromium
+      - name: Verify guest chat, website launcher, and authenticated dashboard in Chromium
+        run: node --test scripts/browser-e2e-check.js
+      - name: Apply tenant schema to disposable PostgreSQL
+        run: psql -v ON_ERROR_STOP=1 -f migrations/001_multi_tenant_foundation.sql
+      - name: Apply authentication schema to disposable PostgreSQL
+        run: psql -v ON_ERROR_STOP=1 -f migrations/002_authentication.sql
+      - name: Apply tenant integration schema to disposable PostgreSQL
+        run: psql -v ON_ERROR_STOP=1 -f migrations/003_tenant_integrations.sql
+      - name: Apply privacy and retention schema to disposable PostgreSQL
+        run: psql -v ON_ERROR_STOP=1 -f migrations/004_privacy_retention.sql
+      - name: Apply hotel website origin allowlist schema
+        run: psql -v ON_ERROR_STOP=1 -f migrations/005_widget_domains.sql
+      - name: Verify row-level tenant isolation as restricted runtime role
+        run: psql -v ON_ERROR_STOP=1 -f scripts/test-tenant-isolation.sql
+      - name: Verify login and session flows against restricted PostgreSQL role
+        run: node scripts/auth-integration-check.js

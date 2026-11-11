@@ -16,45 +16,180 @@
 <div class="shell">
 <aside class="side">
 <a class="brand" href="index.html"><span class="logo">V</span> VEYRA AI</a>
-<div class="workspace"><small>WORKSPACE · DEMO</small><strong>Northstar Hospitality</strong><small>Sample workspace ▾</small></div>
+<div class="workspace"><small>AUTHENTICATED WORKSPACE</small><strong id="workspaceName">Loading…</strong><small id="workspaceRole">Verifying membership</small></div>
 <div class="navlabel">WORKSPACE</div><nav class="nav"><a class="active" href="#overview">◫ Overview</a><a href="#conversations">☷ Conversations</a><a href="#knowledge">✧ Knowledge base</a><a href="#handoffs">↗ Human handoffs</a><a href="#settings">⚙ Settings</a></nav>
 <div class="navlabel">ACCOUNT</div><nav class="nav"><a href="index.html">↖ Back to website</a></nav>
-<div class="bottom">Veyra AI · Product preview<br><br>Sample data only. Not connected to a real hotel.</div>
+<div class="bottom">Veyra AI · Prototype environment<br><br>Not approved for real hotel guest data.</div>
 </aside>
 <main class="main">
-<header class="top"><div><div class="crumb">WORKSPACE / OVERVIEW</div><h1>Good evening. Here's your support overview.</h1><div class="muted">A calmer way to see what needs attention.</div></div><div class="actions"><button class="btn" onclick="toast('This preview uses fictional data; no report was exported.')">Export report</button><button class="btn primary" onclick="toast('Business onboarding is a planned feature—not connected yet.')">＋ Add knowledge</button></div></header>
-<div class="notice"><span class="dot"></span><p><strong>Preview mode.</strong> Every metric and conversation below is fictional. Staff alerts, exports, settings and knowledge editing are not connected.</p></div>
-<section id="overview" class="grid">
-<div class="card"><div class="metriclabel">Conversations today</div><div class="metric">146</div><div class="delta">＋ 18% <span class="muted">vs. sample yesterday</span></div></div>
-<div class="card"><div class="metriclabel">First-response time</div><div class="metric">18 sec</div><div class="delta">Sample target: under 1 min</div></div>
-<div class="card"><div class="metriclabel">Resolved in demo</div><div class="metric">82%</div><div class="muted">Illustrative—not measured</div></div>
-<div class="card"><div class="metriclabel">Staff review queue</div><div class="metric">7</div><div class="tag warn">Needs attention</div></div>
+<header class="top"><div><div class="crumb">WORKSPACE / SYSTEM STATUS</div><h1>Veyra AI command centre</h1><div class="muted">Live service configuration, not invented performance metrics.</div></div><div class="actions"><select id="workspaceSelect" aria-label="Select workspace" class="btn" style="max-width:220px"><option value="">Loading workspaces…</option></select><a class="btn" id="guestSupportLink" target="_blank" rel="noopener">Guest support preview ↗</a><span class="muted" id="accountEmail"></span><button class="btn" onclick="signOut()">Sign out</button><button class="btn primary" onclick="loadStatus()">↻ Refresh status</button></div></header>
+<div class="notice" role="status" aria-live="polite"><span class="dot" id="statusDot"></span><p id="statusMessage"><strong>Checking service…</strong> Connecting to the Veyra backend.</p></div>
+<section class="card" id="websiteWidget" style="margin:18px 0">
+<h2>Website chat launcher</h2>
+<p class="muted">Add this script to your hotel's website to show a floating Veyra support button. It opens the secure hosted guest chat in a new tab; it does not embed a third-party frame.</p>
+<textarea id="widgetInstallCode" readonly rows="2" aria-label="Website installation code" style="width:100%;min-height:76px;padding:12px;border:1px solid var(--line);border-radius:9px;background:#080e17;color:#d9e9fb;font:12px/1.5 ui-monospace,monospace;resize:vertical"></textarea>
+<div class="actions" style="margin-top:10px"><button class="btn primary" id="copyWidgetCode" type="button">Copy installation code</button><span id="widgetCopyStatus" class="muted" role="status" aria-live="polite"></span></div>
+<p class="muted" style="font-size:12px;margin-bottom:0">If your website has a strict Content Security Policy, allow your Veyra service origin in <code>script-src</code> and <code>style-src</code>. Test on a staging page before publishing.</p>
+<hr style="border:0;border-top:1px solid var(--line);margin:18px 0">
+<h3>Approved website domains</h3>
+<p class="muted">Add the exact HTTPS origins that may load this hotel's launcher. Use one origin per line, such as https://www.example.com. Paths and wildcard domains are not accepted. Changes are audited.</p>
+<label for="widgetDomains">Authorised website origins</label>
+<textarea id="widgetDomains" rows="3" maxlength="6500" placeholder="https://www.hotel.example&#10;https://hotel.example" style="width:100%;min-height:90px;padding:12px;border:1px solid var(--line);border-radius:9px;background:#080e17;color:#d9e9fb;font:13px/1.5 ui-monospace,monospace"></textarea>
+<div class="actions" style="margin-top:10px"><button class="btn primary" id="saveWidgetDomains" type="button">Save approved domains</button><span id="widgetDomainStatus" class="muted" role="status" aria-live="polite"></span></div>
 </section>
-<div class="sectionrow" id="conversations"><h2>Recent conversations</h2><div class="tabbar"><button class="tab active" onclick="filterRows('all',this)">All</button><button class="tab" onclick="filterRows('resolved',this)">Resolved</button><button class="tab" onclick="filterRows('handoff',this)">Needs staff</button></div></div>
+<section id="overview" class="grid">
+<div class="card"><div class="metriclabel">Backend status</div><div class="metric" id="backendState">Checking…</div><div class="muted" id="backendDetail">Waiting for health response</div></div>
+<div class="card"><div class="metriclabel">Live AI</div><div class="metric" id="aiState">Checking…</div><div class="muted" id="aiDetail">Checking provider and approved knowledge</div></div>
+<div class="card"><div class="metriclabel">Approved knowledge</div><div class="metric" id="knowledgeState">Checking…</div><div class="muted" id="knowledgeDetail">Checking server configuration</div></div>
+<div class="card"><div class="metriclabel">Staff alerts</div><div class="metric" id="handoffState">Checking…</div><div class="muted" id="handoffDetail">Checking webhook configuration</div></div>
+</section>
+<div class="sectionrow" id="conversations"><h2>Conversations</h2><span>Stored workspace records</span></div><div class="card"><div class="actions"><button class="btn primary" id="newConversation">＋ New conversation</button></div><div id="conversationList" class="muted" style="margin-top:14px">Select a workspace to load conversations.</div><div id="conversationDetail" style="margin-top:18px"></div></div>
 <div class="contentgrid">
-<div class="card tablewrap"><table class="table"><thead><tr><th>GUEST</th><th>TOPIC</th><th>STATUS</th><th>TIME</th></tr></thead><tbody id="rows">
-<tr data-status="resolved"><td><div class="guest"><span class="avatar">AM</span><div><strong>Alex Morgan</strong><br><small class="muted">Guest · sample</small></div></div></td><td>Airport transfer</td><td><span class="tag green">Resolved</span></td><td>2 min ago</td></tr>
-<tr data-status="handoff"><td><div class="guest"><span class="avatar">JL</span><div><strong>Jamie Lee</strong><br><small class="muted">Guest · sample</small></div></div></td><td>Special request</td><td><span class="tag warn">Staff review</span></td><td>5 min ago</td></tr>
-<tr data-status="resolved"><td><div class="guest"><span class="avatar">SK</span><div><strong>Sam Kim</strong><br><small class="muted">Guest · sample</small></div></div></td><td>Breakfast hours</td><td><span class="tag green">Resolved</span></td><td>11 min ago</td></tr>
-<tr data-status="handoff"><td><div class="guest"><span class="avatar">RT</span><div><strong>Riley Taylor</strong><br><small class="muted">Guest · sample</small></div></div></td><td>Booking change</td><td><span class="tag warn">Staff review</span></td><td>18 min ago</td></tr>
-<tr data-status="resolved"><td><div class="guest"><span class="avatar">MC</span><div><strong>Morgan Chen</strong><br><small class="muted">Guest · sample</small></div></div></td><td>Pool facilities</td><td><span class="tag green">Resolved</span></td><td>24 min ago</td></tr>
-</tbody></table></div>
-<div class="card" id="handoffs"><div class="sectionrow" style="margin:0 0 10px"><h2>Staff attention</h2><span class="tag warn">2 examples</span></div>
-<div class="alert"><div class="alerticon">!</div><div><h3>Booking change request</h3><p>Requires staff confirmation · 18 min ago</p></div></div>
-<div class="alert"><div class="alerticon">↗</div><div><h3>Special guest request</h3><p>Needs human judgement · 5 min ago</p></div></div>
-<div class="alert"><div class="alerticon">?</div><div><h3>Unverified policy question</h3><p>Answer withheld pending confirmation</p></div></div>
-<p class="footnote">In a real deployment, these would be generated from the business’s workflow and delivered to its authorized team. This preview sends no alerts.</p></div>
+<div class="card"><h2>Conversation history</h2><p class="muted">Guest and assistant messages are stored in this workspace database and can be opened from the conversation list above. Apply a retention policy and privacy review before using real guest data.</p><span class="tag">Stored workspace records</span></div>
+<div class="card" id="handoffs"><div class="actions" style="justify-content:space-between;align-items:center"><h2 style="margin:0">Human handoff inbox</h2><button class="btn" id="refreshHandoffs" type="button">Refresh queue</button></div><p class="muted" id="handoffExplanation">Requests needing staff review appear here. Requests needing staff review appear in this queue. Slack alerts can be configured in Staff notifications below; no push or email notifications are sent.</p><div id="handoffList" class="muted" aria-live="polite">Loading handoffs…</div></div>
 </div>
-<div class="sectionrow" id="knowledge"><h2>Knowledge coverage</h2><span>Sample category distribution</span></div>
-<div class="card"><div class="barrow"><label>Hotel services</label><div class="bar"><i style="width:88%"></i></div><b>88%</b></div><div class="barrow"><label>Dining & hours</label><div class="bar"><i style="width:72%"></i></div><b>72%</b></div><div class="barrow"><label>Policies</label><div class="bar"><i style="width:56%"></i></div><b>56%</b></div><div class="barrow"><label>Local guide</label><div class="bar"><i style="width:64%"></i></div><b>64%</b></div><div class="footnote">Coverage values are illustrative mock data. The real product should measure approved source coverage and answer quality—not invent percentages.</div></div>
-<div class="sectionrow" id="settings"><h2>What this preview demonstrates</h2><span>Product direction</span></div>
-<div class="grid"><div class="card"><strong>01 · Clarity</strong><p class="muted">See the support workload without drowning in charts.</p></div><div class="card"><strong>02 · Accountability</strong><p class="muted">Keep uncertain or sensitive requests visible for human review.</p></div><div class="card"><strong>03 · Trust</strong><p class="muted">Make sample data, real status, and limitations obvious.</p></div><div class="card"><strong>04 · Control</strong><p class="muted">Businesses should own their knowledge, access, and escalation rules.</p></div></div>
-<p class="footnote">This is a static dashboard concept only. It has no login, database, real customer records, real alerts, billing, or business settings. Do not enter personal or customer information.</p>
+<div class="sectionrow" id="knowledge"><h2>Knowledge base</h2><span>Owner/admin managed · approval required</span></div>
+<div class="card"><p class="muted">Add verified hotel facts as draft documents, then approve them before they are considered authoritative. Only owners and admins can add or approve knowledge.</p><form id="knowledgeForm"><input type="hidden" id="knowledgeId"><input type="hidden" id="knowledgeVersion"><label for="knowledgeTitle">Document title</label><input id="knowledgeTitle" maxlength="200" required style="width:100%;padding:11px;border-radius:8px;background:#080e17;color:white;border:1px solid #35465b"><label for="knowledgeContent">Approved business information</label><textarea id="knowledgeContent" maxlength="100000" required rows="5" style="width:100%;padding:11px;border-radius:8px;background:#080e17;color:white;border:1px solid #35465b"></textarea><button class="btn primary" id="knowledgeSave" type="submit">Save as draft</button> <button class="btn" id="knowledgeCancel" type="button" hidden>Cancel edit</button><span id="knowledgeStatus" class="muted" role="status"></span></form><div id="knowledgeList" style="margin-top:18px"></div><p class="footnote">Knowledge documents are currently stored per workspace. Guest chat uses only approved workspace knowledge documents.</p></div>
+<div class="sectionrow" id="integrations"><h2>Staff notifications</h2><span>Workspace owner/admin only</span></div>
+<div class="card"><h3>Slack handoff alerts</h3><p class="muted">Connect a hotel-owned Slack incoming webhook. Veyra encrypts the URL before storing it. Guest message text is never included in notifications. A successful send confirms Slack accepted the request, not that a staff member read it.</p><div id="slackIntegrationStatus" class="muted" role="status">Checking integration…</div><form id="slackIntegrationForm"><label for="slackWebhookUrl">Slack incoming webhook URL</label><input id="slackWebhookUrl" type="password" autocomplete="new-password" spellcheck="false" placeholder="https://hooks.slack.com/services/…" style="width:100%;padding:11px;border-radius:8px;background:#080e17;color:white;border:1px solid #35465b"><div class="actions" style="margin-top:12px"><button class="btn primary" type="submit">Save encrypted webhook</button><button class="btn" id="testSlackIntegration" type="button">Send test alert</button><button class="btn" id="removeSlackIntegration" type="button">Disconnect</button></div></form><p id="slackIntegrationFeedback" class="muted" aria-live="polite"></p></div>
+<div class="sectionrow" id="settings"><h2>System checks</h2><span id="lastChecked">Not checked yet</span></div>
+<div class="grid"><div class="card"><strong>Service health</strong><p class="muted">Checks whether the backend health endpoint responds.</p></div><div class="card"><strong>AI readiness</strong><p class="muted">Checks whether an AI provider key and approved business knowledge are configured.</p></div><div class="card"><strong>Staff alert setup</strong><p class="muted">Checks whether a valid HTTPS webhook is configured—not whether staff have read or acted on an alert.</p></div><div class="card"><strong>Data status</strong><p class="muted">Guest conversation storage is enabled in the prototype database. Do not enter real guest data until privacy and retention controls are reviewed.</p></div></div>
+<p class="footnote">Authenticated prototype dashboard. Prototype only: booking integrations, billing, retention/deletion workflows, independent security review, and real-hotel validation remain outstanding. Do not use it as a production hotel control panel.</p>
 </main></div>
 <div id="toast" style="position:fixed;bottom:20px;left:50%;transform:translateX(-50%);padding:12px 18px;border:1px solid #34465b;background:#172536;color:#edf6ff;border-radius:10px;display:none;max-width:90%;z-index:5"></div>
+<section class="card" id="privacyRetention" style="margin:20px 0;padding:20px;border:1px solid var(--line);border-radius:14px;background:var(--panel)">
+<h2>Guest conversation privacy</h2>
+<p class="muted">Choose how long guest conversations are retained. Expired conversations and their messages are automatically removed when a workspace member accesses the dashboard or workspace APIs. Default: 90 days.</p>
+<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+<label for="retentionDays">Retention period</label>
+<select id="retentionDays" style="padding:10px;border-radius:8px;background:#080e17;color:white;border:1px solid #35465b">
+<option value="30">30 days</option><option value="60">60 days</option><option value="90">90 days</option><option value="180">180 days</option><option value="365">365 days</option><option value="730">730 days</option>
+</select>
+<button class="btn" id="saveRetention" type="button">Save privacy setting</button>
+</div>
+<p id="retentionFeedback" class="muted" role="status" aria-live="polite"></p>
+</section>
 <script>
-function filterRows(status,button){document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));button.classList.add('active');document.querySelectorAll('#rows tr').forEach(row=>row.classList.toggle('hide',status!=='all'&&row.dataset.status!==status));}
-let toastTimer;function toast(text){const el=document.getElementById('toast');el.textContent=text;el.style.display='block';clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.style.display='none',3200);}
+let activeWorkspaceId="";
+function apiHeaders(){return {"Content-Type":"application/json","X-Veyra-Workspace":activeWorkspaceId,"X-CSRF-Token":readCookie("veyra_csrf")};}
+function safeText(value){return String(value??"").replace(/[&<>"']/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch]));}
+async function loadWorkspaces(){const response=await fetch("/api/workspaces",{cache:"no-store"});if(!response.ok)throw new Error("Could not load workspaces");const data=await response.json();const select=document.getElementById("workspaceSelect");select.replaceChildren();for(const item of data.workspaces){const option=document.createElement("option");option.value=item.id;option.textContent=item.name+" · "+item.role;select.append(option);}if(!data.workspaces.length){select.add(new Option("No workspace membership",""));return;}activeWorkspaceId=data.workspaces[0].id;select.value=activeWorkspaceId;document.getElementById("guestSupportLink").href="/guest.html?workspace="+encodeURIComponent(activeWorkspaceId);document.getElementById("widgetInstallCode").value='<scr'+'ipt src="'+window.location.origin+'/widget.js?workspace='+activeWorkspaceId+'" data-workspace="'+activeWorkspaceId+'" referrerpolicy="strict-origin-when-cross-origin" defer></scr'+'ipt>';document.getElementById("workspaceName").textContent=data.workspaces[0].name;document.getElementById("workspaceRole").textContent=data.workspaces[0].role;await loadWorkspaceData();}
+async function loadRetentionSettings(){
+  const select=document.getElementById("retentionDays");
+  const feedback=document.getElementById("retentionFeedback");
+  const button=document.getElementById("saveRetention");
+  const response=await fetch("/api/privacy/retention",{headers:apiHeaders(),cache:"no-store"});
+  const data=await response.json().catch(()=>({}));
+  if(!response.ok)throw new Error(data.error||"Could not load privacy settings");
+  select.value=String(data.conversationRetentionDays);
+  select.disabled=!data.canManage;
+  button.disabled=!data.canManage;
+  feedback.textContent=data.canManage?"Only expired conversations are automatically purged; individual deletions are also available in conversation details.":"Only workspace owners and admins can change this setting.";
+}
+document.getElementById("saveRetention").addEventListener("click",async()=>{
+  const button=document.getElementById("saveRetention"),feedback=document.getElementById("retentionFeedback");
+  button.disabled=true;feedback.textContent="Saving…";
+  try{
+    const response=await fetch("/api/privacy/retention",{method:"PATCH",headers:apiHeaders(),body:JSON.stringify({conversationRetentionDays:Number(document.getElementById("retentionDays").value)})});
+    const data=await response.json().catch(()=>({}));
+    if(!response.ok)throw new Error(data.error||"Could not save privacy setting");
+    feedback.textContent="Saved. Conversations older than "+data.conversationRetentionDays+" days will be purged on the next workspace access.";
+  }catch(error){feedback.textContent=String(error.message||"Could not save privacy setting");}
+  finally{button.disabled=false;}
+});
+async function loadWorkspaceData(){await Promise.all([loadKnowledge(),loadConversations(),loadHandoffs(),loadSlackIntegration(),loadRetentionSettings(),loadWidgetDomains()]);}
+async function loadWidgetDomains(){
+  const field=document.getElementById("widgetDomains"),status=document.getElementById("widgetDomainStatus"),button=document.getElementById("saveWidgetDomains");
+  const response=await fetch("/api/widget/domains",{headers:apiHeaders(),cache:"no-store"});
+  const data=await response.json().catch(()=>({}));
+  if(!response.ok)throw new Error(data.error||"Could not load approved website domains");
+  field.value=(data.origins||[]).join("\n");
+  field.disabled=!data.canManage;button.disabled=!data.canManage;
+  status.textContent=data.canManage?(data.origins?.length?"Approved domains loaded.":"No domains approved yet; the launcher will remain blocked."):"Only workspace owners and admins can manage approved domains.";
+}
+async function loadKnowledge(){const list=document.getElementById("knowledgeList");list.textContent="Loading knowledge…";const response=await fetch("/api/knowledge",{headers:apiHeaders()});if(!response.ok)throw new Error("Could not load knowledge");const data=await response.json();list.replaceChildren();if(!data.documents.length){list.textContent="No knowledge documents yet.";return;}for(const doc of data.documents){const item=document.createElement("div");item.className="alert";const approved=Boolean(doc.approved_at);item.innerHTML='<div style="flex:1;min-width:0"><h3>'+safeText(doc.title)+'</h3><p>'+safeText(doc.content.slice(0,280))+'</p><span class="tag '+(approved?"green":"warn")+'">'+(approved?"Approved":"Draft · not used for answers")+'</span></div>';if(["owner","admin"].includes(data.role)){const edit=document.createElement("button");edit.className="btn";edit.textContent="Edit";edit.addEventListener("click",()=>editKnowledge(doc));item.append(edit);if(!approved){const button=document.createElement("button");button.className="btn";button.textContent="Approve";button.addEventListener("click",()=>approveKnowledge(doc.id));item.append(button);}}list.append(item);}}
+function editKnowledge(doc){document.getElementById("knowledgeId").value=doc.id;document.getElementById("knowledgeVersion").value=doc.version;document.getElementById("knowledgeTitle").value=doc.title;document.getElementById("knowledgeContent").value=doc.content;document.getElementById("knowledgeSave").textContent="Save new draft version";document.getElementById("knowledgeCancel").hidden=false;document.getElementById("knowledgeTitle").focus();}
+document.getElementById("knowledgeCancel").addEventListener("click",()=>{document.getElementById("knowledgeForm").reset();document.getElementById("knowledgeId").value="";document.getElementById("knowledgeSave").textContent="Save as draft";document.getElementById("knowledgeCancel").hidden=true;});
+async function approveKnowledge(id){const response=await fetch("/api/knowledge/"+encodeURIComponent(id)+"/approve",{method:"POST",headers:apiHeaders(),body:"{}"});const data=await response.json().catch(()=>({}));document.getElementById("knowledgeStatus").textContent=response.ok?"Knowledge approved.":(data.error||"Approval failed.");if(response.ok)await loadKnowledge();}
+async function loadSlackIntegration(){const status=document.getElementById("slackIntegrationStatus");const response=await fetch("/api/integrations/slack",{headers:apiHeaders()});const data=await response.json().catch(()=>({}));if(!response.ok){status.textContent=data.error||"Could not check Slack integration";document.getElementById("handoffState").textContent="Unavailable";document.getElementById("handoffDetail").textContent="Could not load tenant integration";return;}status.textContent=data.configured?"Slack integration connected · encrypted secret stored.": "No Slack integration connected.";document.getElementById("handoffState").textContent=data.configured?"Configured":"Not connected";document.getElementById("handoffDetail").textContent=data.configured?"Tenant Slack webhook saved; test delivery to verify.":"Connect a hotel-owned Slack webhook below.";if(!data.encryptionReady)status.textContent+=" Service encryption key is not configured; ask the service operator to configure it.";document.getElementById("testSlackIntegration").disabled=!data.configured;document.getElementById("removeSlackIntegration").disabled=!data.configured;}
+document.getElementById("slackIntegrationForm").addEventListener("submit",async event=>{event.preventDefault();const field=document.getElementById("slackWebhookUrl");const feedback=document.getElementById("slackIntegrationFeedback");const webhookUrl=field.value.trim();if(!webhookUrl){feedback.textContent="Enter a Slack incoming webhook URL.";return;}feedback.textContent="Saving encrypted integration…";const response=await fetch("/api/integrations/slack",{method:"POST",headers:apiHeaders(),body:JSON.stringify({webhookUrl})});const data=await response.json().catch(()=>({}));field.value="";feedback.textContent=response.ok?"Slack integration saved. Send a test alert to verify delivery.":(data.error||"Could not save integration.");await loadSlackIntegration();});
+document.getElementById("testSlackIntegration").addEventListener("click",async()=>{const feedback=document.getElementById("slackIntegrationFeedback");feedback.textContent="Sending test alert…";const response=await fetch("/api/integrations/slack/test",{method:"POST",headers:apiHeaders(),body:"{}"});const data=await response.json().catch(()=>({}));feedback.textContent=response.ok&&data.delivered?"Slack accepted the test alert.":(data.error||"Test delivery failed.");});
+document.getElementById("removeSlackIntegration").addEventListener("click",async()=>{const feedback=document.getElementById("slackIntegrationFeedback");const response=await fetch("/api/integrations/slack",{method:"DELETE",headers:apiHeaders()});const data=await response.json().catch(()=>({}));feedback.textContent=response.ok?"Slack integration disconnected.":(data.error||"Could not disconnect integration.");await loadSlackIntegration();});
+async function loadHandoffs(){const list=document.getElementById("handoffList");list.textContent="Loading handoffs…";const response=await fetch("/api/handoffs",{headers:apiHeaders()});const data=await response.json().catch(()=>({}));if(!response.ok){list.textContent=data.error||"Could not load handoffs";return;}list.replaceChildren();if(!data.handoffs.length){list.textContent="No conversations are currently waiting for staff review.";return;}for(const handoff of data.handoffs){const item=document.createElement("div");item.className="alert";const detail=document.createElement("div");detail.style.flex="1";detail.style.minWidth="0";const heading=document.createElement("h3");heading.textContent=handoff.channel+" · Waiting for staff";const preview=document.createElement("p");preview.textContent=handoff.latest_guest_message||"No guest message preview";detail.append(heading,preview);const open=document.createElement("button");open.className="btn";open.type="button";open.textContent="Open";open.addEventListener("click",()=>{openConversation(handoff.id);document.getElementById("conversations").scrollIntoView({behavior:"smooth"});});item.append(detail,open);list.append(item);}}async function loadConversations(){const list=document.getElementById("conversationList");list.textContent="Loading conversations…";const response=await fetch("/api/conversations",{headers:apiHeaders()});if(!response.ok)throw new Error("Could not load conversations");const data=await response.json();list.replaceChildren();if(!data.conversations.length){list.textContent="No conversations have been stored for this workspace.";return;}for(const conversation of data.conversations){const button=document.createElement("button");button.className="btn";button.style.margin="4px";button.textContent=conversation.channel+" · "+conversation.status+" · "+conversation.message_count+" messages";button.addEventListener("click",()=>openConversation(conversation.id));list.append(button);}}
+async function openConversation(id){const panel=document.getElementById("conversationDetail");panel.textContent="Loading conversation…";const response=await fetch("/api/conversations/"+encodeURIComponent(id),{headers:apiHeaders()});const data=await response.json();if(!response.ok){panel.textContent=data.error||"Could not load conversation";return;}panel.innerHTML="<h3>Conversation · "+safeText(data.conversation.status)+"</h3>";const messages=document.createElement("div");for(const msg of data.messages){const p=document.createElement("p");p.textContent=msg.sender_type+": "+msg.body;messages.append(p);}panel.append(messages);const statusButton=document.createElement("button");statusButton.className="btn";statusButton.textContent=data.conversation.status==="resolved"?"Reopen conversation":"Mark resolved";statusButton.addEventListener("click",async()=>{const status=data.conversation.status==="resolved"?"open":"resolved";const changed=await fetch("/api/conversations/"+encodeURIComponent(id)+"/status",{method:"PATCH",headers:apiHeaders(),body:JSON.stringify({status})});if(changed.ok){await openConversation(id);await loadConversations();await loadHandoffs();}});panel.append(statusButton);const form=document.createElement("form");form.innerHTML='<p class="muted">Internal notes are visible only to hotel staff and are not sent to the guest.</p><label>Internal staff note (not sent to guest)</label><textarea name="body" required maxlength="20000" rows="3" style="width:100%;padding:10px;background:#080e17;color:white;border:1px solid #35465b;border-radius:8px"></textarea><button class="btn primary" type="submit">Save internal note</button>';form.addEventListener("submit",async event=>{event.preventDefault();const body=form.elements.body.value;const saved=await fetch("/api/conversations/"+encodeURIComponent(id)+"/messages",{method:"POST",headers:apiHeaders(),body:JSON.stringify({body})});if(saved.ok){await openConversation(id);await loadConversations();await loadHandoffs();}else{const result=await saved.json();alert(result.error||"Could not save message");}});panel.append(form);const deleteButton=document.createElement("button");deleteButton.className="btn";deleteButton.textContent="Permanently delete conversation";deleteButton.style.marginTop="12px";deleteButton.addEventListener("click",async()=>{if(!window.confirm("Permanently delete this conversation and all its messages? This cannot be undone."))return;deleteButton.disabled=true;const removed=await fetch("/api/conversations/"+encodeURIComponent(id),{method:"DELETE",headers:apiHeaders()});const result=await removed.json().catch(()=>({}));if(removed.ok){panel.textContent="Conversation permanently deleted.";await loadConversations();await loadHandoffs();}else{deleteButton.disabled=false;alert(result.error||"Could not delete conversation");}});panel.append(deleteButton);}
+document.getElementById("workspaceSelect").addEventListener("change",async event=>{activeWorkspaceId=event.target.value;const option=event.target.selectedOptions[0];document.getElementById("guestSupportLink").href=activeWorkspaceId?"/guest.html?workspace="+encodeURIComponent(activeWorkspaceId):"#";document.getElementById("workspaceName").textContent=option?.textContent||"No workspace";await loadWorkspaceData();});
+document.getElementById("knowledgeForm").addEventListener("submit",async event=>{event.preventDefault();const status=document.getElementById("knowledgeStatus");status.textContent="Saving draft…";const id=document.getElementById("knowledgeId").value;const version=Number(document.getElementById("knowledgeVersion").value);const response=await fetch(id?"/api/knowledge/"+encodeURIComponent(id):"/api/knowledge",{method:id?"PUT":"POST",headers:apiHeaders(),body:JSON.stringify({title:document.getElementById("knowledgeTitle").value,content:document.getElementById("knowledgeContent").value,...(id?{version}:{})})});const data=await response.json().catch(()=>({}));status.textContent=response.ok?"Draft saved. Approve it before use.":(data.error||"Could not save draft.");if(response.ok){event.target.reset();document.getElementById("knowledgeId").value="";document.getElementById("knowledgeVersion").value="";document.getElementById("knowledgeSave").textContent="Save as draft";document.getElementById("knowledgeCancel").hidden=true;await loadKnowledge();}});
+document.getElementById("refreshHandoffs").addEventListener("click",loadHandoffs);
+document.getElementById("newConversation").addEventListener("click",async()=>{const response=await fetch("/api/conversations",{method:"POST",headers:apiHeaders(),body:JSON.stringify({channel:"website"})});const data=await response.json();if(response.ok){await loadConversations();await openConversation(data.conversation.id);}else{document.getElementById("conversationList").textContent=data.error||"Could not create conversation";}});
+function readCookie(name){const item=document.cookie.split("; ").find(part=>part.startsWith(name+"="));return item?decodeURIComponent(item.slice(name.length+1)):"";}
+async function signOut(){try{await fetch("/api/auth/logout",{method:"POST",credentials:"same-origin",headers:{"X-CSRF-Token":readCookie("veyra_csrf")}});}finally{window.location.replace("/login.html");}}
+async function loadAccount(){const response=await fetch("/api/auth/me",{cache:"no-store",credentials:"same-origin"});if(!response.ok){window.location.replace("/login.html");return;}const data=await response.json();document.getElementById("accountEmail").textContent=data.user.email;document.getElementById("workspaceName").textContent=data.memberships.length+" workspace membership"+(data.memberships.length===1?"":"s");document.getElementById("workspaceRole").textContent=data.memberships.map(item=>item.role).join(", ");}
+async function loadStatus(){
+  const backend=document.getElementById('backendState');
+  const ai=document.getElementById('aiState');
+  const knowledge=document.getElementById('knowledgeState');
+  const handoff=document.getElementById('handoffState');
+  const message=document.getElementById('statusMessage');
+  const dot=document.getElementById('statusDot');
+  backend.textContent='Checking…';ai.textContent='Checking…';knowledge.textContent='Checking…';handoff.textContent='Checking…';
+  try{
+    const response=await fetch('/api/health',{cache:'no-store',headers:{'Accept':'application/json'}});
+    if(!response.ok)throw new Error('Health endpoint returned '+response.status);
+    const data=await response.json();
+    backend.textContent='Online';
+    document.getElementById('backendDetail').textContent='Health endpoint responded successfully';
+    ai.textContent=data.liveAIReady?'Ready':'Not ready';
+    document.getElementById('aiDetail').textContent=data.liveAIReady?'AI provider and approved knowledge are configured':'Live AI requires a provider key and approved knowledge';
+    knowledge.textContent=data.businessKnowledgeConfigured?'Configured':'Missing';
+    document.getElementById('knowledgeDetail').textContent=data.businessKnowledgeConfigured?'Server knowledge text is present':'No approved business knowledge is configured';
+
+    message.textContent='Connection successful. Status below reflects current server configuration.';
+    dot.style.background='var(--green)';
+  }catch(error){
+    backend.textContent='Offline';
+    document.getElementById('backendDetail').textContent='Could not reach /api/health';
+    ai.textContent='Unknown';document.getElementById('aiDetail').textContent='Cannot verify AI readiness while backend is offline';
+    knowledge.textContent='Unknown';document.getElementById('knowledgeDetail').textContent='Cannot verify knowledge configuration';
+
+    message.textContent='Backend unavailable. '+String(error.message||'Connection failed');
+    dot.style.background='var(--amber)';
+  }
+  document.getElementById('lastChecked').textContent='Last checked: '+new Date().toLocaleString();
+}
+let queueRefreshInProgress=false;
+async function refreshLiveDashboard(){
+  if(queueRefreshInProgress||document.visibilityState==="hidden"||!activeWorkspaceId)return;
+  queueRefreshInProgress=true;
+  try{
+    await Promise.all([loadHandoffs(),loadStatus()]);
+    const stamp=document.getElementById("handoffRefreshStatus");
+    if(stamp)stamp.textContent="Queue checked "+new Date().toLocaleTimeString()+" · refreshes every 15 seconds while this tab is open";
+  }catch(error){
+    const stamp=document.getElementById("handoffRefreshStatus");
+    if(stamp)stamp.textContent="Automatic refresh paused: "+String(error.message||"connection problem");
+  }finally{queueRefreshInProgress=false;}
+}
+document.getElementById("saveWidgetDomains").addEventListener("click",async()=>{
+  const status=document.getElementById("widgetDomainStatus"),button=document.getElementById("saveWidgetDomains");
+  const origins=document.getElementById("widgetDomains").value.split(/\r?\n/).map(value=>value.trim()).filter(Boolean);
+  button.disabled=true;status.textContent="Saving approved domains…";
+  try{
+    const response=await fetch("/api/widget/domains",{method:"PUT",headers:apiHeaders(),body:JSON.stringify({origins})});
+    const data=await response.json().catch(()=>({}));
+    if(!response.ok)throw new Error(data.error||"Could not save approved domains");
+    document.getElementById("widgetDomains").value=data.origins.join("\n");
+    status.textContent=data.origins.length+" approved domain"+(data.origins.length===1?"":"s")+" saved. The launcher is blocked on all other websites.";
+  }catch(error){status.textContent=String(error.message||"Save failed");}
+  finally{button.disabled=false;}
+});
+document.getElementById("copyWidgetCode").addEventListener("click",async()=>{
+  const field=document.getElementById("widgetInstallCode"),status=document.getElementById("widgetCopyStatus");
+  try{await navigator.clipboard.writeText(field.value);status.textContent="Copied. Paste it before the closing body tag on your staging website.";}
+  catch{field.focus();field.select();status.textContent="Select and copy the code above, then paste it into your staging website.";}
+});
+document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible")refreshLiveDashboard();});
+window.setInterval(refreshLiveDashboard,15000);
+loadAccount().then(()=>loadWorkspaces()).then(()=>loadStatus()).catch(error=>{document.getElementById("statusMessage").textContent=error.message;});
 </script>
 </body>
 </html>

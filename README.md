@@ -38,7 +38,7 @@ The web service and database are currently on Render's free plans. The database 
 - Optional signed staff webhook with persisted delivery status, attempt count and a dashboard retry action for failed notifications.
 - Separate rate limits for public guest chat and first-owner bootstrap.
 - Guest conversation storage is disabled by default until privacy and retention arrangements are approved.
-- GitHub Actions CI and automated API/frontend smoke tests.
+- GitHub Actions CI and CI checks JavaScript syntax and runs Node's test discovery; the current repository has not yet established comprehensive API, frontend, provider-OAuth or tenant-isolation integration coverage.
 
 ## Runtime configuration
 

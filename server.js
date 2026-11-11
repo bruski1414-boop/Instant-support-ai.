@@ -61,6 +61,7 @@ const schema=[
 "CREATE TABLE IF NOT EXISTS storage_connections(organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,provider TEXT NOT NULL CHECK(provider IN ('google','microsoft')),account_email TEXT NOT NULL DEFAULT '',encrypted_tokens TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'connected',connected_by UUID REFERENCES users(id) ON DELETE SET NULL,connected_at TIMESTAMPTZ NOT NULL DEFAULT now(),last_sync_at TIMESTAMPTZ,last_error TEXT,PRIMARY KEY(organization_id,provider))",
 "CREATE TABLE IF NOT EXISTS storage_oauth_states(state_hash TEXT PRIMARY KEY,organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,provider TEXT NOT NULL CHECK(provider IN ('google','microsoft')),expires_at TIMESTAMPTZ NOT NULL)",
 "CREATE INDEX IF NOT EXISTS storage_oauth_states_expiry_idx ON storage_oauth_states(expires_at)",
+"ALTER TABLE storage_oauth_states ADD COLUMN IF NOT EXISTS code_verifier TEXT",
 "CREATE TABLE IF NOT EXISTS audit_logs(id UUID PRIMARY KEY DEFAULT gen_random_uuid(),organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,actor_user_id UUID REFERENCES users(id) ON DELETE SET NULL,action TEXT NOT NULL,target_type TEXT,target_id TEXT,created_at TIMESTAMPTZ NOT NULL DEFAULT now())"
 ].join(";\n")+";";
 function hash(v){return crypto.createHash("sha256").update(v).digest("hex");}

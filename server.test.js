@@ -39,6 +39,30 @@ function makeApp(options = {}) {
   });
 }
 
+function mockReadyDatabasePool(options = {}) {
+  const tables = [
+    "organizations", "users", "memberships", "user_sessions", "auth_credentials",
+    "knowledge_documents", "conversations", "messages", "audit_events",
+    "tenant_integrations", "tenant_widget_settings",
+  ];
+  return {
+    async query(sql) {
+      if (sql.includes("FROM pg_roles")) return { rows: [options.role || {
+        rolsuper: false, rolbypassrls: false, rolcreatedb: false, rolcreaterole: false,
+      }] };
+      if (sql.includes("information_schema.tables")) return { rows: tables.map((table_name) => ({ table_name })) };
+      if (sql.includes("FROM pg_class c JOIN pg_namespace")) {
+        return { rows: tables.map((table_name) => ({
+          table_name, relrowsecurity: true, relforcerowsecurity: true, has_policy: true,
+        })) };
+      }
+      if (sql.includes("owned_count")) return { rows: [{ owned_count: 0 }] };
+      throw new Error("Unexpected readiness SQL");
+    },
+    async end() {},
+  };
+}
+
 
 test("password hashes use scrypt and verify without storing plaintext", async () => {
   const password = "correct-horse-battery-staple";
@@ -149,12 +173,32 @@ test("readiness endpoint returns 503 when live AI is not configured", async (t) 
   assert.equal(body.checks.approvedBusinessKnowledgeConfigured, true);
 });
 
-test("readiness endpoint returns 200 when AI and approved knowledge are configured", async (t) => {
-  const base = await withServer(t, makeApp({ openaiClient: mockAI("{}").client }));
+test("readiness endpoint returns 200 only when AI and the restricted tenant database are ready", async (t) => {
+  const base = await withServer(t, makeApp({
+    openaiClient: mockAI("{}").client,
+    dbPool: mockReadyDatabasePool(),
+  }));
   const response = await fetch(`${base}/api/ready`);
   const body = await response.json();
   assert.equal(response.status, 200);
   assert.equal(body.ready, true);
+  assert.equal(body.checks.databaseReachable, true);
+  assert.equal(body.checks.tenantSchemaReady, true);
+  assert.equal(body.checks.restrictedDatabaseRole, true);
+});
+
+test("readiness endpoint rejects a privileged database role", async (t) => {
+  const base = await withServer(t, makeApp({
+    openaiClient: mockAI("{}").client,
+    dbPool: mockReadyDatabasePool({ role: {
+      rolsuper: true, rolbypassrls: true, rolcreatedb: false, rolcreaterole: false,
+    } }),
+  }));
+  const response = await fetch(`${base}/api/ready`);
+  const body = await response.json();
+  assert.equal(response.status, 503);
+  assert.equal(body.ready, false);
+  assert.equal(body.checks.restrictedDatabaseRole, false);
 });
 
 test("health reports live AI unavailable when knowledge is missing", async (t) => {

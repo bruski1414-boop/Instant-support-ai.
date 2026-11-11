@@ -222,7 +222,8 @@ test("two hotel workspaces remain isolated across live API resources", { skip: !
     assert.equal(onboarding.platformReady, false, "missing live AI configuration must keep the platform release gate closed");
     assert.equal(onboarding.readyForPilot, false, "hotel checks alone must not mark the pilot ready");
     const storageCheck = onboarding.checks.find((check) => check.key === "hotel_storage");
-    assert.equal(storageCheck.done, true, "the hotel's own connected OAuth account should satisfy storage readiness");
+    assert.equal(storageCheck.done, false, "an OAuth token without a successful file listing must not satisfy storage readiness");
+    assert.match(storageCheck.detail, /successful file listing is required/i);
     assert.match(storageCheck.detail, new RegExp(ownProvider));
     assert.doesNotMatch(storageCheck.detail, new RegExp(otherProvider), "another hotel's storage provider must not leak into this workspace");
     const privacyCheck = onboarding.checks.find((check) => check.key === "privacy");
@@ -230,6 +231,20 @@ test("two hotel workspaces remain isolated across live API resources", { skip: !
     assert.equal(privacyCheck.done, false, "the first server has no verified retention worker");
     if (isAlpha) assert.match(privacyCheck.detail, /retention worker has not completed a recent successful run/i);
     else assert.match(privacyCheck.detail, /platform operator must record this hotel's written privacy approval/i);
+  }
+
+  await pool.query("UPDATE storage_connections SET last_sync_at=now(),last_error=NULL WHERE organization_id IN ($1,$2)", [alphaId, betaId]);
+  for (const [session, ownProvider, otherProvider] of [
+    [alphaSession, "google", "microsoft"],
+    [betaSession, "microsoft", "google"]
+  ]) {
+    const onboarding = await request("/api/admin/onboarding", {}, session);
+    assert.equal(onboarding.status, 200);
+    const state = await onboarding.json();
+    const storageCheck = state.checks.find((check) => check.key === "hotel_storage");
+    assert.equal(storageCheck.done, true, "a recent successful file listing should verify only the hotel's own storage connection");
+    assert.match(storageCheck.detail, new RegExp(ownProvider));
+    assert.doesNotMatch(storageCheck.detail, new RegExp(otherProvider));
   }
 
 
@@ -459,6 +474,16 @@ test("two hotel workspaces remain isolated across live API resources", { skip: !
   assert.equal(expiredAlphaMessages.rowCount, 0, "conversation deletion should cascade to guest messages");
   assert.equal(retainedBeta.rowCount, 1, "Alpha's approval must not purge Beta's data");
   assert.equal(retainedBetaMessages.rowCount, 1, "Beta's messages must remain scoped to Beta");
+
+  await pool.query("UPDATE storage_connections SET last_sync_at=NULL WHERE organization_id=$1", [alphaId]);
+  const alphaStorageUnverifiedChat = await request("/api/public/hotel-alpha/chat", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ message: "What time is breakfast?" })
+  });
+  assert.equal(alphaStorageUnverifiedChat.status, 503);
+  assert.match((await alphaStorageUnverifiedChat.json()).error, /successful storage file listing within the last 30 days/i);
+  await pool.query("UPDATE storage_connections SET last_sync_at=now(),last_error=NULL WHERE organization_id=$1", [alphaId]);
 
   const alphaReadyResponse = await request("/api/admin/onboarding", {}, alphaSession);
   const alphaReady = await alphaReadyResponse.json();

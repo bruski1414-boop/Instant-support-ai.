@@ -93,6 +93,19 @@ async function readTranscript(cookie, conversationId) {
   });
 }
 
+async function seedKnowledge(tenant) {
+  const org = await pool.query("SELECT id FROM organizations WHERE slug=$1", [tenant.slug]);
+  const title = "Private policy " + tenant.name;
+  const privateContent = "PRIVATE KNOWLEDGE FOR " + tenant.name;
+  const inserted = await pool.query("INSERT INTO knowledge_documents(organization_id,title,category,content,approved) VALUES($1,$2,'general',$3,false) RETURNING id", [org.rows[0].id, title, privateContent]);
+  tenant.knowledgeId = inserted.rows[0].id;
+  await pool.query("INSERT INTO knowledge_document_versions(organization_id,document_id,title,category,content,approved,change_type) VALUES($1,$2,$3,'general',$4,false,'created')", [org.rows[0].id, tenant.knowledgeId, title, privateContent]);
+}
+
+async function readKnowledgeVersions(cookie, documentId) {
+  return fetch(baseUrl + "/api/admin/knowledge/" + documentId + "/versions", { headers: { cookie } });
+}
+
 try {
   child = spawn(process.execPath, ["server.js"], {
     cwd: process.cwd(),
@@ -118,6 +131,7 @@ try {
   for (const tenant of tenants) await provision(tenant);
   const [cookieA, cookieB] = await Promise.all(tenants.map(login));
   await Promise.all(tenants.map(seedConversation));
+  await Promise.all(tenants.map(seedKnowledge));
 
   const ownA = await readTranscript(cookieA, tenants[0].conversationId);
   assert.equal(ownA.status, 200, "tenant A must read its own conversation");
@@ -134,7 +148,19 @@ try {
   const crossBtoA = await readTranscript(cookieB, tenants[0].conversationId);
   assert.equal(crossBtoA.status, 404, "tenant B must not read tenant A's conversation");
 
-  console.log("PASS: two real hotel workspaces can read their own transcripts and receive 404 for the other hotel's transcript.");
+  const ownKnowledgeA = await readKnowledgeVersions(cookieA, tenants[0].knowledgeId);
+  assert.equal(ownKnowledgeA.status, 200, "tenant A must read its own knowledge history");
+  const ownKnowledgeABody = await ownKnowledgeA.json();
+  assert.ok(ownKnowledgeABody.versions.some(v => v.content === "PRIVATE KNOWLEDGE FOR " + tenants[0].name));
+  const ownKnowledgeB = await readKnowledgeVersions(cookieB, tenants[1].knowledgeId);
+  assert.equal(ownKnowledgeB.status, 200, "tenant B must read its own knowledge history");
+  const ownKnowledgeBBody = await ownKnowledgeB.json();
+  assert.ok(ownKnowledgeBBody.versions.some(v => v.content === "PRIVATE KNOWLEDGE FOR " + tenants[1].name));
+  const crossKnowledgeAtoB = await readKnowledgeVersions(cookieA, tenants[1].knowledgeId);
+  assert.equal(crossKnowledgeAtoB.status, 404, "tenant A must not read tenant B knowledge history");
+  const crossKnowledgeBtoA = await readKnowledgeVersions(cookieB, tenants[0].knowledgeId);
+  assert.equal(crossKnowledgeBtoA.status, 404, "tenant B must not read tenant A knowledge history");
+  console.log("PASS: tenant-scoped transcripts and knowledge history verified for two hotel workspaces.");
 } finally {
   if (serverReady) {
     for (const tenant of tenants) {

@@ -1,7 +1,8 @@
-const assert = require("node:assert/strict");
-const { spawn } = require("node:child_process");
-const { randomUUID } = require("node:crypto");
-const { Pool } = require("pg");
+import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
+import pg from "pg";
+const { Pool } = pg;
 
 if (process.env.CI !== "true" || process.env.VEYRA_TENANT_TEST_DATABASE !== "true") {
   throw new Error("Refusing to run tenant integration tests outside the dedicated CI test database.");

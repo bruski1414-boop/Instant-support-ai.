@@ -194,6 +194,21 @@ test("editing approved hotel knowledge requires reapproval", () => {
   assert.match(server, /body\.content\.length>12000/);
 });
 
+
+test("retention policy is tenant-controlled, disabled by default and requires explicit cleanup confirmation", () => {
+  const server = fs.readFileSync("server.js", "utf8");
+  const dashboard = fs.readFileSync("dashboard.html", "utf8");
+  assert.match(server, /conversation_retention_days INTEGER NOT NULL DEFAULT 0/);
+  assert.match(server, /app\.put\("\/api\/admin\/retention",requireDb,auth,role\("owner","admin"\)/);
+  assert.match(server, /app\.post\("\/api\/admin\/retention\/cleanup",requireDb,auth,role\("owner","admin"\)/);
+  assert.match(server, /q\.body\?\.confirm!==true/);
+  assert.match(server, /c\.status='resolved'/);
+  assert.match(server, /e\.status<>'resolved'/);
+  assert.match(dashboard, /id="retentionDays"/);
+  assert.match(dashboard, /id="runRetention"/);
+  assert.match(dashboard, /Permanently delete eligible resolved conversations/);
+});
+
 test("health endpoint cannot report pilot readiness with missing prerequisites", async () => {
   const response = await fetch(`${baseUrl}/api/health`);
   const body = await response.json();

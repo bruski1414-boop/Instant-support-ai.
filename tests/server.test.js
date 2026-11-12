@@ -302,3 +302,13 @@ test("provider import purge requires explicit confirmation and deletes only this
   assert.match(storage, /DELETE FROM knowledge_documents WHERE organization_id=\$1 AND id=ANY\(\$2::uuid\[\]\)/);
   assert.match(storage, /storage\." \+ provider \+ "\.imported_copies_purged/);
 });
+
+
+test("hotel storage dashboard distinguishes disconnect from explicit imported-copy deletion", () => {
+  const dashboard = fs.readFileSync("dashboard.html", "utf8");
+  assert.match(dashboard, /data-storage-purge="google"/);
+  assert.match(dashboard, /data-storage-purge="microsoft"/);
+  assert.match(dashboard, /PERMANENTLY delete this hotel's imported/);
+  assert.match(dashboard, /api\("\/api\/admin\/storage\/imports\/"\+b\.dataset\.storagePurge/);
+  assert.match(dashboard, /Existing imported knowledge copies will remain in Veyra until separately deleted/);
+});

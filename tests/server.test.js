@@ -291,3 +291,14 @@ test("hotel profile email validation accepts ordinary staff email addresses", ()
   const server = fs.readFileSync("server.js", "utf8");
   assert.ok(server.includes(String.raw`if(email&&!/^[-.+\w]+@[-.\w]+\.[A-Za-z]{2,}$/.test(email))`));
 });
+
+
+test("provider import purge requires explicit confirmation and deletes only this hotel's provider-sourced knowledge and versions", () => {
+  const storage = fs.readFileSync("storage-integrations.js", "utf8");
+  assert.match(storage, /router\.delete\("\/imports\/:provider", auth, role\("owner", "admin"\)/);
+  assert.match(storage, /req\.body\?\.confirm !== true/);
+  assert.match(storage, /WHERE organization_id=\$1 AND source_reference LIKE \$2 FOR UPDATE/);
+  assert.match(storage, /DELETE FROM knowledge_document_versions WHERE organization_id=\$1 AND document_id=ANY\(\$2::uuid\[\]\)/);
+  assert.match(storage, /DELETE FROM knowledge_documents WHERE organization_id=\$1 AND id=ANY\(\$2::uuid\[\]\)/);
+  assert.match(storage, /storage\." \+ provider \+ "\.imported_copies_purged/);
+});

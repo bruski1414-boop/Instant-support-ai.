@@ -65,6 +65,14 @@ main{padding:28px clamp(16px,4vw,48px);max-width:1450px;width:100%;margin:auto}.
     <button class="btn primary" type="submit">Save hotel profile</button>
    </form>
   </div>
+
+  <div class="sectionrow"><h2>Guest conversation retention</h2><span class="muted">Owner/admin controlled</span></div>
+  <div class="card">
+   <p class="muted">Choose a retention period approved by the hotel. Only resolved conversations older than this period, with no open escalation, can be deleted. Knowledge documents are not affected.</p>
+   <div class="formrow"><div class="field"><label for="retentionDays">Keep resolved conversations for</label><select id="retentionDays"><option value="0">Disabled — keep until manually deleted</option><option value="30">30 days</option><option value="60">60 days</option><option value="90">90 days</option><option value="180">180 days</option><option value="365">1 year</option><option value="730">2 years</option><option value="1095">3 years</option><option value="1825">5 years</option><option value="3650">10 years</option></select></div><div class="field"><label>Eligible for deletion</label><div id="retentionCount" class="muted">Loading…</div></div></div>
+   <div class="actions"><button class="btn" id="saveRetention" type="button">Save retention policy</button><button class="btn" id="previewRetention" type="button">Refresh deletion preview</button><button class="btn danger" id="runRetention" type="button" disabled>Run cleanup now</button></div>
+   <div id="retentionNotice" class="notice hidden" role="status"></div>
+  </div>
   <div class="sectionrow"><h2>Pre-pilot readiness</h2><span id="readinessSummary" class="tag warn">Checking…</span></div>
   <div id="readinessList" style="display:grid;gap:9px"></div>
   <div class="actions" style="margin-top:12px">
@@ -223,6 +231,17 @@ $("panel-storage").addEventListener("click",async e=>{
   if(b.dataset.storageImport){const payload={fileId:b.dataset.fileId};if(b.dataset.siteId)payload.siteId=b.dataset.siteId;await api("/api/admin/storage/import/"+b.dataset.storageImport,{method:"POST",body:JSON.stringify(payload)});showToast("Imported as unapproved knowledge. Manager review required.");await browseStorage(b.dataset.storageImport);return;}
  }catch(err){notice(err.message,"error");}finally{b.disabled=false;}
 });
+
+async function loadRetention(){
+ const x=await api("/api/admin/retention");
+ $("retentionDays").value=String(x.retentionDays||0);
+ $("retentionCount").textContent=x.enabled?String(x.eligibleConversations)+" eligible conversation(s)":"Disabled";
+ $("runRetention").disabled=!x.enabled||x.eligibleConversations===0;
+ $("retentionNotice").classList.remove("hidden");$("retentionNotice").className="notice";$("retentionNotice").textContent=x.note;
+}
+$("saveRetention").addEventListener("click",async()=>{try{await api("/api/admin/retention",{method:"PUT",body:JSON.stringify({retentionDays:Number($("retentionDays").value)})});showToast("Retention policy saved.");await loadRetention();}catch(err){notice(err.message,"error");}});
+$("previewRetention").addEventListener("click",async()=>{try{await loadRetention();}catch(err){notice(err.message,"error");}});
+$("runRetention").addEventListener("click",async()=>{if(!confirm("Permanently delete eligible resolved conversations for this hotel? This cannot be undone."))return;try{const x=await api("/api/admin/retention/cleanup",{method:"POST",body:JSON.stringify({confirm:true})});showToast("Deleted "+x.deleted+" eligible conversation(s).");await loadRetention();}catch(err){notice(err.message,"error");}});
 async function loadSetup(){
  const [s,o]=await Promise.all([api("/api/admin/settings"),api("/api/admin/onboarding")]);
  $("hotelWebsite").value=s.settings.website_url||"";
@@ -230,6 +249,7 @@ async function loadSetup(){
  $("hotelTimezone").value=s.settings.timezone||"UTC";
  $("hotelLanguage").value=s.settings.language||"en";
  $("fallbackInstructions").value=s.settings.fallback_instructions||"";
+ await loadRetention();
  $("readinessSummary").textContent=o.readyForPilot?"All checks passed":"Needs attention";
  $("readinessSummary").className="tag "+(o.readyForPilot?"good":"warn");
  $("readinessList").innerHTML=o.checks.map(x=>'<article class="card" style="display:flex;align-items:flex-start;gap:12px"><span class="tag '+(x.done?"good":"warn")+'">'+(x.done?"Complete":"Action needed")+'</span><div><strong>'+safe(x.label)+'</strong><div class="muted" style="font-size:12px;margin-top:4px">'+safe(x.detail)+'</div></div></article>').join("");

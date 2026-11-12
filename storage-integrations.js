@@ -244,6 +244,40 @@ function createStorageRouter({ db, auth, role, audit }) {
     } catch (e) { res.status(502).json({ error: e.message || "Import failed." }); }
   });
 
+  router.delete("/imports/:provider", auth, role("owner", "admin"), async (req, res) => {
+    const provider = req.params.provider;
+    if (!providerValid(provider)) return safeError(res, "Unsupported storage provider.");
+    if (req.body?.confirm !== true) return safeError(res, "Explicit confirmation is required to delete imported copies.", 400);
+    const client = await db.connect();
+    try {
+      await client.query("BEGIN");
+      const documents = await client.query(
+        "SELECT id FROM knowledge_documents WHERE organization_id=$1 AND source_reference LIKE $2 FOR UPDATE",
+        [req.actor.organization_id, provider + ":%"]
+      );
+      const ids = documents.rows.map(row => row.id);
+      if (ids.length) {
+        await client.query(
+          "DELETE FROM knowledge_document_versions WHERE organization_id=$1 AND document_id=ANY($2::uuid[])",
+          [req.actor.organization_id, ids]
+        );
+        await client.query(
+          "DELETE FROM knowledge_documents WHERE organization_id=$1 AND id=ANY($2::uuid[])",
+          [req.actor.organization_id, ids]
+        );
+      }
+      await client.query(
+        "INSERT INTO audit_logs(organization_id,actor_user_id,action,target_type) VALUES($1,$2,$3,'storage_imports')",
+        [req.actor.organization_id, req.actor.user_id, "storage." + provider + ".imported_copies_purged"]
+      );
+      await client.query("COMMIT");
+      res.json({ deletedDocuments: ids.length, provider, purged: true });
+    } catch (e) {
+      await client.query("ROLLBACK").catch(() => {});
+      res.status(500).json({ error: "Could not delete imported copies." });
+    } finally { client.release(); }
+  });
+
   router.delete("/connections/:provider", auth, role("owner", "admin"), async (req, res) => {
     const provider = req.params.provider;
     if (!providerValid(provider)) return safeError(res, "Unsupported storage provider.");

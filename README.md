@@ -111,7 +111,7 @@ Never commit secrets or place them in browser JavaScript.
 - `GET /api/admin/storage/sites/microsoft` — discover SharePoint sites
 - `GET /api/admin/storage/files/google|microsoft` — list supported documents (optional `siteId` for SharePoint)
 - `POST /api/admin/storage/import/google|microsoft` — import one selected document as unapproved knowledge
-- `DELETE /api/admin/storage/connections/google|microsoft` — disconnect and delete stored provider tokens
+- `DELETE /api/admin/storage/connections/google|microsoft` — disconnect and delete stored provider tokens\n- `DELETE /api/admin/storage/imports/google|microsoft` — owner/admin-only, requires `{ confirm: true }`, and transactionally deletes only that hotel's imported knowledge copies and their version history from the selected provider; source files in the hotel's own storage are not changed
 - `GET /api/admin/audit` — latest 100 tenant-scoped audit events for owners/admins
 - `GET/PUT /api/admin/settings` — hotel profile settings (owner/admin can edit)
 - `GET /api/admin/onboarding` — live pre-pilot readiness checks

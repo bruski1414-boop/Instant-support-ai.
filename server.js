@@ -202,7 +202,11 @@ app.post("/api/admin/revenue",requireDb,auth,role("owner","admin"),async(q,r,n)=
  r.status(201).json({event:inserted.rows[0],message:event.conversationId?"Saved as hotel-attested and linked to a Veyra conversation.":"Saved as hotel-reported, not attributed to Veyra."});
 }catch(e){if(client)try{await client.query("ROLLBACK");}catch{}if(e?.code==="23505")return r.status(409).json({error:"That event reference has already been recorded for this hotel. Duplicate revenue was not added."});if(e instanceof Error&&/required|valid|positive|future|decimal places|cannot be|confirmed booking|paid add-on/i.test(e.message))return r.status(400).json({error:e.message});n(e);}finally{client?.release();}});
 
-app.post("/api/admin/integrations/revenue-webhook/rotate",requireDb,auth,role("owner","admin"),async(q,r,n)=>{try{
+app.get("/api/admin/integrations/revenue-webhook",requireDb,auth,role("owner","admin"),async(q,r,n)=>{try{
+ const x=await db.query("SELECT active,rotated_at,last_received_at FROM organization_revenue_webhooks WHERE organization_id=$1",[q.actor.organization_id]);
+ r.json({active:Boolean(x.rows[0]?.active),rotatedAt:x.rows[0]?.rotated_at||null,lastReceivedAt:x.rows[0]?.last_received_at||null,endpoint:"/api/integrations/"+encodeURIComponent(q.actor.organization_slug)+"/revenue"});
+}catch(e){n(e);}});
+app.post("/api/admin/integrations/revenue-webhook/rotate",requireDb,auth,role("owner","admin"),integrationTestLimiter,async(q,r,n)=>{try{
  const secret=crypto.randomBytes(32).toString("base64url");
  await db.query("INSERT INTO organization_revenue_webhooks(organization_id,token_hash,active,rotated_by,rotated_at,last_received_at) VALUES($1,$2,true,$3,now(),NULL) ON CONFLICT(organization_id) DO UPDATE SET token_hash=EXCLUDED.token_hash,active=true,rotated_by=EXCLUDED.rotated_by,rotated_at=now(),last_received_at=NULL",[q.actor.organization_id,hash(secret),q.actor.user_id]);
  await audit(q.actor,"integration.revenue_webhook_rotated","revenue_webhook",q.actor.organization_id);

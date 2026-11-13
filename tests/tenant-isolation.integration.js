@@ -240,6 +240,14 @@ try {
     rotateRevenueWebhook(cookieB, csrfB),
   ]);
   assert.equal(webhookA.endpoint, `/api/integrations/${tenants[0].slug}/revenue`);
+  const webhookStatus = await fetch(`${baseUrl}/api/admin/integrations/revenue-webhook`, { headers: { cookie: cookieA } });
+  assert.equal(webhookStatus.status, 200);
+  const webhookStatusBody = await webhookStatus.json();
+  assert.equal(webhookStatusBody.active, true);
+  assert.equal(webhookStatusBody.endpoint, webhookA.endpoint);
+  assert.equal(Object.hasOwn(webhookStatusBody, "secret"), false, "webhook status must never return the secret");
+  const staffWebhookStatus = await fetch(`${baseUrl}/api/admin/integrations/revenue-webhook`, { headers: { cookie: staffCookie } });
+  assert.equal(staffWebhookStatus.status, 403, "staff accounts must not view webhook configuration");
   const storedWebhook = await pool.query(
     "SELECT token_hash,last_received_at FROM organization_revenue_webhooks WHERE organization_id=(SELECT id FROM organizations WHERE slug=$1)",
     [tenants[0].slug],

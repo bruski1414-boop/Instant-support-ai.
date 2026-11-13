@@ -32,10 +32,11 @@ The dashboard shows these totals separately for the trailing 30 days and does no
 Workspace owners and administrators can create or rotate a workspace-specific webhook credential through the authenticated, CSRF-protected endpoint:
 
 - `POST /api/admin/integrations/revenue-webhook/rotate`
-- The response returns a one-time secret and a tenant-specific receiver path: `POST /api/integrations/:slug/revenue`
+- Owners/admins can inspect connection status through `+"`GET /api/admin/integrations/revenue-webhook`"+` without exposing the secret.
+- The setup dashboard shows the receiver URL and lets an owner/admin generate or rotate the one-time secret. The response returns a one-time secret and a tenant-specific receiver path: `POST /api/integrations/:slug/revenue`
 - Send the secret in the `X-Veyra-Webhook-Token` header over HTTPS. Never put it in a URL, browser code, source control or logs.
 - Veyra stores only a SHA-256 hash of the secret. Rotating the secret immediately invalidates the previous one.
-- The receiver is rate-limited and accepts only `booking_confirmed` and `addon_paid` events in the same normalized shape used by the manual ledger: `type`, `externalReference`, `sourceReference`, `amount`, `currency` and `occurredAt`.
+- Secret rotation and its audit record are committed in one database transaction. The receiver is rate-limited and accepts only `booking_confirmed` and `addon_paid` events in the same normalized shape used by the manual ledger: `type`, `externalReference`, `sourceReference`, `amount`, `currency` and `occurredAt`.
 - The external reference is unique per hotel and event type. Repeated deliveries return HTTP 409 rather than adding revenue again.
 - Accepted webhook events are always recorded as `hotel_reported_unlinked`. A provider-supplied conversation ID is deliberately ignored: a booking system event alone does not prove that Veyra caused the booking.
 - Every accepted event updates the connection's last-received time and writes an audit record in the same database transaction.

@@ -8,10 +8,10 @@ function requiresStaffEscalation(message) {
 
   // Escalate clear requests for a person, not ordinary questions that mention staff.
   const explicitHumanRequest =
-    /\b(?:can|could|may) i (?:please )?(?:speak|talk|chat) to (?:a )?(?:human|real person|staff|manager|concierge|reception|front desk)\b/i.test(text) ||
-    /\b(?:speak|talk|chat) to (?:a )?(?:human|real person|staff|manager|concierge|reception|front desk)\b/i.test(text) ||
-    /\b(?:connect|transfer) me (?:to|with) (?:a )?(?:human|real person|staff|manager|concierge|reception|front desk)\b/i.test(text) ||
-    /\b(?:let me speak to|put me through to) (?:a )?(?:human|real person|staff|manager|concierge|reception|front desk)\b/i.test(text) ||
+    /\b(?:can|could|may) i (?:please )?(?:speak|talk|chat) to (?:(?:a|the|our) )?(?:human|real person|staff|manager|concierge|reception|front desk)\b/i.test(text) ||
+    /\b(?:speak|talk|chat) to (?:(?:a|the|our) )?(?:human|real person|staff|manager|concierge|reception|front desk)\b/i.test(text) ||
+    /\b(?:connect|transfer) me (?:to|with) (?:(?:a|the|our) )?(?:human|real person|staff|manager|concierge|reception|front desk)\b/i.test(text) ||
+    /\b(?:let me speak to|put me through to) (?:(?:a|the|our) )?(?:human|real person|staff|manager|concierge|reception|front desk)\b/i.test(text) ||
     /\b(?:human|real person|staff member|hotel staff|manager|concierge|front desk|receptionist)\b.{0,20}\b(please|now|instead|directly)\b/i.test(text);
   if (explicitHumanRequest) return true;
 

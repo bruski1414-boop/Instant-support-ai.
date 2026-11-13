@@ -370,7 +370,18 @@ try {
   assert.equal(afterRefundBody.linkedTotals[0].gross_amount_minor, "25050");
   assert.equal(afterRefundBody.linkedTotals[0].adjusted_amount_minor, "5050");
   assert.equal(afterRefundBody.linkedTotals[0].amount_minor, "20000", "linked net revenue must subtract refunds");
-  assert.equal(afterRefundBody.adjustments.length, 1);
+  const secondRefund = await fetch(baseUrl + "/api/admin/revenue/adjustments", {
+    method: "POST",
+    headers: { cookie: cookieA, "content-type": "application/json", "X-CSRF-Token": csrfA },
+    body: JSON.stringify({ ...refundEvent, externalReference: "REFUND-" + tag + "-SECOND", amount: "25.00" }),
+  });
+  assert.equal(secondRefund.status, 201, await secondRefund.clone().text());
+  const afterSecondRefund = await readRevenue(cookieA);
+  const afterSecondRefundBody = await afterSecondRefund.json();
+  assert.equal(afterSecondRefundBody.linkedTotals[0].gross_amount_minor, "25050", "multiple adjustments must not multiply gross revenue");
+  assert.equal(afterSecondRefundBody.linkedTotals[0].adjusted_amount_minor, "7550");
+  assert.equal(afterSecondRefundBody.linkedTotals[0].amount_minor, "17500");
+  assert.equal(afterSecondRefundBody.adjustments.length, 2);
   const duplicateA = await submitRevenue(cookieA, csrfA, linkedEvent);
   assert.equal(duplicateA.status, 409, "duplicate revenue references must be rejected");
 

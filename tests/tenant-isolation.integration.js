@@ -88,9 +88,26 @@ async function seedConversation(tenant) {
 }
 
 async function readTranscript(cookie, conversationId) {
-  return fetch(`${baseUrl}/api/admin/conversations/${conversationId}`, {
-    headers: { cookie },
+  return fetch(`${baseUrl}/api/admin/conversations/${conversationId}`, { headers: { cookie } });
+}
+
+async function csrfToken(cookie) {
+  const response = await fetch(`${baseUrl}/api/auth/csrf`, { headers: { cookie } });
+  const body = await response.json();
+  assert.equal(response.status, 200, JSON.stringify(body));
+  return body.csrfToken;
+}
+
+async function submitRevenue(cookie, csrf, event) {
+  return fetch(`${baseUrl}/api/admin/revenue`, {
+    method: "POST",
+    headers: { cookie, "content-type": "application/json", "X-CSRF-Token": csrf },
+    body: JSON.stringify(event),
   });
+}
+
+async function readRevenue(cookie) {
+  return fetch(`${baseUrl}/api/admin/revenue`, { headers: { cookie } });
 }
 
 async function seedKnowledge(tenant) {
@@ -160,7 +177,68 @@ try {
   assert.equal(crossKnowledgeAtoB.status, 404, "tenant A must not read tenant B knowledge history");
   const crossKnowledgeBtoA = await readKnowledgeVersions(cookieB, tenants[0].knowledgeId);
   assert.equal(crossKnowledgeBtoA.status, 404, "tenant B must not read tenant A knowledge history");
-  console.log("PASS: tenant-scoped transcripts and knowledge history verified for two hotel workspaces.");
+
+  const [csrfA, csrfB] = await Promise.all([csrfToken(cookieA), csrfToken(cookieB)]);
+  const linkedEvent = {
+    type: "booking_confirmed",
+    externalReference: `PMS-${tag}-BOOKING-A`,
+    sourceReference: `Manager report / PMS export #${tag}`,
+    amount: "250.50",
+    currency: "EUR",
+    occurredAt: new Date(Date.now() - 60_000).toISOString(),
+    conversationId: tenants[0].conversationId,
+  };
+  const createA = await submitRevenue(cookieA, csrfA, linkedEvent);
+  assert.equal(createA.status, 201, await createA.clone().text());
+  const createdA = await createA.json();
+  assert.equal(createdA.event.attribution_status, "veyra_linked_hotel_attested");
+  assert.equal(createdA.event.amount_minor, "25050");
+
+  const duplicateA = await submitRevenue(cookieA, csrfA, linkedEvent);
+  assert.equal(duplicateA.status, 409, "duplicate revenue references must be rejected");
+
+  const crossTenantLink = await submitRevenue(cookieB, csrfB, {
+    ...linkedEvent,
+    externalReference: `PMS-${tag}-CROSS-TENANT`,
+    conversationId: tenants[0].conversationId,
+  });
+  assert.equal(crossTenantLink.status, 400, "a hotel cannot link revenue to another hotel's conversation");
+
+  const unlinkedEvent = {
+    type: "addon_paid",
+    externalReference: `PAY-${tag}-ADDON-B`,
+    sourceReference: `Hotel manager payment reconciliation ${tag}`,
+    amount: "75.00",
+    currency: "USD",
+    occurredAt: new Date(Date.now() - 30_000).toISOString(),
+  };
+  const createB = await submitRevenue(cookieB, csrfB, unlinkedEvent);
+  assert.equal(createB.status, 201, await createB.clone().text());
+  const createdB = await createB.json();
+  assert.equal(createdB.event.attribution_status, "hotel_reported_unlinked");
+
+  const [revenueA, revenueB] = await Promise.all([readRevenue(cookieA), readRevenue(cookieB)]);
+  assert.equal(revenueA.status, 200);
+  assert.equal(revenueB.status, 200);
+  const revenueABody = await revenueA.json();
+  const revenueBBody = await revenueB.json();
+  assert.ok(revenueABody.events.some(event => event.external_reference === linkedEvent.externalReference));
+  assert.ok(!revenueABody.events.some(event => event.external_reference === unlinkedEvent.externalReference));
+  assert.ok(revenueBBody.events.some(event => event.external_reference === unlinkedEvent.externalReference));
+  assert.ok(!revenueBBody.events.some(event => event.external_reference === linkedEvent.externalReference));
+  assert.equal(revenueABody.linkedTotals.reduce((n, item) => n + Number(item.event_count), 0), 1);
+  assert.equal(revenueBBody.linkedTotals.reduce((n, item) => n + Number(item.event_count), 0), 0);
+  assert.equal(revenueBBody.unlinkedTotals.reduce((n, item) => n + Number(item.event_count), 0), 1);
+
+  const missingCsrf = await fetch(`${baseUrl}/api/admin/revenue`, {
+    method: "POST",
+    headers: { cookie: cookieA, "content-type": "application/json" },
+    body: JSON.stringify(linkedEvent),
+  });
+  assert.equal(missingCsrf.status, 403, "revenue writes must require CSRF verification");
+
+  console.log("PASS: tenant-scoped transcripts, knowledge history and revenue evidence verified for two hotel workspaces.");
+
 } finally {
   if (serverReady) {
     for (const tenant of tenants) {

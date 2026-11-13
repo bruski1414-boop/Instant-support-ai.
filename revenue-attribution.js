@@ -6,12 +6,6 @@ function currencyDigits(currency) {
   if (!CURRENCY.test(currency) || !SUPPORTED_CURRENCIES.has(currency)) throw new Error("A supported ISO 4217 currency code is required.");
   return new Intl.NumberFormat("en", { style: "currency", currency }).resolvedOptions().maximumFractionDigits;
 }
-const SUPPORTED_CURRENCIES = new Set(typeof Intl.supportedValuesOf === "function" ? Intl.supportedValuesOf("currency") : ["EUR", "USD", "GBP", "THB", "AED", "JPY"]);
-
-function currencyDigits(currency) {
-  if (!CURRENCY.test(currency) || !SUPPORTED_CURRENCIES.has(currency)) throw new Error("A supported ISO 4217 currency code is required.");
-  return new Intl.NumberFormat("en", { style: "currency", currency }).resolvedOptions().maximumFractionDigits;
-}
 const REFERENCE = /^[A-Za-z0-9._:/# -]{1,180}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -47,7 +41,7 @@ function normalizeRevenueEvent(input) {
   if (Date.parse(occurredAt) > Date.now() + 300000) throw new Error("The revenue event date cannot be in the future.");
 
   return Object.freeze({
-    type, externalReference, sourceReference, amountMinor, currency, currencyDigits: digits,
+    type, externalReference, sourceReference, amountMinor, currency,
     occurredAt: new Date(occurredAt).toISOString(),
     conversationId,
     attributionStatus: conversationId ? "veyra_linked_hotel_attested" : "hotel_reported_unlinked"

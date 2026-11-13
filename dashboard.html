@@ -98,6 +98,23 @@ main{padding:28px clamp(16px,4vw,48px);max-width:1450px;width:100%;margin:auto}.
    <div class="card"><div class="metriclabel">Resolved total</div><div class="metric" id="mResolved">—</div></div>
    <div class="card"><div class="metriclabel">Open staff handoffs</div><div class="metric" id="mOpen">—</div></div>
   </div>
+  <div class="sectionrow"><h2>Revenue evidence · last 30 days</h2><span class="muted">Hotel-attested records only</span></div>
+  <div class="grid" id="revenueSummary">
+   <div class="card"><div class="metriclabel">Veyra-linked confirmed revenue</div><div id="linkedRevenue" class="metric">—</div><div id="linkedRevenueCount" class="muted">Loading…</div></div>
+   <div class="card"><div class="metriclabel">Hotel-reported, not Veyra-attributed</div><div id="unlinkedRevenue" class="metric">—</div><div id="unlinkedRevenueCount" class="muted">Loading…</div></div>
+  </div>
+  <div class="card" style="margin-top:14px">
+   <h3 style="margin-top:0">Record a confirmed booking or paid add-on</h3>
+   <p class="muted">Only enter revenue after the hotel has confirmed it in its own records. Link a Veyra conversation to count it as Veyra-linked; otherwise it is kept separate. Duplicate references are rejected.</p>
+   <form id="revenueForm">
+    <div class="formrow"><div class="field"><label for="revenueType">Event</label><select id="revenueType" required><option value="booking_confirmed">Confirmed booking</option><option value="addon_paid">Paid add-on</option></select></div><div class="field"><label for="revenueAmount">Amount</label><input id="revenueAmount" type="number" min="0.01" step="0.01" placeholder="250.00" required></div><div class="field"><label for="revenueCurrency">Currency</label><select id="revenueCurrency"><option>EUR</option><option>USD</option><option>GBP</option><option>THB</option><option>AED</option></select></div></div>
+    <div class="formrow"><div class="field"><label for="revenueReference">Booking / payment reference</label><input id="revenueReference" maxlength="180" required placeholder="PMS booking or payment ID"></div><div class="field"><label for="revenueSource">Hotel evidence source</label><input id="revenueSource" maxlength="180" required placeholder="Manager report / PMS export reference"></div></div>
+    <div class="formrow"><div class="field"><label for="revenueConversation">Related Veyra conversation (optional)</label><select id="revenueConversation"><option value="">No Veyra conversation — hotel-reported only</option></select></div><div class="field"><label for="revenueDate">Confirmed date</label><input id="revenueDate" type="datetime-local" required></div></div>
+    <div class="actions"><button class="btn primary" type="submit">Save revenue evidence</button><span id="revenueFormMessage" class="muted"></span></div>
+   </form>
+  </div>
+  <div class="sectionrow"><h2>Latest revenue records</h2><span class="muted">Latest 50</span></div>
+  <div class="card tablewrap"><table class="table"><thead><tr><th>TYPE</th><th>AMOUNT</th><th>ATTRIBUTION</th><th>REFERENCE</th><th>CONFIRMED</th></tr></thead><tbody id="revenueRows"><tr><td colspan="5" class="empty">Loading revenue records…</td></tr></tbody></table></div>
   <div class="sectionrow"><h2>Recent conversations</h2><span class="muted">Latest 20</span></div>
   <div class="card tablewrap"><table class="table"><thead><tr><th>CONVERSATION</th><th>LAST GUEST / ASSISTANT MESSAGE</th><th>STATUS</th><th>STARTED</th></tr></thead><tbody id="recentRows"></tbody></table></div>
  </section>
@@ -179,10 +196,27 @@ function switchPanel(name){
 async function loadOverview(){
  const d=await api("/api/admin/overview");const m=d.metrics||{};
  $("mToday").textContent=safe(m.conversations_today||0);$("mWeek").textContent=safe(m.conversations_7d||0);$("mResolved").textContent=safe(m.resolved_total||0);$("mOpen").textContent=safe(m.open_escalations||0);
+ $("revenueConversation").innerHTML='<option value="">No Veyra conversation — hotel-reported only</option>'+(d.conversations||[]).map(c=>'<option value="'+safe(c.id)+'">'+safe(c.id).slice(0,8)+' · '+safe(c.status)+' · '+date(c.started_at)+'</option>').join("");
  const rows=(d.conversations||[]).map(c=>'<tr><td><strong>'+safe(c.id).slice(0,8)+'</strong></td><td>'+safe(c.latest_message||"No message preview")+'</td><td>'+statusTag(c.status)+'</td><td>'+date(c.started_at)+'</td></tr>').join("");
+ await loadRevenue();
  $("recentRows").innerHTML=rows||'<tr><td colspan="4" class="empty">No conversations recorded yet.</td></tr>';
  const canDeleteConversations=["owner","admin"].includes(currentRole);
  $("conversationRows").innerHTML=(d.conversations||[]).map(c=>'<tr><td>'+safe(c.id).slice(0,8)+'</td><td>'+safe(c.latest_message||"—")+'</td><td>'+statusTag(c.status)+'</td><td>'+safe(c.channel)+'</td><td>'+date(c.started_at)+'</td><td><div class="actions"><button class="btn" data-action="view-conversation" data-id="'+safe(c.id)+'">View</button>'+(canDeleteConversations?'<button class="btn danger" data-action="delete-conversation" data-id="'+safe(c.id)+'">Delete</button>':"")+'</div></td></tr>').join("")||'<tr><td colspan="6" class="empty">No conversations recorded yet.</td></tr>';
+}
+function formatRevenue(amountMinor,currency){
+ const digits=new Intl.NumberFormat("en",{style:"currency",currency}).resolvedOptions().maximumFractionDigits;
+ return new Intl.NumberFormat(undefined,{style:"currency",currency}).format(Number(amountMinor)/(10**digits));
+}
+async function loadRevenue(){
+ const d=await api("/api/admin/revenue");
+ const renderTotals=(items)=>items.length?items.map(x=>formatRevenue(x.amount_minor,x.currency)).join(" + "):"—";
+ const count=(items)=>items.reduce((n,x)=>n+Number(x.event_count||0),0);
+ $("linkedRevenue").textContent=renderTotals(d.linkedTotals||[]);
+ $("linkedRevenueCount").textContent=count(d.linkedTotals||0)+" event(s), linked to Veyra conversations";
+ $("unlinkedRevenue").textContent=renderTotals(d.unlinkedTotals||[]);
+ $("unlinkedRevenueCount").textContent=count(d.unlinkedTotals||[])+" event(s), not attributed to Veyra";
+ $("revenueRows").innerHTML=(d.events||[]).map(x=>'<tr><td>'+safe(x.event_type==="booking_confirmed"?"Confirmed booking":"Paid add-on")+'</td><td>'+formatRevenue(x.amount_minor,x.currency)+'</td><td>'+statusTag(x.attribution_status==="veyra_linked_hotel_attested"?"Veyra-linked · hotel-attested":"Hotel-reported · unlinked")+'</td><td>'+safe(x.external_reference)+'<div class="muted">'+safe(x.source_reference)+'</div></td><td>'+date(x.occurred_at)+'</td></tr>').join("")||'<tr><td colspan="5" class="empty">No revenue evidence recorded yet.</td></tr>';
+ $("revenueFormMessage").textContent=d.notice||"";
 }
 async function loadKnowledge(){
  const d=await api("/api/admin/knowledge");
@@ -292,6 +326,18 @@ async function loadUsers(){
  const rows=(d.users||[]).map(x=>{const manageable=x.id!==d.currentUserId&&x.role!=="owner"&&(currentRole==="owner"||x.role==="staff"||x.role==="viewer");const action=manageable?'<button class="btn '+(x.active?"danger":"")+'" data-action="toggle-user" data-id="'+safe(x.id)+'" data-active="'+(!x.active)+'">'+(x.active?"Deactivate":"Reactivate")+'</button>':x.id===d.currentUserId?"Current account":"Protected";return '<tr><td>'+safe(x.email)+'</td><td>'+safe(x.role)+'</td><td><span class="tag '+(x.active?"good":"warn")+'">'+(x.active?"Active":"Inactive")+'</span></td><td>'+date(x.created_at)+'</td><td>'+action+'</td></tr>';}).join("");
  $("memberList").innerHTML='<table class="table"><thead><tr><th>EMAIL</th><th>ROLE</th><th>ACCESS</th><th>CREATED</th><th>ACTION</th></tr></thead><tbody>'+(rows||'<tr><td colspan="5" class="empty">No workspace members yet.</td></tr>')+'</tbody></table>';
 }
+$("revenueForm").addEventListener("submit",async e=>{
+ e.preventDefault();
+ const message=$("revenueFormMessage");message.textContent="Saving…";
+ const localDate=$("revenueDate").value;
+ try{
+  const body={type:$("revenueType").value,amount:$("revenueAmount").value,currency:$("revenueCurrency").value,externalReference:$("revenueReference").value.trim(),sourceReference:$("revenueSource").value.trim(),occurredAt:localDate?new Date(localDate).toISOString():"",conversationId:$("revenueConversation").value||null};
+  const result=await api("/api/admin/revenue",{method:"POST",body:JSON.stringify(body)});
+  message.textContent=result.message||"Revenue evidence saved.";
+  $("revenueForm").reset();
+  await loadRevenue();
+ }catch(err){message.textContent=err.message;}
+});
 $("inviteForm").addEventListener("submit",async e=>{e.preventDefault();const result=$("inviteResult");result.classList.add("hidden");try{const x=await api("/api/admin/invitations",{method:"POST",body:JSON.stringify({email:$("inviteEmail").value,role:$("inviteRole").value})});const url=location.origin+x.invitePath;result.innerHTML='<strong>Invitation created.</strong><p>'+safe(x.message)+'</p><input id="newInviteLink" readonly style="width:100%;background:#080e16;border:1px solid #33445b;color:white;border-radius:8px;padding:10px" value="'+safe(url)+'"><button class="btn" id="copyInviteLink" type="button" style="margin-top:8px">Copy invitation link</button>';result.className="notice good";$("inviteForm").reset();$("copyInviteLink").addEventListener("click",async()=>{try{await navigator.clipboard.writeText(url);showToast("Invitation link copied.");}catch{$("newInviteLink").select();showToast("Select and copy the invitation link.");}});await loadInvitations();}catch(err){result.textContent=err.message;result.className="notice error";}});
 $("memberList").addEventListener("click",async e=>{const b=e.target.closest('button[data-action="toggle-user"]');if(!b)return;const active=b.dataset.active==="true";if(!confirm((active?"Reactivate":"Deactivate")+" this team member? "+(!active?"Their active sessions will be revoked.":"")))return;b.disabled=true;try{await api("/api/admin/users/"+encodeURIComponent(b.dataset.id),{method:"PATCH",body:JSON.stringify({active})});showToast(active?"Team account reactivated.":"Team access revoked.");await loadUsers();}catch(err){notice(err.message,"error");b.disabled=false;}});
 $("invitationList").addEventListener("click",async e=>{const b=e.target.closest('button[data-action="revoke-invitation"]');if(!b)return;if(!confirm("Revoke this unused invitation?"))return;b.disabled=true;try{await api("/api/admin/invitations/"+encodeURIComponent(b.dataset.id),{method:"DELETE",body:"{}"});showToast("Invitation revoked.");await loadInvitations();}catch(err){notice(err.message,"error");b.disabled=false;}});

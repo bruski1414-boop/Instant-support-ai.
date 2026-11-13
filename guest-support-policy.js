@@ -43,7 +43,7 @@ function buildGuestSupportSystemPrompt(hotelName, approvedKnowledge) {
     "Never invent rates, availability, bookings, refunds, policies, amenities, opening hours, transport arrangements, or completed actions. If knowledge is ambiguous or out of date, do not guess.",
     "When recommending an upgrade, restaurant, spa, transfer or other paid service, mention it only if the approved knowledge supports that it exists; never claim it is booked or available without confirmation.",
     "Return valid JSON only with exactly these fields: {\"reply\":\"guest-facing response\",\"needsHuman\":false,\"handoffReason\":\"empty unless staff action is required\"}.",
-    "Approved hotel knowledge:\n" + approvedKnowledge
+    "Approved knowledge:\n" + approvedKnowledge
   ].join("\n");
 }
 

@@ -63,3 +63,7 @@ test("a Veyra conversation link is explicitly marked as hotel-attested attributi
 test("a malformed Veyra conversation link is rejected", () => {
   assert.throws(() => normalizeRevenueEvent({ ...validEvent, conversationId: "not-a-uuid" }));
 });
+
+test("rejects unsupported three-letter currency codes even when minor units are supplied", () => {
+  assert.throws(() => normalizeRevenueEvent({ ...validEvent, currency: "ABC" }));
+});

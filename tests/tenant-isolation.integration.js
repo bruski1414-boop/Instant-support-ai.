@@ -438,6 +438,83 @@ try {
   assert.equal(deletedConversationEvent.attribution_status, "hotel_reported_unlinked");
   assert.equal(afterDeleteBody.linkedTotals.reduce((n, item) => n + Number(item.event_count), 0), 0);
 
+  const orgA = await pool.query("SELECT id FROM organizations WHERE slug=$1", [tenants[0].slug]);
+  const retentionOld = await pool.query(
+    "INSERT INTO conversations(organization_id,channel,status,started_at,last_message_at) VALUES($1,'website','resolved',now()-interval '45 days',now()-interval '40 days') RETURNING id",
+    [orgA.rows[0].id],
+  );
+  const retentionProtected = await pool.query(
+    "INSERT INTO conversations(organization_id,channel,status,started_at,last_message_at) VALUES($1,'website','resolved',now()-interval '45 days',now()-interval '40 days') RETURNING id",
+    [orgA.rows[0].id],
+  );
+  await pool.query(
+    "INSERT INTO escalations(organization_id,conversation_id,reason,status) VALUES($1,$2,'Open staff follow-up','open')",
+    [orgA.rows[0].id, retentionProtected.rows[0].id],
+  );
+  const retentionRevenue = await submitRevenue(cookieA, csrfA, {
+    type: "booking_confirmed",
+    externalReference: `RETENTION-${tag}-BOOKING`,
+    sourceReference: "Hotel PMS retention test record",
+    amount: "125.00",
+    currency: "EUR",
+    occurredAt: new Date(Date.now() - 40 * 86400000).toISOString(),
+    conversationId: retentionOld.rows[0].id,
+  });
+  assert.equal(retentionRevenue.status, 201, await retentionRevenue.clone().text());
+
+  const saveRetention = await fetch(`${baseUrl}/api/admin/retention`, {
+    method: "PUT",
+    headers: { cookie: cookieA, "X-CSRF-Token": csrfA, "content-type": "application/json" },
+    body: JSON.stringify({ retentionDays: 30 }),
+  });
+  assert.equal(saveRetention.status, 200, await saveRetention.clone().text());
+  const staffRetentionChange = await fetch(`${baseUrl}/api/admin/retention`, {
+    method: "PUT",
+    headers: { cookie: staffCookie, "X-CSRF-Token": staffCsrf, "content-type": "application/json" },
+    body: JSON.stringify({ retentionDays: 30 }),
+  });
+  assert.equal(staffRetentionChange.status, 403, "staff cannot change retention policy");
+  const retentionPreview = await fetch(`${baseUrl}/api/admin/retention`, { headers: { cookie: cookieA } });
+  const retentionPreviewBody = await retentionPreview.json();
+  assert.equal(retentionPreviewBody.retentionDays, 30);
+  assert.equal(retentionPreviewBody.eligibleConversations, 1, "open escalations must protect old conversations");
+  const missingRetentionConfirm = await fetch(`${baseUrl}/api/admin/retention/cleanup`, {
+    method: "POST",
+    headers: { cookie: cookieA, "X-CSRF-Token": csrfA, "content-type": "application/json" },
+    body: JSON.stringify({}),
+  });
+  assert.equal(missingRetentionConfirm.status, 400, "retention deletion requires explicit confirmation");
+  const staffRetentionCleanup = await fetch(`${baseUrl}/api/admin/retention/cleanup`, {
+    method: "POST",
+    headers: { cookie: staffCookie, "X-CSRF-Token": staffCsrf, "content-type": "application/json" },
+    body: JSON.stringify({ confirm: true }),
+  });
+  assert.equal(staffRetentionCleanup.status, 403, "staff cannot run retention cleanup");
+  const retentionCleanup = await fetch(`${baseUrl}/api/admin/retention/cleanup`, {
+    method: "POST",
+    headers: { cookie: cookieA, "X-CSRF-Token": csrfA, "content-type": "application/json" },
+    body: JSON.stringify({ confirm: true }),
+  });
+  assert.equal(retentionCleanup.status, 200, await retentionCleanup.clone().text());
+  const retentionCleanupBody = await retentionCleanup.json();
+  assert.equal(retentionCleanupBody.deleted, 1);
+  assert.equal(retentionCleanupBody.remainingEligible, 0);
+  const retainedRevenue = await pool.query(
+    "SELECT conversation_id,attribution_status FROM revenue_events WHERE organization_id=$1 AND external_reference=$2",
+    [orgA.rows[0].id, `RETENTION-${tag}-BOOKING`],
+  );
+  assert.equal(retainedRevenue.rows[0].conversation_id, null);
+  assert.equal(retainedRevenue.rows[0].attribution_status, "hotel_reported_unlinked", "deleting a conversation must remove the Veyra-linked label");
+  const protectedConversation = await pool.query(
+    "SELECT id FROM conversations WHERE id=$1 AND organization_id=$2",
+    [retentionProtected.rows[0].id, orgA.rows[0].id],
+  );
+  assert.equal(protectedConversation.rowCount, 1, "an unresolved staff escalation must prevent retention deletion");
+  const retentionAudit = await pool.query(
+    "SELECT count(*)::int AS count FROM audit_logs WHERE organization_id=$1 AND action='retention.cleanup_executed' AND target_id='1'",
+    [orgA.rows[0].id],
+  );
+  assert.equal(retentionAudit.rows[0].count, 1, "retention cleanup must be audited");
 
   console.log("PASS: tenant-scoped transcripts, knowledge history and revenue evidence verified for two hotel workspaces.");
 

@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { normalizeRevenueEvent } = require("../revenue-attribution");
+const { normalizeRevenueEvent, toMinorUnits } = require("../revenue-attribution");
 
 const validEvent = {
   type: "booking_confirmed",
@@ -43,4 +43,23 @@ test("rejects floating point, zero and negative amounts", () => {
 test("requires a valid three-letter currency and event date", () => {
   assert.throws(() => normalizeRevenueEvent({ ...validEvent, currency: "EURO" }));
   assert.throws(() => normalizeRevenueEvent({ ...validEvent, occurredAt: "not-a-date" }));
+});
+
+test("converts decimal amounts using the currency's minor-unit precision", () => {
+  assert.equal(toMinorUnits("125.50", "EUR"), 12550);
+  assert.equal(toMinorUnits("125", "JPY"), 125);
+  assert.throws(() => toMinorUnits("12.345", "EUR"));
+});
+
+test("a Veyra conversation link is explicitly marked as hotel-attested attribution", () => {
+  const event = normalizeRevenueEvent({
+    ...validEvent,
+    conversationId: "123e4567-e89b-42d3-a456-426614174000"
+  });
+  assert.equal(event.attributionStatus, "veyra_linked_hotel_attested");
+  assert.equal(event.conversationId, "123e4567-e89b-42d3-a456-426614174000");
+});
+
+test("a malformed Veyra conversation link is rejected", () => {
+  assert.throws(() => normalizeRevenueEvent({ ...validEvent, conversationId: "not-a-uuid" }));
 });

@@ -15,7 +15,7 @@ test("normalizes a hotel-attested confirmed booking into minor currency units", 
   const event = normalizeRevenueEvent(validEvent);
   assert.equal(event.currency, "EUR");
   assert.equal(event.amountMinor, 250000);
-  assert.equal(event.attributionStatus, "hotel_attested");
+  assert.equal(event.attributionStatus, "hotel_reported_unlinked");
   assert.equal(event.occurredAt, "2026-11-13T10:30:00.000Z");
 });
 

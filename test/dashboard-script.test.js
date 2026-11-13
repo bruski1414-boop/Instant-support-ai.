@@ -14,6 +14,8 @@ for (const [index, match] of scripts.entries()) {
 }
 
 for (const id of [
+  "revenueAdjustmentForm",
+  "adjustmentMessage",
   "revenueWebhookCard",
   "revenueWebhookStatus",
   "revenueWebhookEndpoint",

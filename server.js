@@ -22,13 +22,14 @@ const prod=process.env.NODE_ENV==="production";
 const cookie=prod?"__Host-veyra_session":"veyra_session";
 app.disable("x-powered-by");
 app.use((_q,r,n)=>{r.setHeader("X-Content-Type-Options","nosniff");r.setHeader("X-Frame-Options","DENY");r.setHeader("Referrer-Policy","strict-origin-when-cross-origin");r.setHeader("Permissions-Policy","camera=(),microphone=(),geolocation=()");n();});
-app.use(cors((req,cb)=>{const o=req.get("Origin");const common={credentials:true,allowedHeaders:["Content-Type","X-CSRF-Token","X-Bootstrap-Token","X-Platform-Provisioning-Token"],methods:["GET","POST","PATCH","DELETE","OPTIONS"]};if(!o||origins.includes(o))return cb(null,{...common,origin:true});const segments=req.path.split("/");if(segments.length!==5||segments[1]!=="api"||segments[2]!=="public"||segments[4]!=="chat"||!db)return cb(null,{...common,origin:false});let hotelSlug;try{hotelSlug=decodeURIComponent(segments[3]);}catch{return cb(null,{...common,origin:false});}db.query("SELECT 1 FROM organizations o JOIN organization_settings s ON s.organization_id=o.id WHERE o.slug=$1 AND s.website_url=$2 LIMIT 1",[hotelSlug,o]).then(x=>cb(null,{...common,origin:x.rowCount>0})).catch(()=>cb(null,{...common,origin:false}));}));
+app.use(cors((req,cb)=>{const o=req.get("Origin");const common={credentials:true,allowedHeaders:["Content-Type","X-CSRF-Token","X-Bootstrap-Token","X-Platform-Provisioning-Token","X-Veyra-Webhook-Token"],methods:["GET","POST","PATCH","DELETE","OPTIONS"]};if(!o||origins.includes(o))return cb(null,{...common,origin:true});const segments=req.path.split("/");if(segments.length!==5||segments[1]!=="api"||segments[2]!=="public"||segments[4]!=="chat"||!db)return cb(null,{...common,origin:false});let hotelSlug;try{hotelSlug=decodeURIComponent(segments[3]);}catch{return cb(null,{...common,origin:false});}db.query("SELECT 1 FROM organizations o JOIN organization_settings s ON s.organization_id=o.id WHERE o.slug=$1 AND s.website_url=$2 LIMIT 1",[hotelSlug,o]).then(x=>cb(null,{...common,origin:x.rowCount>0})).catch(()=>cb(null,{...common,origin:false}));}));
 app.use(express.json({limit:"20kb"}));
 app.use("/api/",rateLimit({windowMs:60000,limit:60,standardHeaders:"draft-7",legacyHeaders:false}));
 app.use("/api/auth/",rateLimit({windowMs:900000,limit:10,standardHeaders:"draft-7",legacyHeaders:false}));
 const setupLimiter=rateLimit({windowMs:3600000,limit:5,standardHeaders:"draft-7",legacyHeaders:false});
 const platformProvisionLimiter=rateLimit({windowMs:3600000,limit:10,standardHeaders:"draft-7",legacyHeaders:false});
 const integrationTestLimiter=rateLimit({windowMs:3600000,limit:5,standardHeaders:"draft-7",legacyHeaders:false});
+const revenueWebhookLimiter=rateLimit({windowMs:60000,limit:30,standardHeaders:"draft-7",legacyHeaders:false});
 const publicChatLimiter=rateLimit({windowMs:300000,limit:10,standardHeaders:"draft-7",legacyHeaders:false});
 const invitationAcceptLimiter=rateLimit({windowMs:3600000,limit:5,standardHeaders:"draft-7",legacyHeaders:false});
 app.use("/api/invitations/accept",invitationAcceptLimiter);
@@ -56,6 +57,7 @@ const schema=[
 "CREATE INDEX IF NOT EXISTS conversations_org_time_idx ON conversations(organization_id,started_at DESC)",
 "CREATE TABLE IF NOT EXISTS revenue_events(id UUID PRIMARY KEY DEFAULT gen_random_uuid(),organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,event_type TEXT NOT NULL CHECK(event_type IN ('booking_confirmed','addon_paid')),external_reference TEXT NOT NULL,source_reference TEXT NOT NULL,amount_minor BIGINT NOT NULL CHECK(amount_minor>0),currency CHAR(3) NOT NULL,occurred_at TIMESTAMPTZ NOT NULL,conversation_id UUID,attribution_status TEXT NOT NULL CHECK(attribution_status IN ('veyra_linked_hotel_attested','hotel_reported_unlinked')),created_by UUID REFERENCES users(id) ON DELETE SET NULL,created_at TIMESTAMPTZ NOT NULL DEFAULT now(),UNIQUE(organization_id,event_type,external_reference))",
 "CREATE INDEX IF NOT EXISTS revenue_events_org_date_idx ON revenue_events(organization_id,occurred_at DESC)",
+"CREATE TABLE IF NOT EXISTS organization_revenue_webhooks(organization_id UUID PRIMARY KEY REFERENCES organizations(id) ON DELETE CASCADE,token_hash TEXT NOT NULL,active BOOLEAN NOT NULL DEFAULT true,rotated_by UUID REFERENCES users(id) ON DELETE SET NULL,rotated_at TIMESTAMPTZ NOT NULL DEFAULT now(),last_received_at TIMESTAMPTZ)",
 
 "CREATE TABLE IF NOT EXISTS messages(id UUID PRIMARY KEY DEFAULT gen_random_uuid(),conversation_id UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,role TEXT NOT NULL CHECK(role IN ('guest','assistant','staff')),content TEXT NOT NULL,created_at TIMESTAMPTZ NOT NULL DEFAULT now())",
 "CREATE TABLE IF NOT EXISTS escalations(id UUID PRIMARY KEY DEFAULT gen_random_uuid(),organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,conversation_id UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,reason TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open','claimed','resolved')),assigned_to UUID REFERENCES users(id) ON DELETE SET NULL,created_at TIMESTAMPTZ NOT NULL DEFAULT now(),resolved_at TIMESTAMPTZ,notification_status TEXT NOT NULL DEFAULT 'not_configured',notification_attempts INTEGER NOT NULL DEFAULT 0,notification_last_attempt_at TIMESTAMPTZ)",
@@ -199,6 +201,27 @@ app.post("/api/admin/revenue",requireDb,auth,role("owner","admin"),async(q,r,n)=
  await client.query("COMMIT");
  r.status(201).json({event:inserted.rows[0],message:event.conversationId?"Saved as hotel-attested and linked to a Veyra conversation.":"Saved as hotel-reported, not attributed to Veyra."});
 }catch(e){if(client)try{await client.query("ROLLBACK");}catch{}if(e?.code==="23505")return r.status(409).json({error:"That event reference has already been recorded for this hotel. Duplicate revenue was not added."});if(e instanceof Error&&/required|valid|positive|future|decimal places|cannot be/i.test(e.message))return r.status(400).json({error:e.message});n(e);}finally{client?.release();}});
+
+app.post("/api/admin/integrations/revenue-webhook/rotate",requireDb,auth,role("owner","admin"),async(q,r,n)=>{try{
+ const secret=crypto.randomBytes(32).toString("base64url");
+ await db.query("INSERT INTO organization_revenue_webhooks(organization_id,token_hash,active,rotated_by,rotated_at,last_received_at) VALUES($1,$2,true,$3,now(),NULL) ON CONFLICT(organization_id) DO UPDATE SET token_hash=EXCLUDED.token_hash,active=true,rotated_by=EXCLUDED.rotated_by,rotated_at=now(),last_received_at=NULL",[q.actor.organization_id,hash(secret),q.actor.user_id]);
+ await audit(q.actor,"integration.revenue_webhook_rotated","revenue_webhook",q.actor.organization_id);
+ r.status(201).json({active:true,secret,endpoint:"/api/integrations/"+encodeURIComponent(q.actor.organization_slug)+"/revenue",message:"Copy this secret now. It is shown only once; rotating it immediately invalidates the previous secret."});
+}catch(e){n(e);}});
+app.post("/api/integrations/:slug/revenue",requireDb,revenueWebhookLimiter,async(q,r,n)=>{let client;try{
+ const supplied=q.get("X-Veyra-Webhook-Token");
+ if(typeof supplied!=="string"||supplied.length<40||supplied.length>100)return r.status(401).json({error:"Webhook authentication failed."});
+ const connection=await db.query("SELECT o.id AS organization_id,w.token_hash FROM organizations o JOIN organization_revenue_webhooks w ON w.organization_id=o.id WHERE o.slug=$1 AND o.status<>'suspended' AND w.active=true",[q.params.slug]);
+ if(!connection.rowCount||!equal(hash(supplied),connection.rows[0].token_hash))return r.status(401).json({error:"Webhook authentication failed."});
+ const event=normalizeRevenueEvent({...q.body,conversationId:undefined});
+ client=await db.connect();
+ await client.query("BEGIN");
+ const inserted=await client.query("INSERT INTO revenue_events(organization_id,event_type,external_reference,source_reference,amount_minor,currency,occurred_at,conversation_id,attribution_status,created_by) VALUES($1,$2,$3,$4,$5,$6,$7,NULL,'hotel_reported_unlinked',NULL) RETURNING id,event_type,external_reference,source_reference,amount_minor::text,currency,occurred_at,conversation_id,attribution_status,created_at",[connection.rows[0].organization_id,event.type,event.externalReference,event.sourceReference,event.amountMinor,event.currency,event.occurredAt]);
+ await client.query("UPDATE organization_revenue_webhooks SET last_received_at=now() WHERE organization_id=$1",[connection.rows[0].organization_id]);
+ await client.query("INSERT INTO audit_logs(organization_id,actor_user_id,action,target_type,target_id) VALUES($1,NULL,'revenue.webhook_received','revenue_event',$2)",[connection.rows[0].organization_id,inserted.rows[0].id]);
+ await client.query("COMMIT");
+ r.status(201).json({event:inserted.rows[0],message:"Provider event accepted as hotel-reported revenue. It has not been attributed to Veyra or linked to a conversation."});
+}catch(e){if(client)try{await client.query("ROLLBACK");}catch{}if(e?.code==="23505")return r.status(409).json({error:"This booking or payment reference has already been received. Duplicate revenue was not added."});if(e instanceof Error&&/required|valid|positive|future|decimal places|cannot be/i.test(e.message))return r.status(400).json({error:e.message});n(e);}finally{client?.release();}});
 app.get("/api/admin/overview",requireDb,auth,async(q,r,n)=>{try{const org=q.actor.organization_id;const [m,e,c]=await Promise.all([
  db.query("SELECT count(*) FILTER(WHERE started_at>=date_trunc('day',now()))::int AS conversations_today,count(*) FILTER(WHERE started_at>=now()-interval '7 days')::int AS conversations_7d,count(*) FILTER(WHERE status='resolved')::int AS resolved_total FROM conversations WHERE organization_id=$1",[org]),
  db.query("SELECT count(*)::int AS open_escalations FROM escalations WHERE organization_id=$1 AND status<>'resolved'",[org]),

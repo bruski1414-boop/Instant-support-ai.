@@ -18,6 +18,7 @@ for (const id of [
   "revenueWebhookStatus",
   "revenueWebhookEndpoint",
   "rotateRevenueWebhook",
+  "disableRevenueWebhook",
   "revenueWebhookSecret",
   "copyRevenueWebhookEndpoint",
   "copyRevenueWebhook",

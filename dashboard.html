@@ -239,9 +239,9 @@ async function loadRevenue(){
  const count=(items)=>items.reduce((n,x)=>n+Number(x.event_count||0),0);
  const adjustmentSummary=(items)=>items.filter(x=>Number(x.adjusted_amount_minor)>0).map(x=>formatRevenue(x.gross_amount_minor,x.currency)+" gross − "+formatRevenue(x.adjusted_amount_minor,x.currency)+" adjustments").join(" · ");
  $("linkedRevenue").textContent=renderTotals(d.linkedTotals||[]);
- $("linkedRevenueCount").textContent=count(d.linkedTotals||[])+" event(s), linked to Veyra conversations"+(adjustmentSummary(d.linkedTotals||())?" · "+adjustmentSummary(d.linkedTotals||()):"");
+ $("linkedRevenueCount").textContent=count(d.linkedTotals||[])+" event(s), linked to Veyra conversations"+(adjustmentSummary(d.linkedTotals||[])?" · "+adjustmentSummary(d.linkedTotals||[]):"");
  $("unlinkedRevenue").textContent=renderTotals(d.unlinkedTotals||[]);
- $("unlinkedRevenueCount").textContent=count(d.unlinkedTotals||[])+" event(s), not attributed to Veyra"+(adjustmentSummary(d.unlinkedTotals||())?" · "+adjustmentSummary(d.unlinkedTotals||()):"");
+ $("unlinkedRevenueCount").textContent=count(d.unlinkedTotals||[])+" event(s), not attributed to Veyra"+(adjustmentSummary(d.unlinkedTotals||[])?" · "+adjustmentSummary(d.unlinkedTotals||[]):"");
  $("revenueRows").innerHTML=(d.events||[]).map(x=>'<tr><td>'+safe(x.event_type==="booking_confirmed"?"Confirmed booking":"Paid add-on")+'</td><td>'+formatRevenue(x.amount_minor,x.currency)+'</td><td>'+(x.attribution_status==="veyra_linked_hotel_attested"?'<span class="tag good">Veyra-linked · hotel-attested</span>':'<span class="tag warn">Hotel-reported · unlinked</span>')+'</td><td>'+safe(x.external_reference)+'<div class="muted">'+safe(x.source_reference)+'</div></td><td>'+date(x.occurred_at)+'</td></tr>').concat((d.adjustments||[]).map(x=>'<tr><td>'+safe(x.adjustment_type==="refund"?"Refund":"Chargeback")+'</td><td>−'+formatRevenue(x.amount_minor,x.currency)+'</td><td><span class="tag warn">Revenue adjustment</span></td><td>'+safe(x.external_reference)+'<div class="muted">Original: '+safe(x.original_external_reference)+' · '+safe(x.source_reference)+'</div></td><td>'+date(x.occurred_at)+'</td></tr>')).join("")||'<tr><td colspan="5" class="empty">No revenue evidence recorded yet.</td></tr>';
  $("revenueFormMessage").textContent=d.notice||"";
 }

@@ -206,12 +206,15 @@ app.get("/api/admin/integrations/revenue-webhook",requireDb,auth,role("owner","a
  const x=await db.query("SELECT active,rotated_at,last_received_at FROM organization_revenue_webhooks WHERE organization_id=$1",[q.actor.organization_id]);
  r.json({active:Boolean(x.rows[0]?.active),rotatedAt:x.rows[0]?.rotated_at||null,lastReceivedAt:x.rows[0]?.last_received_at||null,endpoint:"/api/integrations/"+encodeURIComponent(q.actor.organization_slug)+"/revenue"});
 }catch(e){n(e);}});
-app.post("/api/admin/integrations/revenue-webhook/rotate",requireDb,auth,role("owner","admin"),integrationTestLimiter,async(q,r,n)=>{try{
+app.post("/api/admin/integrations/revenue-webhook/rotate",requireDb,auth,role("owner","admin"),integrationTestLimiter,async(q,r,n)=>{let client;try{
  const secret=crypto.randomBytes(32).toString("base64url");
- await db.query("INSERT INTO organization_revenue_webhooks(organization_id,token_hash,active,rotated_by,rotated_at,last_received_at) VALUES($1,$2,true,$3,now(),NULL) ON CONFLICT(organization_id) DO UPDATE SET token_hash=EXCLUDED.token_hash,active=true,rotated_by=EXCLUDED.rotated_by,rotated_at=now(),last_received_at=NULL",[q.actor.organization_id,hash(secret),q.actor.user_id]);
- await audit(q.actor,"integration.revenue_webhook_rotated","revenue_webhook",q.actor.organization_id);
+ client=await db.connect();
+ await client.query("BEGIN");
+ await client.query("INSERT INTO organization_revenue_webhooks(organization_id,token_hash,active,rotated_by,rotated_at,last_received_at) VALUES($1,$2,true,$3,now(),NULL) ON CONFLICT(organization_id) DO UPDATE SET token_hash=EXCLUDED.token_hash,active=true,rotated_by=EXCLUDED.rotated_by,rotated_at=now(),last_received_at=NULL",[q.actor.organization_id,hash(secret),q.actor.user_id]);
+ await client.query("INSERT INTO audit_logs(organization_id,actor_user_id,action,target_type,target_id) VALUES($1,$2,'integration.revenue_webhook_rotated','revenue_webhook',$3)",[q.actor.organization_id,q.actor.user_id,q.actor.organization_id]);
+ await client.query("COMMIT");
  r.status(201).json({active:true,secret,endpoint:"/api/integrations/"+encodeURIComponent(q.actor.organization_slug)+"/revenue",message:"Copy this secret now. It is shown only once; rotating it immediately invalidates the previous secret."});
-}catch(e){n(e);}});
+}catch(e){if(client)try{await client.query("ROLLBACK");}catch{}n(e);}finally{client?.release();}});
 app.post("/api/integrations/:slug/revenue",requireDb,revenueWebhookLimiter,async(q,r,n)=>{let client;try{
  const supplied=q.get("X-Veyra-Webhook-Token");
  if(typeof supplied!=="string"||supplied.length<40||supplied.length>100)return r.status(401).json({error:"Webhook authentication failed."});

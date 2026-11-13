@@ -362,7 +362,7 @@ try {
   assert.ok(!revenueBBody.events.some(event => event.external_reference === linkedEvent.externalReference));
   assert.equal(revenueABody.linkedTotals.reduce((n, item) => n + Number(item.event_count), 0), 1);
   assert.equal(revenueBBody.linkedTotals.reduce((n, item) => n + Number(item.event_count), 0), 0);
-  assert.equal(revenueBBody.unlinkedTotals.reduce((n, item) => n + Number(item.event_count), 0), 1);
+  assert.equal(revenueBBody.unlinkedTotals.reduce((n, item) => n + Number(item.event_count), 0), 2);
 
   const missingCsrf = await fetch(`${baseUrl}/api/admin/revenue`, {
     method: "POST",

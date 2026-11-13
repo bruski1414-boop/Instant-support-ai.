@@ -242,6 +242,20 @@ try {
   });
   assert.equal(missingCsrf.status, 403, "revenue writes must require CSRF verification");
 
+  const deleteConversation = await fetch(`${baseUrl}/api/admin/conversations/${tenants[0].conversationId}`, {
+    method: "DELETE",
+    headers: { cookie: cookieA, "X-CSRF-Token": csrfA },
+  });
+  assert.equal(deleteConversation.status, 200, "owners must be able to delete their own conversation");
+  const afterDelete = await readRevenue(cookieA);
+  assert.equal(afterDelete.status, 200);
+  const afterDeleteBody = await afterDelete.json();
+  const deletedConversationEvent = afterDeleteBody.events.find(event => event.external_reference === linkedEvent.externalReference);
+  assert.equal(deletedConversationEvent.conversation_id, null);
+  assert.equal(deletedConversationEvent.attribution_status, "hotel_reported_unlinked");
+  assert.equal(afterDeleteBody.linkedTotals.reduce((n, item) => n + Number(item.event_count), 0), 0);
+
+
   console.log("PASS: tenant-scoped transcripts, knowledge history and revenue evidence verified for two hotel workspaces.");
 
 } finally {

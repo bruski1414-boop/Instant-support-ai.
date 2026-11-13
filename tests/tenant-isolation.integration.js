@@ -193,6 +193,11 @@ try {
   const createdA = await createA.json();
   assert.equal(createdA.event.attribution_status, "veyra_linked_hotel_attested");
   assert.equal(createdA.event.amount_minor, "25050");
+  const auditA = await pool.query(
+    "SELECT count(*)::int AS count FROM audit_logs WHERE action='revenue.attested' AND target_id=$1",
+    [createdA.event.id],
+  );
+  assert.equal(auditA.rows[0].count, 1, "accepted revenue must have an audit record");
 
   const duplicateA = await submitRevenue(cookieA, csrfA, linkedEvent);
   assert.equal(duplicateA.status, 409, "duplicate revenue references must be rejected");

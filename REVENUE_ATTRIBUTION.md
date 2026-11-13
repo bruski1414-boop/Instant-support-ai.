@@ -13,7 +13,7 @@ Each record requires an external booking/payment reference, a hotel evidence-sou
 - `veyra_linked_hotel_attested`: an owner/admin selected a conversation belonging to the same hotel workspace. This is hotel-attested attribution, not independent proof that Veyra caused the booking.
 - `hotel_reported_unlinked`: the hotel supplied a confirmed revenue record but did not link it to a Veyra conversation. It is deliberately excluded from the Veyra-linked total.
 
-The dashboard shows these totals separately for the trailing 30 days and does not combine different currencies.
+The dashboard shows these totals separately for the trailing 30 days and does not combine different currencies. Totals are net of recorded refunds and chargebacks.
 
 ## Controls
 
@@ -24,6 +24,8 @@ The dashboard shows these totals separately for the trailing 30 days and does no
 - Revenue writes require the existing session CSRF token.
 - A database uniqueness constraint on organization, event type and external reference prevents duplicate submissions, including concurrent retries.
 - Every accepted record creates an audit-log entry in the same database transaction as the revenue record, so a failed audit write cannot leave an unaudited revenue entry.
+- Owners/admins can record partial refunds and chargebacks against an original booking or paid add-on. Each adjustment has its own unique external reference, hotel evidence source and audit record.
+- Adjustments must match the original event currency and cannot exceed the remaining unadjusted amount. The original gross event is retained; dashboard totals subtract recorded adjustments to show net revenue.
 - The server validates event type, source/reference lengths and characters, amount precision, currency format, event date and optional conversation UUID.
 - When a conversation is supplied, the server verifies it belongs to the same hotel workspace before accepting the event.
 
@@ -42,7 +44,7 @@ Workspace owners and administrators can create or rotate a workspace-specific we
 - Accepted webhook events are always recorded as `hotel_reported_unlinked`. A provider-supplied conversation ID is deliberately ignored: a booking system event alone does not prove that Veyra caused the booking.
 - Every accepted event updates the connection's last-received time and writes an audit record in the same database transaction.
 
-This is a generic authenticated receiver, not a finished connector to a named PMS, booking engine or payment processor. A provider or secure integration relay must be configured to map its verified events into Veyra's normalized payload and send the custom header. Provider-specific authentication, event mapping, retries, cancellation/refund handling, reconciliation and production credentials remain future work.
+This is a generic authenticated receiver, not a finished connector to a named PMS, booking engine or payment processor. A provider or secure integration relay must be configured to map its verified events into Veyra's normalized payload and send the custom header. Provider-specific authentication, event mapping, retries, automated cancellation/refund delivery, reconciliation and production credentials remain future work. Refunds and chargebacks must currently be entered by an owner/admin through the dashboard.
 
 ## Current limitations
 
@@ -54,5 +56,6 @@ The dashboard's Veyra-linked label means only that the hotel linked the record t
 
 - `GET /api/admin/revenue`: returns 30-day totals by currency and the latest 50 hotel-attested records.
 - `POST /api/admin/revenue`: owner/admin only. Accepts `type`, `externalReference`, `sourceReference`, `amount`, `currency`, `occurredAt` and optional `conversationId`.
+- `POST /api/admin/revenue/adjustments`: owner/admin only. Accepts `type` (`refund` or `chargeback`), `originalType`, `originalExternalReference`, `externalReference`, `sourceReference`, `amount`, `currency` and `occurredAt`.
 
 All POST requests use the existing authenticated session and CSRF protection.

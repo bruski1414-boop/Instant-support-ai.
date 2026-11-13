@@ -308,6 +308,21 @@ try {
   });
   assert.equal(newSecretEvent.status, 201, "the rotated webhook secret must authenticate successfully");
 
+  const disableWebhook = await fetch(`${baseUrl}/api/admin/integrations/revenue-webhook`, {
+    method: "DELETE",
+    headers: { cookie: cookieA, "X-CSRF-Token": csrfA, "content-type": "application/json" },
+    body: "{}",
+  });
+  assert.equal(disableWebhook.status, 200, "owners must be able to disable a revenue webhook");
+  const disabledAttempt = await sendProviderRevenue(tenants[0].slug, rotatedWebhook.secret, {
+    ...providerEvent,
+    externalReference: `PMS-WEBHOOK-${tag}-AFTER-DISABLE`,
+  });
+  assert.equal(disabledAttempt.status, 401, "a disabled webhook must reject its previously active secret");
+  const disabledStatus = await fetch(`${baseUrl}/api/admin/integrations/revenue-webhook`, { headers: { cookie: cookieA } });
+  assert.equal((await disabledStatus.json()).active, false);
+
+
   const linkedEvent = {
     type: "booking_confirmed",
     externalReference: `PMS-${tag}-BOOKING-A`,

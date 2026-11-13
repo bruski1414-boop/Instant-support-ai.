@@ -98,6 +98,7 @@ main{padding:28px clamp(16px,4vw,48px);max-width:1450px;width:100%;margin:auto}.
    <div class="card"><div class="metriclabel">Resolved total</div><div class="metric" id="mResolved">—</div></div>
    <div class="card"><div class="metriclabel">Open staff handoffs</div><div class="metric" id="mOpen">—</div></div>
   </div>
+  <div id="revenueSection">
   <div class="sectionrow"><h2>Revenue evidence · last 30 days</h2><span class="muted">Hotel-attested records only</span></div>
   <div class="grid" id="revenueSummary">
    <div class="card"><div class="metriclabel">Veyra-linked confirmed revenue</div><div id="linkedRevenue" class="metric">—</div><div id="linkedRevenueCount" class="muted">Loading…</div></div>
@@ -115,6 +116,7 @@ main{padding:28px clamp(16px,4vw,48px);max-width:1450px;width:100%;margin:auto}.
   </div>
   <div class="sectionrow"><h2>Latest revenue records</h2><span class="muted">Latest 50</span></div>
   <div class="card tablewrap"><table class="table"><thead><tr><th>TYPE</th><th>AMOUNT</th><th>ATTRIBUTION</th><th>REFERENCE</th><th>CONFIRMED</th></tr></thead><tbody id="revenueRows"><tr><td colspan="5" class="empty">Loading revenue records…</td></tr></tbody></table></div>
+  </div>
   <div class="sectionrow"><h2>Recent conversations</h2><span class="muted">Latest 20</span></div>
   <div class="card tablewrap"><table class="table"><thead><tr><th>CONVERSATION</th><th>LAST GUEST / ASSISTANT MESSAGE</th><th>STATUS</th><th>STARTED</th></tr></thead><tbody id="recentRows"></tbody></table></div>
  </section>
@@ -198,7 +200,7 @@ async function loadOverview(){
  $("mToday").textContent=safe(m.conversations_today||0);$("mWeek").textContent=safe(m.conversations_7d||0);$("mResolved").textContent=safe(m.resolved_total||0);$("mOpen").textContent=safe(m.open_escalations||0);
  $("revenueConversation").innerHTML='<option value="">No Veyra conversation — hotel-reported only</option>'+(d.conversations||[]).map(c=>'<option value="'+safe(c.id)+'">'+safe(c.id).slice(0,8)+' · '+safe(c.status)+' · '+date(c.started_at)+'</option>').join("");
  const rows=(d.conversations||[]).map(c=>'<tr><td><strong>'+safe(c.id).slice(0,8)+'</strong></td><td>'+safe(c.latest_message||"No message preview")+'</td><td>'+statusTag(c.status)+'</td><td>'+date(c.started_at)+'</td></tr>').join("");
- await loadRevenue();
+ if(["owner","admin"].includes(currentRole)){await loadRevenue();$("revenueSection").classList.remove("hidden");}else{$("revenueSection").classList.add("hidden");}
  $("recentRows").innerHTML=rows||'<tr><td colspan="4" class="empty">No conversations recorded yet.</td></tr>';
  const canDeleteConversations=["owner","admin"].includes(currentRole);
  $("conversationRows").innerHTML=(d.conversations||[]).map(c=>'<tr><td>'+safe(c.id).slice(0,8)+'</td><td>'+safe(c.latest_message||"—")+'</td><td>'+statusTag(c.status)+'</td><td>'+safe(c.channel)+'</td><td>'+date(c.started_at)+'</td><td><div class="actions"><button class="btn" data-action="view-conversation" data-id="'+safe(c.id)+'">View</button>'+(canDeleteConversations?'<button class="btn danger" data-action="delete-conversation" data-id="'+safe(c.id)+'">Delete</button>':"")+'</div></td></tr>').join("")||'<tr><td colspan="6" class="empty">No conversations recorded yet.</td></tr>';

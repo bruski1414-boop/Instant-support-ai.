@@ -21,6 +21,25 @@ function toMinorUnits(amount, currency) {
   return minor;
 }
 
+function normalizeRevenueAdjustment(input) {
+  const value = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+  const type = typeof value.type === "string" ? value.type.trim() : "";
+  const originalType = typeof value.originalType === "string" ? value.originalType.trim() : "";
+  const externalReference = typeof value.externalReference === "string" ? value.externalReference.trim() : "";
+  const originalExternalReference = typeof value.originalExternalReference === "string" ? value.originalExternalReference.trim() : "";
+  const sourceReference = typeof value.sourceReference === "string" ? value.sourceReference.trim() : "";
+  const currency = typeof value.currency === "string" ? value.currency.trim().toUpperCase() : "";
+  const occurredAt = typeof value.occurredAt === "string" ? value.occurredAt : "";
+  if (!["refund", "chargeback"].includes(type)) throw new Error("Choose a refund or chargeback adjustment.");
+  if (!ALLOWED_EVENT_TYPES.has(originalType)) throw new Error("Choose the original confirmed booking or paid add-on type.");
+  if (!REFERENCE.test(externalReference) || !REFERENCE.test(originalExternalReference)) throw new Error("Valid adjustment and original event references are required.");
+  if (!sourceReference || sourceReference.length > 180 || sourceReference.split("").some(ch => ch.charCodeAt(0) < 32)) throw new Error("A hotel source reference is required.");
+  const amountMinor = toMinorUnits(value.amount, currency);
+  if (!occurredAt || Number.isNaN(Date.parse(occurredAt))) throw new Error("A valid adjustment date is required.");
+  if (Date.parse(occurredAt) > Date.now() + 300000) throw new Error("The adjustment date cannot be in the future.");
+  return Object.freeze({ type, originalType, externalReference, originalExternalReference, sourceReference, amountMinor, currency, occurredAt: new Date(occurredAt).toISOString() });
+}
+
 function normalizeRevenueEvent(input) {
   const value = input && typeof input === "object" && !Array.isArray(input) ? input : {};
   const type = typeof value.type === "string" ? value.type.trim() : "";
@@ -48,4 +67,4 @@ function normalizeRevenueEvent(input) {
   });
 }
 
-module.exports = { normalizeRevenueEvent, toMinorUnits, currencyDigits };
+module.exports = { normalizeRevenueEvent, normalizeRevenueAdjustment, toMinorUnits, currencyDigits };

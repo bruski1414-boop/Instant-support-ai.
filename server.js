@@ -185,16 +185,19 @@ app.get("/api/admin/revenue",requireDb,auth,async(q,r,n)=>{try{
  ]);
  r.json({windowDays:30,linkedTotals:linked.rows,unlinkedTotals:unlinked.rows,events:events.rows,notice:"Hotel-attested records only. Veyra-linked means a hotel manager linked the record to a Veyra conversation; it is not independently confirmed by a PMS or payment processor."});
 }catch(e){n(e);}});
-app.post("/api/admin/revenue",requireDb,auth,role("owner","admin"),async(q,r,n)=>{try{
+app.post("/api/admin/revenue",requireDb,auth,role("owner","admin"),async(q,r,n)=>{let client;try{
  const event=normalizeRevenueEvent(q.body||{});
+ client=await db.connect();
+ await client.query("BEGIN");
  if(event.conversationId){
-  const conversation=await db.query("SELECT id FROM conversations WHERE id=$1 AND organization_id=$2",[event.conversationId,q.actor.organization_id]);
-  if(!conversation.rowCount)return r.status(400).json({error:"That conversation does not belong to this hotel workspace."});
+  const conversation=await client.query("SELECT id FROM conversations WHERE id=$1 AND organization_id=$2",[event.conversationId,q.actor.organization_id]);
+  if(!conversation.rowCount){await client.query("ROLLBACK");return r.status(400).json({error:"That conversation does not belong to this hotel workspace."});}
  }
- const inserted=await db.query("INSERT INTO revenue_events(organization_id,event_type,external_reference,source_reference,amount_minor,currency,occurred_at,conversation_id,attribution_status,created_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id,event_type,external_reference,source_reference,amount_minor::text,currency,occurred_at,conversation_id,attribution_status,created_at",[q.actor.organization_id,event.type,event.externalReference,event.sourceReference,event.amountMinor,event.currency,event.occurredAt,event.conversationId,event.attributionStatus,q.actor.user_id]);
- await audit(q.actor,"revenue.attested","revenue_event",inserted.rows[0].id);
+ const inserted=await client.query("INSERT INTO revenue_events(organization_id,event_type,external_reference,source_reference,amount_minor,currency,occurred_at,conversation_id,attribution_status,created_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id,event_type,external_reference,source_reference,amount_minor::text,currency,occurred_at,conversation_id,attribution_status,created_at",[q.actor.organization_id,event.type,event.externalReference,event.sourceReference,event.amountMinor,event.currency,event.occurredAt,event.conversationId,event.attributionStatus,q.actor.user_id]);
+ await client.query("INSERT INTO audit_logs(organization_id,actor_user_id,action,target_type,target_id) VALUES($1,$2,'revenue.attested','revenue_event',$3)",[q.actor.organization_id,q.actor.user_id,inserted.rows[0].id]);
+ await client.query("COMMIT");
  r.status(201).json({event:inserted.rows[0],message:event.conversationId?"Saved as hotel-attested and linked to a Veyra conversation.":"Saved as hotel-reported, not attributed to Veyra."});
-}catch(e){if(e?.code==="23505")return r.status(409).json({error:"That event reference has already been recorded for this hotel. Duplicate revenue was not added."});if(e instanceof Error&&/required|valid|positive|future|decimal places|cannot be/i.test(e.message))return r.status(400).json({error:e.message});n(e);}});
+}catch(e){if(client)try{await client.query("ROLLBACK");}catch{}if(e?.code==="23505")return r.status(409).json({error:"That event reference has already been recorded for this hotel. Duplicate revenue was not added."});if(e instanceof Error&&/required|valid|positive|future|decimal places|cannot be/i.test(e.message))return r.status(400).json({error:e.message});n(e);}finally{client?.release();}});
 app.get("/api/admin/overview",requireDb,auth,async(q,r,n)=>{try{const org=q.actor.organization_id;const [m,e,c]=await Promise.all([
  db.query("SELECT count(*) FILTER(WHERE started_at>=date_trunc('day',now()))::int AS conversations_today,count(*) FILTER(WHERE started_at>=now()-interval '7 days')::int AS conversations_7d,count(*) FILTER(WHERE status='resolved')::int AS resolved_total FROM conversations WHERE organization_id=$1",[org]),
  db.query("SELECT count(*)::int AS open_escalations FROM escalations WHERE organization_id=$1 AND status<>'resolved'",[org]),

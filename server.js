@@ -215,6 +215,15 @@ app.post("/api/admin/integrations/revenue-webhook/rotate",requireDb,auth,role("o
  await client.query("COMMIT");
  r.status(201).json({active:true,secret,endpoint:"/api/integrations/"+encodeURIComponent(q.actor.organization_slug)+"/revenue",message:"Copy this secret now. It is shown only once; rotating it immediately invalidates the previous secret."});
 }catch(e){if(client)try{await client.query("ROLLBACK");}catch{}n(e);}finally{client?.release();}});
+app.delete("/api/admin/integrations/revenue-webhook",requireDb,auth,role("owner","admin"),integrationTestLimiter,async(q,r,n)=>{let client;try{
+ client=await db.connect();
+ await client.query("BEGIN");
+ const disabled=await client.query("UPDATE organization_revenue_webhooks SET active=false,rotated_by=$2,rotated_at=now() WHERE organization_id=$1 AND active=true RETURNING organization_id",[q.actor.organization_id,q.actor.user_id]);
+ if(!disabled.rowCount){await client.query("ROLLBACK");return r.status(404).json({error:"No active revenue webhook exists for this hotel."});}
+ await client.query("INSERT INTO audit_logs(organization_id,actor_user_id,action,target_type,target_id) VALUES($1,$2,'integration.revenue_webhook_disabled','revenue_webhook',$3)",[q.actor.organization_id,q.actor.user_id,q.actor.organization_id]);
+ await client.query("COMMIT");
+ r.json({active:false,message:"Webhook disabled. Its previous secret can no longer submit revenue events."});
+}catch(e){if(client)try{await client.query("ROLLBACK");}catch{}n(e);}finally{client?.release();}});
 app.post("/api/integrations/:slug/revenue",requireDb,revenueWebhookLimiter,async(q,r,n)=>{let client;try{
  const supplied=q.get("X-Veyra-Webhook-Token");
  if(typeof supplied!=="string"||supplied.length<40||supplied.length>100)return r.status(401).json({error:"Webhook authentication failed."});

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { randomUUID, randomBytes, scrypt as scryptCallback } from "node:crypto";
+import { promisify } from "node:util";
 import pg from "pg";
 const { Pool } = pg;
 
@@ -71,6 +72,20 @@ async function login(tenant) {
   const cookie = setCookie.split(";")[0];
   assert.match(cookie, /^veyra_session=/, "login must issue the expected session cookie");
   return cookie;
+}
+
+async function seedStaff(tenant) {
+  const org = await pool.query("SELECT id FROM organizations WHERE slug=$1", [tenant.slug]);
+  const password = `Staff-test-password-${tag}`;
+  const salt = randomBytes(16).toString("hex");
+  const key = await promisify(scryptCallback)(password, salt, 64);
+  const passwordHash = `${salt}:${Buffer.from(key).toString("hex")}`;
+  const email = `staff-${tag}@example.test`;
+  await pool.query(
+    "INSERT INTO users(organization_id,email,password_hash,role) VALUES($1,$2,$3,'staff')",
+    [org.rows[0].id, email, passwordHash],
+  );
+  return { slug: tenant.slug, email, password };
 }
 
 async function seedConversation(tenant) {
@@ -147,6 +162,7 @@ try {
 
   for (const tenant of tenants) await provision(tenant);
   const [cookieA, cookieB] = await Promise.all(tenants.map(login));
+  const staffCookie = await login(await seedStaff(tenants[0]));
   await Promise.all(tenants.map(seedConversation));
   await Promise.all(tenants.map(seedKnowledge));
 
@@ -179,6 +195,18 @@ try {
   assert.equal(crossKnowledgeBtoA.status, 404, "tenant B must not read tenant A knowledge history");
 
   const [csrfA, csrfB] = await Promise.all([csrfToken(cookieA), csrfToken(cookieB)]);
+  const staffCsrf = await csrfToken(staffCookie);
+  const staffRevenueRead = await readRevenue(staffCookie);
+  assert.equal(staffRevenueRead.status, 403, "staff accounts must not read hotel financial records");
+  const staffRevenueWrite = await submitRevenue(staffCookie, staffCsrf, {
+    type: "booking_confirmed",
+    externalReference: `STAFF-${tag}-SHOULD-BE-BLOCKED`,
+    sourceReference: `Staff attempted write ${tag}`,
+    amount: "10.00",
+    currency: "EUR",
+    occurredAt: new Date(Date.now() - 10_000).toISOString(),
+  });
+  assert.equal(staffRevenueWrite.status, 403, "staff accounts must not create financial records");
   const linkedEvent = {
     type: "booking_confirmed",
     externalReference: `PMS-${tag}-BOOKING-A`,

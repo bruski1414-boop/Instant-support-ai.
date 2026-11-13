@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { normalizeRevenueEvent, toMinorUnits } = require("../revenue-attribution");
+const { normalizeRevenueEvent, normalizeRevenueAdjustment, toMinorUnits } = require("../revenue-attribution");
 
 const validEvent = {
   type: "booking_confirmed",
@@ -66,4 +66,27 @@ test("a malformed Veyra conversation link is rejected", () => {
 
 test("rejects unsupported three-letter currency codes even when minor units are supplied", () => {
   assert.throws(() => normalizeRevenueEvent({ ...validEvent, currency: "ABC" }));
+});
+
+test("normalizes refunds and chargebacks against an original revenue event", () => {
+  const adjustment = normalizeRevenueAdjustment({
+    type: "refund",
+    originalType: "booking_confirmed",
+    originalExternalReference: "PMS-BOOKING-1042",
+    externalReference: "REFUND-1042",
+    sourceReference: "Hotel refund receipt 1042",
+    amount: "50.50",
+    currency: "eur",
+    occurredAt: "2026-11-13T10:30:00Z"
+  });
+  assert.equal(adjustment.type, "refund");
+  assert.equal(adjustment.currency, "EUR");
+  assert.equal(adjustment.amountMinor, 5050);
+});
+
+test("rejects invalid adjustment type, original event, references, currency and date", () => {
+  const valid = { type: "refund", originalType: "booking_confirmed", originalExternalReference: "PMS-BOOKING-1042", externalReference: "REFUND-1042", sourceReference: "Refund receipt", amount: "10.00", currency: "EUR", occurredAt: "2026-11-13T10:30:00Z" };
+  for (const patch of [{ type: "discount" }, { originalType: "booking_pending" }, { originalExternalReference: "" }, { externalReference: "" }, { sourceReference: "" }, { currency: "ABC" }, { occurredAt: "bad-date" }, { amount: "0" }]) {
+    assert.throws(() => normalizeRevenueAdjustment({ ...valid, ...patch }));
+  }
 });

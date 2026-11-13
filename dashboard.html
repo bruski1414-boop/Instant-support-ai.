@@ -85,7 +85,7 @@ main{padding:28px clamp(16px,4vw,48px);max-width:1450px;width:100%;margin:auto}.
    <p class="muted">Connect a PMS, booking engine or payment system that can send confirmed-booking and paid-add-on events to Veyra. This receiver does not yet provide a named provider connector.</p>
    <div id="revenueWebhookStatus" class="muted">Checking webhook status…</div>
    <div class="field"><label for="revenueWebhookEndpoint">Webhook endpoint</label><input id="revenueWebhookEndpoint" readonly></div>
-   <div class="actions"><button class="btn" id="copyRevenueWebhookEndpoint" type="button">Copy endpoint</button><button class="btn primary" id="rotateRevenueWebhook" type="button">Generate webhook secret</button></div>
+   <div class="actions"><button class="btn" id="copyRevenueWebhookEndpoint" type="button">Copy endpoint</button><button class="btn primary" id="rotateRevenueWebhook" type="button">Generate webhook secret</button><button class="btn danger hidden" id="disableRevenueWebhook" type="button">Disable webhook</button></div>
    <div id="revenueWebhookSecretPanel" class="notice hidden" role="status">
     <strong>Copy this secret now</strong>
     <p class="muted">Veyra stores only a hash. You will not be able to view this secret again. Rotating it disables the previous secret.</p>
@@ -317,6 +317,7 @@ async function loadRevenueWebhook(){
   ?"Active · Last received: "+(d.lastReceivedAt?date(d.lastReceivedAt):"No events received yet")+"."
   :"Not configured. Generate a secret after choosing a compatible provider or integration relay.";
  $("rotateRevenueWebhook").textContent=d.active?"Rotate webhook secret":"Generate webhook secret";
+ $("disableRevenueWebhook").classList.toggle("hidden",!d.active);
  $("revenueWebhookEndpoint").value=location.origin+d.endpoint;
  $("revenueWebhookSecret").value="";
  $("revenueWebhookSecretPanel").classList.add("hidden");
@@ -331,6 +332,20 @@ $("rotateRevenueWebhook").addEventListener("click",async()=>{
   $("revenueWebhookSecretPanel").classList.remove("hidden");
   $("revenueWebhookStatus").textContent="Active · Secret generated "+date(new Date().toISOString())+". Copy the secret before hiding it.";
   button.textContent="Rotate webhook secret";
+  $("disableRevenueWebhook").classList.remove("hidden");
+ }catch(err){notice(err.message,"error");}
+ finally{button.disabled=false;}
+});
+$("disableRevenueWebhook").addEventListener("click",async()=>{
+ if(!confirm("Disable automatic revenue events for this hotel? The current secret will stop working immediately."))return;
+ const button=$("disableRevenueWebhook");button.disabled=true;
+ try{
+  await api("/api/admin/integrations/revenue-webhook",{method:"DELETE",body:"{}"});
+  $("revenueWebhookStatus").textContent="Disabled · No provider events will be accepted until a new secret is generated.";
+  $("revenueWebhookSecret").value="";
+  $("revenueWebhookSecretPanel").classList.add("hidden");
+  button.classList.add("hidden");
+  showToast("Revenue webhook disabled.");
  }catch(err){notice(err.message,"error");}
  finally{button.disabled=false;}
 });

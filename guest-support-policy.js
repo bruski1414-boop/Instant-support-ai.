@@ -6,11 +6,13 @@ function requiresStaffEscalation(message) {
   const urgentOrSensitive = /\b(emergency|urgent|fire|police|ambulance|medical|allergy|allergic|injury|unsafe|harassment|discrimination|lost child|missing child|child.{0,30}missing|missing.{0,30}child|complaint|complain|seriously dissatisfied)\b/i;
   if (urgentOrSensitive.test(text)) return true;
 
-  // Escalate requests for staff, not ordinary questions that merely mention staff.
+  // Escalate clear requests for a person, not ordinary questions that mention staff.
   const explicitHumanRequest =
-    /\b(can i|could i|may i|please|i want to|i need to|let me|put me through to|connect me to|transfer me to)\b.{0,55}\b(speak|talk|chat|connect|transfer)\b.{0,35}\b(human|person|staff|manager|concierge|reception|front desk)\b/i.test(text) ||
-    /\b(human|real person|staff member|hotel staff|manager|concierge|front desk|receptionist)\b.{0,30}\b(please|now|instead|directly)\b/i.test(text) ||
-    /\b(speak to|talk to|contact|call|message)\s+(a\s+)?(human|real person|staff|manager|concierge|reception|front desk)\b/i.test(text);
+    /\b(?:can|could|may) i (?:please )?(?:speak|talk|chat) to (?:a )?(?:human|real person|staff|manager|concierge|reception|front desk)\b/i.test(text) ||
+    /\b(?:speak|talk|chat) to (?:a )?(?:human|real person|staff|manager|concierge|reception|front desk)\b/i.test(text) ||
+    /\b(?:connect|transfer) me (?:to|with) (?:a )?(?:human|real person|staff|manager|concierge|reception|front desk)\b/i.test(text) ||
+    /\b(?:let me speak to|put me through to) (?:a )?(?:human|real person|staff|manager|concierge|reception|front desk)\b/i.test(text) ||
+    /\b(?:human|real person|staff member|hotel staff|manager|concierge|front desk|receptionist)\b.{0,20}\b(please|now|instead|directly)\b/i.test(text);
   if (explicitHumanRequest) return true;
 
   // Escalate operational changes and disputes that require authenticated hotel systems.
@@ -40,8 +42,8 @@ function buildGuestSupportSystemPrompt(hotelName, approvedKnowledge) {
     "Never invent prices, availability, policies, booking confirmations, refunds, amenities, opening hours, transport arrangements, or completed actions. If the knowledge is ambiguous or out of date, do not guess.",
     "When recommending an upgrade, restaurant, spa, transfer or other paid service, mention it only if the approved knowledge supports that it exists; never claim it is booked or available without confirmation.",
     "Return valid JSON only with exactly these fields: {\"reply\":\"guest-facing response\",\"needsHuman\":false,\"handoffReason\":\"empty unless staff action is required\"}.",
-    "Approved hotel knowledge:\\n" + approvedKnowledge
-  ].join("\\n");
+    "Approved hotel knowledge:\n" + approvedKnowledge
+  ].join("\n");
 }
 
 module.exports = { requiresStaffEscalation, buildGuestSupportSystemPrompt };

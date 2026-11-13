@@ -343,6 +343,34 @@ try {
   );
   assert.equal(auditA.rows[0].count, 1, "accepted revenue must have an audit record");
 
+  const refundEvent = {
+    type: "refund",
+    originalType: "booking_confirmed",
+    originalExternalReference: linkedEvent.externalReference,
+    externalReference: "REFUND-" + tag + "-BOOKING-A",
+    sourceReference: "Hotel refund receipt " + tag,
+    amount: "50.50",
+    currency: "EUR",
+    occurredAt: new Date(Date.now() - 20000).toISOString(),
+  };
+  const refundResponse = await fetch(baseUrl + "/api/admin/revenue/adjustments", { method: "POST", headers: { cookie: cookieA, "content-type": "application/json", "X-CSRF-Token": csrfA }, body: JSON.stringify(refundEvent) });
+  assert.equal(refundResponse.status, 201, await refundResponse.clone().text());
+  const refundBody = await refundResponse.json();
+  assert.equal(refundBody.adjustment.amount_minor, "5050");
+  const duplicateRefund = await fetch(baseUrl + "/api/admin/revenue/adjustments", { method: "POST", headers: { cookie: cookieA, "content-type": "application/json", "X-CSRF-Token": csrfA }, body: JSON.stringify(refundEvent) });
+  assert.equal(duplicateRefund.status, 409, "duplicate refund references must be rejected");
+  const excessiveRefund = await fetch(baseUrl + "/api/admin/revenue/adjustments", { method: "POST", headers: { cookie: cookieA, "content-type": "application/json", "X-CSRF-Token": csrfA }, body: JSON.stringify({ ...refundEvent, externalReference: "REFUND-" + tag + "-TOO-LARGE", amount: "200.00" }) });
+  assert.equal(excessiveRefund.status, 400, "refunds must not exceed the original event's remaining amount");
+  const wrongCurrencyRefund = await fetch(baseUrl + "/api/admin/revenue/adjustments", { method: "POST", headers: { cookie: cookieA, "content-type": "application/json", "X-CSRF-Token": csrfA }, body: JSON.stringify({ ...refundEvent, externalReference: "REFUND-" + tag + "-WRONG-CURRENCY", currency: "USD" }) });
+  assert.equal(wrongCurrencyRefund.status, 400, "refund currency must match the original event");
+  const staffRefund = await fetch(baseUrl + "/api/admin/revenue/adjustments", { method: "POST", headers: { cookie: staffCookie, "content-type": "application/json", "X-CSRF-Token": staffCsrf }, body: JSON.stringify({ ...refundEvent, externalReference: "REFUND-" + tag + "-STAFF" }) });
+  assert.equal(staffRefund.status, 403, "staff accounts must not record financial adjustments");
+  const afterRefund = await readRevenue(cookieA);
+  const afterRefundBody = await afterRefund.json();
+  assert.equal(afterRefundBody.linkedTotals[0].gross_amount_minor, "25050");
+  assert.equal(afterRefundBody.linkedTotals[0].adjusted_amount_minor, "5050");
+  assert.equal(afterRefundBody.linkedTotals[0].amount_minor, "20000", "linked net revenue must subtract refunds");
+  assert.equal(afterRefundBody.adjustments.length, 1);
   const duplicateA = await submitRevenue(cookieA, csrfA, linkedEvent);
   assert.equal(duplicateA.status, 409, "duplicate revenue references must be rejected");
 

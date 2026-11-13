@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { randomUUID, randomBytes, scrypt as scryptCallback } from "node:crypto";
+import { randomUUID, randomBytes, scrypt as scryptCallback, createHash } from "node:crypto";
 import { promisify } from "node:util";
 import pg from "pg";
 const { Pool } = pg;
@@ -125,6 +125,27 @@ async function readRevenue(cookie) {
   return fetch(`${baseUrl}/api/admin/revenue`, { headers: { cookie } });
 }
 
+async function rotateRevenueWebhook(cookie, csrf) {
+  const response = await fetch(`${baseUrl}/api/admin/integrations/revenue-webhook/rotate`, {
+    method: "POST",
+    headers: { cookie, "X-CSRF-Token": csrf, "content-type": "application/json" },
+    body: "{}",
+  });
+  const body = await response.json();
+  assert.equal(response.status, 201, JSON.stringify(body));
+  assert.equal(body.active, true);
+  assert.ok(typeof body.secret === "string" && body.secret.length >= 40);
+  return body;
+}
+
+async function sendProviderRevenue(slug, secret, event) {
+  return fetch(`${baseUrl}/api/integrations/${slug}/revenue`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "X-Veyra-Webhook-Token": secret || "" },
+    body: JSON.stringify(event),
+  });
+}
+
 async function seedKnowledge(tenant) {
   const org = await pool.query("SELECT id FROM organizations WHERE slug=$1", [tenant.slug]);
   const title = "Private policy " + tenant.name;
@@ -207,6 +228,66 @@ try {
     occurredAt: new Date(Date.now() - 10_000).toISOString(),
   });
   assert.equal(staffRevenueWrite.status, 403, "staff accounts must not create financial records");
+
+  const [webhookA, webhookB] = await Promise.all([
+    rotateRevenueWebhook(cookieA, csrfA),
+    rotateRevenueWebhook(cookieB, csrfB),
+  ]);
+  assert.equal(webhookA.endpoint, `/api/integrations/${tenants[0].slug}/revenue`);
+  const storedWebhook = await pool.query(
+    "SELECT token_hash,last_received_at FROM organization_revenue_webhooks WHERE organization_id=(SELECT id FROM organizations WHERE slug=$1)",
+    [tenants[0].slug],
+  );
+  assert.equal(storedWebhook.rowCount, 1);
+  assert.equal(storedWebhook.rows[0].token_hash, createHash("sha256").update(webhookA.secret).digest("hex"));
+  assert.notEqual(storedWebhook.rows[0].token_hash, webhookA.secret, "plaintext webhook secret must never be stored");
+
+  const providerEvent = {
+    type: "booking_confirmed",
+    externalReference: `PMS-WEBHOOK-${tag}-BOOKING`,
+    sourceReference: `Hotel PMS event ${tag}`,
+    amount: "890.00",
+    currency: "EUR",
+    occurredAt: new Date(Date.now() - 20_000).toISOString(),
+    conversationId: tenants[0].conversationId,
+  };
+  const noSecret = await sendProviderRevenue(tenants[0].slug, "", providerEvent);
+  assert.equal(noSecret.status, 401, "webhook requests without a secret must be rejected");
+  const wrongTenantSecret = await sendProviderRevenue(tenants[1].slug, webhookA.secret, providerEvent);
+  assert.equal(wrongTenantSecret.status, 401, "a hotel's secret must not authenticate for another hotel");
+  const badEvent = await sendProviderRevenue(tenants[0].slug, webhookA.secret, { ...providerEvent, type: "booking_enquiry" });
+  assert.equal(badEvent.status, 400, "enquiries must not be counted as revenue");
+
+  const providerCreate = await sendProviderRevenue(tenants[0].slug, webhookA.secret, providerEvent);
+  assert.equal(providerCreate.status, 201, await providerCreate.clone().text());
+  const providerCreatedBody = await providerCreate.json();
+  assert.equal(providerCreatedBody.event.attribution_status, "hotel_reported_unlinked");
+  assert.equal(providerCreatedBody.event.conversation_id, null, "provider webhook events must never auto-claim Veyra attribution");
+  const providerDuplicate = await sendProviderRevenue(tenants[0].slug, webhookA.secret, providerEvent);
+  assert.equal(providerDuplicate.status, 409, "replayed provider events must not double-count revenue");
+  const webhookState = await pool.query(
+    "SELECT last_received_at FROM organization_revenue_webhooks WHERE organization_id=(SELECT id FROM organizations WHERE slug=$1)",
+    [tenants[0].slug],
+  );
+  assert.ok(webhookState.rows[0].last_received_at, "successful provider events must update last-received time");
+  const webhookAudit = await pool.query(
+    "SELECT count(*)::int AS count FROM audit_logs WHERE action='revenue.webhook_received' AND target_id=$1 AND actor_user_id IS NULL",
+    [providerCreatedBody.event.id],
+  );
+  assert.equal(webhookAudit.rows[0].count, 1, "provider revenue events must have a system audit record");
+
+  const rotatedWebhook = await rotateRevenueWebhook(cookieA, csrfA);
+  const oldSecretAttempt = await sendProviderRevenue(tenants[0].slug, webhookA.secret, {
+    ...providerEvent,
+    externalReference: `PMS-WEBHOOK-${tag}-OLD-SECRET`,
+  });
+  assert.equal(oldSecretAttempt.status, 401, "rotating a webhook secret must immediately revoke the previous secret");
+  const newSecretEvent = await sendProviderRevenue(tenants[0].slug, rotatedWebhook.secret, {
+    ...providerEvent,
+    externalReference: `PMS-WEBHOOK-${tag}-AFTER-ROTATION`,
+  });
+  assert.equal(newSecretEvent.status, 201, "the rotated webhook secret must authenticate successfully");
+
   const linkedEvent = {
     type: "booking_confirmed",
     externalReference: `PMS-${tag}-BOOKING-A`,

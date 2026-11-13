@@ -10,7 +10,7 @@ const {Pool}=require("pg");
 const {createStorageRouter}=require("./storage-integrations");
 const {requiresStaffEscalation,buildGuestSupportSystemPrompt}=require("./guest-support-policy");
 const {buildPilotReadiness}=require("./pilot-readiness");
-const {normalizeRevenueEvent}=require("./revenue-attribution");
+const {normalizeRevenueEvent,normalizeRevenueAdjustment}=require("./revenue-attribution");
 const app=express();
 const PORT=Number(process.env.PORT||3000);
 const MODEL=process.env.OPENAI_MODEL||"gpt-4.1-mini";
@@ -57,6 +57,8 @@ const schema=[
 "CREATE INDEX IF NOT EXISTS conversations_org_time_idx ON conversations(organization_id,started_at DESC)",
 "CREATE TABLE IF NOT EXISTS revenue_events(id UUID PRIMARY KEY DEFAULT gen_random_uuid(),organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,event_type TEXT NOT NULL CHECK(event_type IN ('booking_confirmed','addon_paid')),external_reference TEXT NOT NULL,source_reference TEXT NOT NULL,amount_minor BIGINT NOT NULL CHECK(amount_minor>0),currency CHAR(3) NOT NULL,occurred_at TIMESTAMPTZ NOT NULL,conversation_id UUID,attribution_status TEXT NOT NULL CHECK(attribution_status IN ('veyra_linked_hotel_attested','hotel_reported_unlinked')),created_by UUID REFERENCES users(id) ON DELETE SET NULL,created_at TIMESTAMPTZ NOT NULL DEFAULT now(),UNIQUE(organization_id,event_type,external_reference))",
 "CREATE INDEX IF NOT EXISTS revenue_events_org_date_idx ON revenue_events(organization_id,occurred_at DESC)",
+"CREATE TABLE IF NOT EXISTS revenue_adjustments(id UUID PRIMARY KEY DEFAULT gen_random_uuid(),organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,revenue_event_id UUID NOT NULL REFERENCES revenue_events(id) ON DELETE CASCADE,adjustment_type TEXT NOT NULL CHECK(adjustment_type IN ('refund','chargeback')),external_reference TEXT NOT NULL,source_reference TEXT NOT NULL,amount_minor BIGINT NOT NULL CHECK(amount_minor>0),currency CHAR(3) NOT NULL,occurred_at TIMESTAMPTZ NOT NULL,created_by UUID REFERENCES users(id) ON DELETE SET NULL,created_at TIMESTAMPTZ NOT NULL DEFAULT now(),UNIQUE(organization_id,adjustment_type,external_reference))",
+"CREATE INDEX IF NOT EXISTS revenue_adjustments_event_idx ON revenue_adjustments(organization_id,revenue_event_id,occurred_at DESC)",
 "CREATE TABLE IF NOT EXISTS organization_revenue_webhooks(organization_id UUID PRIMARY KEY REFERENCES organizations(id) ON DELETE CASCADE,token_hash TEXT NOT NULL,active BOOLEAN NOT NULL DEFAULT true,rotated_by UUID REFERENCES users(id) ON DELETE SET NULL,rotated_at TIMESTAMPTZ NOT NULL DEFAULT now(),last_received_at TIMESTAMPTZ)",
 
 "CREATE TABLE IF NOT EXISTS messages(id UUID PRIMARY KEY DEFAULT gen_random_uuid(),conversation_id UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,role TEXT NOT NULL CHECK(role IN ('guest','assistant','staff')),content TEXT NOT NULL,created_at TIMESTAMPTZ NOT NULL DEFAULT now())",
@@ -181,12 +183,13 @@ app.get("/api/admin/conversations/:id",requireDb,auth,async(q,r,n)=>{try{if(!/^[
 app.delete("/api/admin/conversations/:id",requireDb,auth,role("owner","admin"),async(q,r,n)=>{try{if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(q.params.id))return r.status(400).json({error:"Invalid conversation reference."});const c=await db.connect();try{await c.query("BEGIN");const found=await c.query("SELECT id FROM conversations WHERE id=$1 AND organization_id=$2 FOR UPDATE",[q.params.id,q.actor.organization_id]);if(!found.rowCount){await c.query("ROLLBACK");return r.status(404).json({error:"Conversation not found."});}await c.query("UPDATE revenue_events SET conversation_id=NULL,attribution_status='hotel_reported_unlinked' WHERE organization_id=$1 AND conversation_id=$2",[q.actor.organization_id,q.params.id]);await c.query("DELETE FROM conversations WHERE id=$1 AND organization_id=$2",[q.params.id,q.actor.organization_id]);await c.query("INSERT INTO audit_logs(organization_id,actor_user_id,action,target_type,target_id) VALUES($1,$2,'conversation.deleted','conversation',$3)",[q.actor.organization_id,q.actor.user_id,q.params.id]);await c.query("COMMIT");r.json({ok:true});}catch(e){await c.query("ROLLBACK");throw e;}finally{c.release();}}catch(e){n(e);}});
 app.get("/api/admin/revenue",requireDb,auth,role("owner","admin"),async(q,r,n)=>{try{
  const org=q.actor.organization_id;
- const [linked,unlinked,events]=await Promise.all([
-  db.query("SELECT currency,sum(amount_minor)::text AS amount_minor,count(*)::int AS event_count FROM revenue_events WHERE organization_id=$1 AND attribution_status='veyra_linked_hotel_attested' AND occurred_at>=now()-interval '30 days' GROUP BY currency ORDER BY currency",[org]),
-  db.query("SELECT currency,sum(amount_minor)::text AS amount_minor,count(*)::int AS event_count FROM revenue_events WHERE organization_id=$1 AND attribution_status='hotel_reported_unlinked' AND occurred_at>=now()-interval '30 days' GROUP BY currency ORDER BY currency",[org]),
-  db.query("SELECT id,event_type,external_reference,source_reference,amount_minor::text,currency,occurred_at,conversation_id,attribution_status,created_at FROM revenue_events WHERE organization_id=$1 ORDER BY occurred_at DESC LIMIT 50",[org])
+ const [linked,unlinked,events,adjustments]=await Promise.all([
+  db.query("SELECT e.currency,sum(e.amount_minor)::text AS gross_amount_minor,COALESCE(sum(a.amount_minor),0)::text AS adjusted_amount_minor,(sum(e.amount_minor)-COALESCE(sum(a.amount_minor),0))::text AS amount_minor,count(DISTINCT e.id)::int AS event_count FROM revenue_events e LEFT JOIN revenue_adjustments a ON a.organization_id=e.organization_id AND a.revenue_event_id=e.id WHERE e.organization_id=$1 AND e.attribution_status=$2 AND e.occurred_at>=now()-interval '30 days' GROUP BY e.currency ORDER BY e.currency",[org,"veyra_linked_hotel_attested"]),
+  db.query("SELECT e.currency,sum(e.amount_minor)::text AS gross_amount_minor,COALESCE(sum(a.amount_minor),0)::text AS adjusted_amount_minor,(sum(e.amount_minor)-COALESCE(sum(a.amount_minor),0))::text AS amount_minor,count(DISTINCT e.id)::int AS event_count FROM revenue_events e LEFT JOIN revenue_adjustments a ON a.organization_id=e.organization_id AND a.revenue_event_id=e.id WHERE e.organization_id=$1 AND e.attribution_status=$2 AND e.occurred_at>=now()-interval '30 days' GROUP BY e.currency ORDER BY e.currency",[org,"hotel_reported_unlinked"]),
+  db.query("SELECT id,event_type,external_reference,source_reference,amount_minor::text,currency,occurred_at,conversation_id,attribution_status,created_at FROM revenue_events WHERE organization_id=$1 ORDER BY occurred_at DESC LIMIT 50",[org]),
+  db.query("SELECT a.id,a.adjustment_type,a.external_reference,a.source_reference,a.amount_minor::text,a.currency,a.occurred_at,e.event_type AS original_event_type,e.external_reference AS original_external_reference FROM revenue_adjustments a JOIN revenue_events e ON e.id=a.revenue_event_id WHERE a.organization_id=$1 ORDER BY a.occurred_at DESC LIMIT 50",[org])
  ]);
- r.json({windowDays:30,linkedTotals:linked.rows,unlinkedTotals:unlinked.rows,events:events.rows,notice:"Hotel-attested records only. Veyra-linked means a hotel manager linked the record to a Veyra conversation; it is not independently confirmed by a PMS or payment processor."});
+ r.json({windowDays:30,linkedTotals:linked.rows,unlinkedTotals:unlinked.rows,events:events.rows,adjustments:adjustments.rows,notice:"Net of recorded refunds and chargebacks. Hotel-attested records only; Veyra-linked means a hotel manager linked the record to a Veyra conversation, not proof of causation."});
 }catch(e){n(e);}});
 app.post("/api/admin/revenue",requireDb,auth,role("owner","admin"),async(q,r,n)=>{let client;try{
  const event=normalizeRevenueEvent(q.body||{});
@@ -202,6 +205,21 @@ app.post("/api/admin/revenue",requireDb,auth,role("owner","admin"),async(q,r,n)=
  r.status(201).json({event:inserted.rows[0],message:event.conversationId?"Saved as hotel-attested and linked to a Veyra conversation.":"Saved as hotel-reported, not attributed to Veyra."});
 }catch(e){if(client)try{await client.query("ROLLBACK");}catch{}if(e?.code==="23505")return r.status(409).json({error:"That event reference has already been recorded for this hotel. Duplicate revenue was not added."});if(e instanceof Error&&/required|valid|positive|future|decimal places|cannot be|confirmed booking|paid add-on/i.test(e.message))return r.status(400).json({error:e.message});n(e);}finally{client?.release();}});
 
+app.post("/api/admin/revenue/adjustments",requireDb,auth,role("owner","admin"),async(q,r,n)=>{let client;try{
+ const adjustment=normalizeRevenueAdjustment(q.body||{});
+ client=await db.connect();
+ await client.query("BEGIN");
+ const original=await client.query("SELECT id,amount_minor::text,currency FROM revenue_events WHERE organization_id=$1 AND event_type=$2 AND external_reference=$3 FOR UPDATE",[q.actor.organization_id,adjustment.originalType,adjustment.originalExternalReference]);
+ if(!original.rowCount){await client.query("ROLLBACK");return r.status(404).json({error:"The original revenue event was not found in this hotel workspace."});}
+ if(original.rows[0].currency.trim()!==adjustment.currency){await client.query("ROLLBACK");return r.status(400).json({error:"The adjustment currency must match the original revenue event."});}
+ const already=await client.query("SELECT COALESCE(sum(amount_minor),0)::text AS total FROM revenue_adjustments WHERE organization_id=$1 AND revenue_event_id=$2",[q.actor.organization_id,original.rows[0].id]);
+ const remaining=BigInt(original.rows[0].amount_minor)-BigInt(already.rows[0].total);
+ if(BigInt(adjustment.amountMinor)>remaining){await client.query("ROLLBACK");return r.status(400).json({error:"This adjustment exceeds the remaining unrefunded amount for the original event."});}
+ const inserted=await client.query("INSERT INTO revenue_adjustments(organization_id,revenue_event_id,adjustment_type,external_reference,source_reference,amount_minor,currency,occurred_at,created_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id,adjustment_type,external_reference,source_reference,amount_minor::text,currency,occurred_at",[q.actor.organization_id,original.rows[0].id,adjustment.type,adjustment.externalReference,adjustment.sourceReference,adjustment.amountMinor,adjustment.currency,adjustment.occurredAt,q.actor.user_id]);
+ await client.query("INSERT INTO audit_logs(organization_id,actor_user_id,action,target_type,target_id) VALUES($1,$2,$3,$4,$5)",[q.actor.organization_id,q.actor.user_id,"revenue.adjustment_recorded","revenue_adjustment",inserted.rows[0].id]);
+ await client.query("COMMIT");
+ r.status(201).json({adjustment:inserted.rows[0],message:"Adjustment recorded. Revenue totals now show net of this refund or chargeback."});
+}catch(e){if(client)try{await client.query("ROLLBACK");}catch{}if(e?.code==="23505")return r.status(409).json({error:"That adjustment reference has already been recorded for this hotel."});if(e instanceof Error&&/required|valid|positive|future|decimal places|cannot be|refund|chargeback|original|currency/.test(e.message))return r.status(400).json({error:e.message});n(e);}finally{client?.release();}});
 app.get("/api/admin/integrations/revenue-webhook",requireDb,auth,role("owner","admin"),async(q,r,n)=>{try{
  const x=await db.query("SELECT active,rotated_at,last_received_at FROM organization_revenue_webhooks WHERE organization_id=$1",[q.actor.organization_id]);
  r.json({active:Boolean(x.rows[0]?.active),rotatedAt:x.rows[0]?.rotated_at||null,lastReceivedAt:x.rows[0]?.last_received_at||null,endpoint:"/api/integrations/"+encodeURIComponent(q.actor.organization_slug)+"/revenue"});

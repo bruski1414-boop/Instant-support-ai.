@@ -200,7 +200,7 @@ app.post("/api/admin/revenue",requireDb,auth,role("owner","admin"),async(q,r,n)=
  await client.query("INSERT INTO audit_logs(organization_id,actor_user_id,action,target_type,target_id) VALUES($1,$2,'revenue.attested','revenue_event',$3)",[q.actor.organization_id,q.actor.user_id,inserted.rows[0].id]);
  await client.query("COMMIT");
  r.status(201).json({event:inserted.rows[0],message:event.conversationId?"Saved as hotel-attested and linked to a Veyra conversation.":"Saved as hotel-reported, not attributed to Veyra."});
-}catch(e){if(client)try{await client.query("ROLLBACK");}catch{}if(e?.code==="23505")return r.status(409).json({error:"That event reference has already been recorded for this hotel. Duplicate revenue was not added."});if(e instanceof Error&&/required|valid|positive|future|decimal places|cannot be/i.test(e.message))return r.status(400).json({error:e.message});n(e);}finally{client?.release();}});
+}catch(e){if(client)try{await client.query("ROLLBACK");}catch{}if(e?.code==="23505")return r.status(409).json({error:"That event reference has already been recorded for this hotel. Duplicate revenue was not added."});if(e instanceof Error&&/required|valid|positive|future|decimal places|cannot be|confirmed booking|paid add-on/i.test(e.message))return r.status(400).json({error:e.message});n(e);}finally{client?.release();}});
 
 app.post("/api/admin/integrations/revenue-webhook/rotate",requireDb,auth,role("owner","admin"),async(q,r,n)=>{try{
  const secret=crypto.randomBytes(32).toString("base64url");

@@ -209,6 +209,7 @@ function formatRevenue(amountMinor,currency){
 }
 async function loadRevenue(){
  const d=await api("/api/admin/revenue");
+ $("revenueForm").classList.toggle("hidden",!["owner","admin"].includes(currentRole));
  const renderTotals=(items)=>items.length?items.map(x=>formatRevenue(x.amount_minor,x.currency)).join(" + "):"—";
  const count=(items)=>items.reduce((n,x)=>n+Number(x.event_count||0),0);
  $("linkedRevenue").textContent=renderTotals(d.linkedTotals||[]);

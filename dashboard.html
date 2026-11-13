@@ -80,6 +80,19 @@ main{padding:28px clamp(16px,4vw,48px);max-width:1450px;width:100%;margin:auto}.
    <button class="btn" id="testStaffIntegration" type="button">Test staff dispatcher</button>
   </div>
   <div id="integrationTestResult" class="notice hidden" role="status"></div>
+  <div class="card" id="revenueWebhookCard" style="margin-top:14px">
+   <h3 style="margin-top:0">Automatic revenue events</h3>
+   <p class="muted">Connect a PMS, booking engine or payment system that can send confirmed-booking and paid-add-on events to Veyra. This receiver does not yet provide a named provider connector.</p>
+   <div id="revenueWebhookStatus" class="muted">Checking webhook status…</div>
+   <div class="actions"><button class="btn primary" id="rotateRevenueWebhook" type="button">Generate webhook secret</button></div>
+   <div id="revenueWebhookSecretPanel" class="notice hidden" role="status">
+    <strong>Copy this secret now</strong>
+    <p class="muted">Veyra stores only a hash. You will not be able to view this secret again. Rotating it disables the previous secret.</p>
+    <div class="field"><label for="revenueWebhookEndpoint">Webhook endpoint</label><input id="revenueWebhookEndpoint" readonly></div>
+    <div class="field"><label for="revenueWebhookSecret">Secret header value</label><input id="revenueWebhookSecret" readonly autocomplete="off"></div>
+    <div class="actions"><button class="btn" id="copyRevenueWebhook" type="button">Copy secret</button><button class="btn" id="hideRevenueWebhookSecret" type="button">Hide secret</button></div>
+   </div>
+  </div>
   <p class="muted" style="font-size:12px;margin-top:14px">This is an operational checklist, not a legal or security certification. Guest-data storage stays disabled until the hotel approves privacy, retention, backups and deletion arrangements in writing.</p>
  </section>
  <section id="panel-storage" class="panel">
@@ -238,7 +251,7 @@ async function enterWorkspace(){
  catch(e){$("login").classList.remove("hidden");$("app").classList.add("hidden");}
 }
 $("loginForm").addEventListener("submit",async e=>{e.preventDefault();try{const d=await api("/api/auth/login",{method:"POST",body:JSON.stringify({organizationSlug:$("workspaceSlug").value.trim().toLowerCase(),email:$("email").value,password:$("password").value})});csrfToken=d.csrfToken;await enterWorkspace();}catch(err){loginError(err.message);}});
-$("logout").addEventListener("click",async()=>{try{await api("/api/auth/logout",{method:"POST",body:"{}"});}catch{}csrfToken="";$("app").classList.add("hidden");$("login").classList.remove("hidden");$("password").value="";});
+$("logout").addEventListener("click",async()=>{try{await api("/api/auth/logout",{method:"POST",body:"{}"});}catch{}csrfToken="";$("revenueWebhookSecret").value="";$("revenueWebhookSecretPanel").classList.add("hidden");$("app").classList.add("hidden");$("login").classList.remove("hidden");$("password").value="";});
 $("refresh").addEventListener("click",()=>loadPanel(activePanel));
 document.querySelectorAll("[data-panel]").forEach(b=>b.addEventListener("click",()=>switchPanel(b.dataset.panel)));
 
@@ -288,11 +301,49 @@ async function loadSetup(){
  $("hotelLanguage").value=s.settings.language||"en";
  $("fallbackInstructions").value=s.settings.fallback_instructions||"";
  await loadRetention();
+ await loadRevenueWebhook();
  $("readinessSummary").textContent=o.readyForPilot?"All checks passed":"Needs attention";
  $("readinessSummary").className="tag "+(o.readyForPilot?"good":"warn");
  $("readinessList").innerHTML=o.checks.map(x=>'<article class="card" style="display:flex;align-items:flex-start;gap:12px"><span class="tag '+(x.done?"good":"warn")+'">'+(x.done?"Complete":"Action needed")+'</span><div><strong>'+safe(x.label)+'</strong><div class="muted" style="font-size:12px;margin-top:4px">'+safe(x.detail)+'</div></div></article>').join("");
 }
 $("settingsForm").addEventListener("submit",async e=>{e.preventDefault();try{await api("/api/admin/settings",{method:"PUT",body:JSON.stringify({website_url:$("hotelWebsite").value,support_email:$("supportEmail").value,timezone:$("hotelTimezone").value,language:$("hotelLanguage").value,fallback_instructions:$("fallbackInstructions").value})});showToast("Hotel profile saved.");await loadSetup();}catch(err){notice(err.message,"error");}});
+
+async function loadRevenueWebhook(){
+ const card=$("revenueWebhookCard");
+ if(!["owner","admin"].includes(currentRole)){card.classList.add("hidden");return;}
+ card.classList.remove("hidden");
+ const d=await api("/api/admin/integrations/revenue-webhook");
+ $("revenueWebhookStatus").textContent=d.active
+  ?"Active · Last received: "+(d.lastReceivedAt?date(d.lastReceivedAt):"No events received yet")+"."
+  :"Not configured. Generate a secret after choosing a compatible provider or integration relay.";
+ $("rotateRevenueWebhook").textContent=d.active?"Rotate webhook secret":"Generate webhook secret";
+ $("revenueWebhookEndpoint").value=location.origin+d.endpoint;
+ $("revenueWebhookSecret").value="";
+ $("revenueWebhookSecretPanel").classList.add("hidden");
+}
+$("rotateRevenueWebhook").addEventListener("click",async()=>{
+ if(!confirm("Generate a new webhook secret? If one already exists, the old secret will stop working immediately."))return;
+ const button=$("rotateRevenueWebhook");button.disabled=true;
+ try{
+  const d=await api("/api/admin/integrations/revenue-webhook/rotate",{method:"POST",body:"{}"});
+  $("revenueWebhookEndpoint").value=location.origin+d.endpoint;
+  $("revenueWebhookSecret").value=d.secret;
+  $("revenueWebhookSecretPanel").classList.remove("hidden");
+  $("revenueWebhookStatus").textContent="Active · Secret generated "+date(new Date().toISOString())+". Copy the secret before hiding it.";
+  button.textContent="Rotate webhook secret";
+ }catch(err){notice(err.message,"error");}
+ finally{button.disabled=false;}
+});
+$("copyRevenueWebhook").addEventListener("click",async()=>{
+ const value=$("revenueWebhookSecret").value;
+ try{await navigator.clipboard.writeText(value);showToast("Webhook secret copied.");}
+ catch{$("revenueWebhookSecret").focus();$("revenueWebhookSecret").select();showToast("Select and copy the secret.");}
+});
+$("hideRevenueWebhookSecret").addEventListener("click",()=>{
+ $("revenueWebhookSecret").value="";
+ $("revenueWebhookSecretPanel").classList.add("hidden");
+ showToast("Secret hidden. It cannot be viewed again.");
+});
 async function runIntegrationTest(kind){
  const button=$(kind==="ai"?"testAiIntegration":"testStaffIntegration");
  const result=$("integrationTestResult");

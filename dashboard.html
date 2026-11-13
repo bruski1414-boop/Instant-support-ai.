@@ -84,11 +84,11 @@ main{padding:28px clamp(16px,4vw,48px);max-width:1450px;width:100%;margin:auto}.
    <h3 style="margin-top:0">Automatic revenue events</h3>
    <p class="muted">Connect a PMS, booking engine or payment system that can send confirmed-booking and paid-add-on events to Veyra. This receiver does not yet provide a named provider connector.</p>
    <div id="revenueWebhookStatus" class="muted">Checking webhook status…</div>
-   <div class="actions"><button class="btn primary" id="rotateRevenueWebhook" type="button">Generate webhook secret</button></div>
+   <div class="field"><label for="revenueWebhookEndpoint">Webhook endpoint</label><input id="revenueWebhookEndpoint" readonly></div>
+   <div class="actions"><button class="btn" id="copyRevenueWebhookEndpoint" type="button">Copy endpoint</button><button class="btn primary" id="rotateRevenueWebhook" type="button">Generate webhook secret</button></div>
    <div id="revenueWebhookSecretPanel" class="notice hidden" role="status">
     <strong>Copy this secret now</strong>
     <p class="muted">Veyra stores only a hash. You will not be able to view this secret again. Rotating it disables the previous secret.</p>
-    <div class="field"><label for="revenueWebhookEndpoint">Webhook endpoint</label><input id="revenueWebhookEndpoint" readonly></div>
     <div class="field"><label for="revenueWebhookSecret">Secret header value</label><input id="revenueWebhookSecret" readonly autocomplete="off"></div>
     <div class="actions"><button class="btn" id="copyRevenueWebhook" type="button">Copy secret</button><button class="btn" id="hideRevenueWebhookSecret" type="button">Hide secret</button></div>
    </div>
@@ -333,6 +333,11 @@ $("rotateRevenueWebhook").addEventListener("click",async()=>{
   button.textContent="Rotate webhook secret";
  }catch(err){notice(err.message,"error");}
  finally{button.disabled=false;}
+});
+$("copyRevenueWebhookEndpoint").addEventListener("click",async()=>{
+ const value=$("revenueWebhookEndpoint").value;
+ try{await navigator.clipboard.writeText(value);showToast("Webhook endpoint copied.");}
+ catch{$("revenueWebhookEndpoint").focus();$("revenueWebhookEndpoint").select();showToast("Select and copy the endpoint.");}
 });
 $("copyRevenueWebhook").addEventListener("click",async()=>{
  const value=$("revenueWebhookSecret").value;

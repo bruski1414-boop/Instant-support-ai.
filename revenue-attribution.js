@@ -28,7 +28,7 @@ function normalizeRevenueEvent(input) {
 
   if (!ALLOWED_EVENT_TYPES.has(type)) throw new Error("Revenue must be a confirmed booking or a paid add-on.");
   if (!REFERENCE.test(externalReference)) throw new Error("A valid external booking or payment reference is required.");
-  if (!REFERENCE.test(sourceReference)) throw new Error("A hotel source reference is required.");
+  if (!sourceReference || sourceReference.length > 180 || /[\\u0000-\\u001f]/.test(sourceReference)) throw new Error("A hotel source reference is required.");
   if (!CURRENCY.test(currency)) throw new Error("A three-letter ISO currency code is required.");
   const amountMinor = Number.isSafeInteger(value.amountMinor) ? value.amountMinor : toMinorUnits(value.amount, currency);
   if (!Number.isSafeInteger(amountMinor) || amountMinor <= 0) throw new Error("Revenue must be a positive integer amount in minor currency units.");

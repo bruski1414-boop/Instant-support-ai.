@@ -27,6 +27,21 @@ The dashboard shows these totals separately for the trailing 30 days and does no
 - The server validates event type, source/reference lengths and characters, amount precision, currency format, event date and optional conversation UUID.
 - When a conversation is supplied, the server verifies it belongs to the same hotel workspace before accepting the event.
 
+## Provider webhook foundation
+
+Workspace owners and administrators can create or rotate a workspace-specific webhook credential through the authenticated, CSRF-protected endpoint:
+
+- `POST /api/admin/integrations/revenue-webhook/rotate`
+- The response returns a one-time secret and a tenant-specific receiver path: `POST /api/integrations/:slug/revenue`
+- Send the secret in the `X-Veyra-Webhook-Token` header over HTTPS. Never put it in a URL, browser code, source control or logs.
+- Veyra stores only a SHA-256 hash of the secret. Rotating the secret immediately invalidates the previous one.
+- The receiver is rate-limited and accepts only `booking_confirmed` and `addon_paid` events in the same normalized shape used by the manual ledger: `type`, `externalReference`, `sourceReference`, `amount`, `currency` and `occurredAt`.
+- The external reference is unique per hotel and event type. Repeated deliveries return HTTP 409 rather than adding revenue again.
+- Accepted webhook events are always recorded as `hotel_reported_unlinked`. A provider-supplied conversation ID is deliberately ignored: a booking system event alone does not prove that Veyra caused the booking.
+- Every accepted event updates the connection's last-received time and writes an audit record in the same database transaction.
+
+This is a generic authenticated receiver, not a finished connector to a named PMS, booking engine or payment processor. A provider or secure integration relay must be configured to map its verified events into Veyra's normalized payload and send the custom header. Provider-specific authentication, event mapping, retries, cancellation/refund handling, reconciliation and production credentials remain future work.
+
 ## Current limitations
 
 This is a manual hotel-attestation workflow. It is not yet connected to a property-management system, booking engine, payment processor or accounting platform. Veyra cannot independently verify that a booking completed, that an add-on was paid, or that the hotel source reference is genuine. A manager must check the hotel's source system before entering the record.

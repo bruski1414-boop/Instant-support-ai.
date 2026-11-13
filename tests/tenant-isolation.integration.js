@@ -217,6 +217,12 @@ try {
 
   const [csrfA, csrfB] = await Promise.all([csrfToken(cookieA), csrfToken(cookieB)]);
   const staffCsrf = await csrfToken(staffCookie);
+  const staffRotateWebhook = await fetch(`${baseUrl}/api/admin/integrations/revenue-webhook/rotate`, {
+    method: "POST",
+    headers: { cookie: staffCookie, "X-CSRF-Token": staffCsrf, "content-type": "application/json" },
+    body: "{}",
+  });
+  assert.equal(staffRotateWebhook.status, 403, "staff accounts must not rotate financial webhook credentials");
   const staffRevenueRead = await readRevenue(staffCookie);
   assert.equal(staffRevenueRead.status, 403, "staff accounts must not read hotel financial records");
   const staffRevenueWrite = await submitRevenue(staffCookie, staffCsrf, {
@@ -259,6 +265,12 @@ try {
   assert.equal(badEvent.status, 400, "enquiries must not be counted as revenue");
 
   const providerCreate = await sendProviderRevenue(tenants[0].slug, webhookA.secret, providerEvent);
+  const sameReferenceOtherHotel = await sendProviderRevenue(tenants[1].slug, webhookB.secret, {
+    ...providerEvent,
+    sourceReference: `Tenant B PMS event ${tag}`,
+  });
+  assert.equal(sameReferenceOtherHotel.status, 201, "identical external references must remain isolated between hotel workspaces");
+
   assert.equal(providerCreate.status, 201, await providerCreate.clone().text());
   const providerCreatedBody = await providerCreate.json();
   assert.equal(providerCreatedBody.event.attribution_status, "hotel_reported_unlinked");

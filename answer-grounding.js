@@ -1,7 +1,7 @@
 "use strict";
 
 function numericFacts(value) {
-  return (String(value || "").toLowerCase().match(/\\b\\d+(?:[.,]\\d+)?\\b/g) || [])
+  return (String(value || "").toLowerCase().match(/\b\d+(?:[.,]\d+)?\b/g) || [])
     .map(value => value.replace(",", "."));
 }
 

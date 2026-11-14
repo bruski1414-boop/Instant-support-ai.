@@ -20,7 +20,7 @@ const {validateAnswerGrounding}=require("./answer-grounding");
 const {isValidDateOnly,isOptionalBoolean}=require("./knowledge-validation");
 const {normalizeRevenueEvent,normalizeRevenueAdjustment}=require("./revenue-attribution");
 const {normalizeGuestConversationAccess,normalizeStaffReply,canReplyToConversation}=require("./guest-messaging");
-const {deliverStaffEscalation,shouldRetryStaffNotification}=require("./staff-notifications");
+const {deliverStaffEscalation,shouldRetryStaffNotification,encryptSecret,decryptSecret,validateWebhookUrl}=require("./staff-notifications");
 const app=express();
 const PORT=Number(process.env.PORT||3000);
 const MODEL=process.env.OPENAI_MODEL||"gpt-4.1-mini";
@@ -93,7 +93,8 @@ const schema=[
 "CREATE INDEX IF NOT EXISTS storage_oauth_states_expiry_idx ON storage_oauth_states(expires_at)",
 "ALTER TABLE storage_oauth_states ADD COLUMN IF NOT EXISTS code_verifier TEXT",
 "CREATE TABLE IF NOT EXISTS audit_logs(id UUID PRIMARY KEY DEFAULT gen_random_uuid(),organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,actor_user_id UUID REFERENCES users(id) ON DELETE SET NULL,action TEXT NOT NULL,target_type TEXT,target_id TEXT,created_at TIMESTAMPTZ NOT NULL DEFAULT now())",
-"CREATE TABLE IF NOT EXISTS organization_integration_checks(organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,integration TEXT NOT NULL CHECK(integration IN ('ai_provider','staff_webhook')),verified_at TIMESTAMPTZ NOT NULL DEFAULT now(),verified_by UUID REFERENCES users(id) ON DELETE SET NULL,PRIMARY KEY(organization_id,integration))"
+"CREATE TABLE IF NOT EXISTS organization_integration_checks(organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,integration TEXT NOT NULL CHECK(integration IN ('ai_provider','staff_webhook')),verified_at TIMESTAMPTZ NOT NULL DEFAULT now(),verified_by UUID REFERENCES users(id) ON DELETE SET NULL,PRIMARY KEY(organization_id,integration))",
+"CREATE TABLE IF NOT EXISTS organization_staff_webhooks(organization_id UUID PRIMARY KEY REFERENCES organizations(id) ON DELETE CASCADE,webhook_url TEXT NOT NULL,encrypted_secret TEXT NOT NULL,configured_by UUID REFERENCES users(id) ON DELETE SET NULL,created_at TIMESTAMPTZ NOT NULL DEFAULT now(),updated_at TIMESTAMPTZ NOT NULL DEFAULT now())"
 ].join(";\n")+";";
 function hash(v){return crypto.createHash("sha256").update(v).digest("hex");}
 function equal(a,b){const x=Buffer.from(String(a||"")),y=Buffer.from(String(b||""));return x.length===y.length&&crypto.timingSafeEqual(x,y);}
@@ -119,14 +120,12 @@ app.use("/api/admin/storage",requireDb,createStorageRouter({db,auth,role,audit})
 const mewsStore=db?createMewsConnectionStore({db,encryptionKey:process.env.STORAGE_TOKEN_ENCRYPTION_KEY,clientName:process.env.MEWS_CLIENT_NAME||"Veyra AI/0.1"}):null;
 const escalate=requiresStaffEscalation;
 async function notify(org,cid,reason,eid){
- return deliverStaffEscalation({
-  organization:org,
-  conversationId:cid,
-  reason,
-  idempotencyKey:eid,
-  webhookUrl:process.env.STAFF_WEBHOOK_URL,
-  webhookSecret:process.env.STAFF_WEBHOOK_SECRET
- });
+ const configured=await db.query("SELECT webhook_url,encrypted_secret FROM organization_staff_webhooks WHERE organization_id=$1",[org.id]);
+ if(!configured.rowCount)return {configured:false,delivered:false,status:"not_configured"};
+ const key=process.env.STORAGE_TOKEN_ENCRYPTION_KEY;
+ if(!key)return {configured:false,delivered:false,status:"not_configured"};
+ let secret;try{secret=decryptSecret(configured.rows[0].encrypted_secret,key);}catch{return {configured:true,delivered:false,status:"failed"};}
+ return deliverStaffEscalation({organization:org,conversationId:cid,reason,idempotencyKey:eid,webhookUrl:configured.rows[0].webhook_url,webhookSecret:secret});
 }
 // Atomically claim a notification before calling the external webhook. The
 // two-minute lease permits recovery if the process dies while status is sending.

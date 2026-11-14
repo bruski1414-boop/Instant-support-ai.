@@ -74,7 +74,8 @@ Any cross-workspace exposure is a release-blocking defect.
 - [ ] Deletion behavior is documented for active records, audit logs, provider copies and backup retention.
 - [ ] Secrets are stored only in the hosting secret manager and rotated under an approved procedure.
 - [ ] Request size, rate limits, abuse controls, session security, CORS, CSRF and security headers are tested.
-- [ ] Confirm rate-limit behavior across multiple app instances; do not assume in-memory limits are distributed.
+- [ ] Verify the per-hotel plus client-IP guest-chat limit and the global API limit.
+- [ ] Confirm rate-limit behavior across multiple app instances; the current default store is in-memory per process and is not distributed.
 - [ ] Monitoring, uptime checks, incident response owner and breach/escalation procedure are documented.
 - [ ] Conduct independent security review and remediate all high/critical findings.
 - [ ] Test restart behavior, database outage, AI provider outage, notification outage and sustained expected traffic.

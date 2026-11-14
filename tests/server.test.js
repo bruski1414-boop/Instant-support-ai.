@@ -300,7 +300,7 @@ test("public guest chat requires fresh tenant-specific AI, staff and storage ver
   assert.match(server, /verified_at>now\(\)-interval '30 days'/);
   assert.match(server, /verifiedForHotel\.has\("ai_provider"\)/);
   assert.match(server, /verifiedForHotel\.has\("staff_webhook"\)/);
-  assert.match(server, /FROM organization_storage_connections WHERE organization_id=\$1 AND status='connected' AND connected_at IS NOT NULL AND last_sync_at IS NOT NULL AND last_sync_status='success' AND last_sync_error IS NULL/);
+  assert.match(server, /FROM organization_storage_connections WHERE organization_id=\$1 AND status='connected' AND connected_at IS NOT NULL AND last_sync_at IS NOT NULL AND last_sync_status='success' AND last_sync_error=''/);
   assert.match(server, /This hotel's AI and staff notification integrations must be verified/);
   assert.match(server, /This hotel must authorize its own storage provider and complete a successful sync/);
 });

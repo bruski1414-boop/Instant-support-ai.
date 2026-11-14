@@ -6,6 +6,7 @@ Veyra AI is a hotel customer-support platform prototype. It is designed to answe
 
 - Public demo site: https://veyra-ai-prototype.onrender.com
 - Owner dashboard: https://veyra-ai-prototype.onrender.com/dashboard.html
+- Interactive hotel demo route (available after the demo branch is merged and deployed): https://veyra-ai-prototype.onrender.com/demo
 - First workspace setup: https://veyra-ai-prototype.onrender.com/setup.html
 - Source code: https://github.com/bruski1414-boop/Instant-support-ai.
 
@@ -153,3 +154,8 @@ Knowledge documents retain a version history. The dashboard can review saved ver
 A provider-neutral adapter contract is available in `pms-integration.js`. The first provider-specific implementation is a read-only Mews Connector API client in `mews-connector.js`, restricted to the official Mews demo environment. It supports configuration verification, service discovery and service availability reads. See `docs/pms-integration-contract.md` and `docs/mews-demo-integration.md`.
 
 No credentials have been provisioned and no external API call, hotel connection, booking sync or production inventory lookup has been performed. Production access is intentionally disabled pending Mews partner onboarding/certification and explicit hotel authorization.
+
+
+## Isolated interactive hotel demo
+
+The new `/demo` route is a standalone, deterministic walkthrough using fictional hotel knowledge, simulated room inventory, an on-screen-only staff handoff queue, and clearly labelled synthetic metrics. It does not call the AI provider, PostgreSQL, Mews or staff notifications and does not persist guest messages. It must not be presented as live hotel performance or live availability. See `docs/mews-demo-integration.md` for details.

@@ -100,7 +100,7 @@ test("connects the Mews API client response directly into canonical snapshots", 
     nowUtc: base.observedAt
   });
   assert.equal(calls.length, 1);
-  assert.match(calls[0].url, /services\\/getAvailability$/);
+  assert.match(calls[0].url, /services\/getAvailability$/);
   assert.equal(snapshots[0].roomsAvailable, 2);
   assert.equal(snapshots[0].arrivalDate, "2026-12-02");
 });

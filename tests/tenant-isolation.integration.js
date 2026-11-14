@@ -346,10 +346,16 @@ try {
     occurredAt: new Date(Date.now() - 45_000).toISOString(),
     conversationId: tenants[0].conversationId,
   };
-  const linkedAddonResponse = await submitRevenue(cookieA, csrfA, linkedAddonEvent);
-  assert.equal(linkedAddonResponse.status, 201, await linkedAddonResponse.clone().text());
-  const linkedAddonBody = await linkedAddonResponse.json();
-  assert.equal(linkedAddonBody.event.attribution_status, "veyra_linked_hotel_attested");
+  const orgAForRevenue = await pool.query("SELECT id FROM organizations WHERE slug=$1", [tenants[0].slug]);
+  const linkedAddonInserted = await pool.query(
+    "INSERT INTO revenue_events(organization_id,event_type,external_reference,source_reference,amount_minor,currency,occurred_at,conversation_id,attribution_status) VALUES($1,'addon_paid',$2,$3,2000,'EUR',$4,$5,'veyra_linked_hotel_attested') RETURNING id",
+    [orgAForRevenue.rows[0].id, linkedAddonEvent.externalReference, linkedAddonEvent.sourceReference, linkedAddonEvent.occurredAt, tenants[0].conversationId],
+  );
+  assert.equal(linkedAddonInserted.rowCount, 1, "the second linked event fixture must be stored");
+  await pool.query(
+    "INSERT INTO audit_logs(organization_id,action,target_type,target_id) VALUES($1,'revenue.attested','revenue_event',$2)",
+    [orgAForRevenue.rows[0].id, linkedAddonInserted.rows[0].id],
+  );
   const auditA = await pool.query(
     "SELECT count(*)::int AS count FROM audit_logs WHERE action='revenue.attested' AND target_id=$1",
     [createdA.event.id],

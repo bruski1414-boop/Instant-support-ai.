@@ -268,9 +268,20 @@ test("guest conversation writes lock and revalidate the tenant-owned conversatio
 
 test("staff handoff events carry stable tenant identifiers for multi-hotel routing", () => {
   const server = fs.readFileSync("server.js", "utf8");
-  assert.match(server, /organizationId:org\.id,organizationSlug:org\.slug/);
+  const notifications = fs.readFileSync("staff-notifications.js", "utf8");
+  assert.match(notifications, /organizationId: organization\.id/);
+  assert.match(notifications, /organizationSlug: organization\.slug/);
   assert.match(server, /o\.id AS organization_id,o\.name,o\.slug FROM escalations e JOIN organizations o ON o\.id=e\.organization_id/);
   assert.match(server, /notify\(\{id:item\.organization_id,name:item\.name,slug:item\.slug\}/);
+});
+
+test("failed staff notifications are retried at most twice after the initial attempt", () => {
+  const server = fs.readFileSync("server.js", "utf8");
+  const notifications = fs.readFileSync("staff-notifications.js", "utf8");
+  assert.match(server, /notification_status,notification_attempts FROM escalations/);
+  assert.match(server, /shouldRetryStaffNotification\(/);
+  assert.match(server, /notification_attempts=notification_attempts\+CASE WHEN \$2 THEN 1 ELSE 0 END/);
+  assert.match(notifications, /Number\(notificationAttempts\) < 3/);
 });
 
 

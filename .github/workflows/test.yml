@@ -4,7 +4,8 @@ on:
   push:
     branches: [main, "feature/**"]
   pull_request:
-    branches: [main, improve-booking-intent-handoffs]
+    branches: [main, improve-booking-intent-handoffs, feature/pms-adapter-foundation]
+  workflow_dispatch:
 
 permissions:
   contents: read

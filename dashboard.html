@@ -112,10 +112,11 @@ main{padding:28px clamp(16px,4vw,48px);max-width:1450px;width:100%;margin:auto}.
    <div class="card"><div class="metriclabel">Open staff handoffs</div><div class="metric" id="mOpen">—</div></div>
   </div>
   <div id="revenueSection">
-  <div class="sectionrow"><h2>Revenue evidence · last 30 days</h2><span class="muted">Hotel-attested records only</span></div>
+  <div class="sectionrow"><h2>Revenue evidence</h2><span class="muted" id="revenueWindowLabel">Loading exact reporting window…</span></div>
   <div class="grid" id="revenueSummary">
    <div class="card"><div class="metriclabel">Veyra-linked confirmed revenue</div><div id="linkedRevenue" class="metric">—</div><div id="linkedRevenueCount" class="muted">Loading…</div></div>
    <div class="card"><div class="metriclabel">Hotel-reported, not Veyra-attributed</div><div id="unlinkedRevenue" class="metric">—</div><div id="unlinkedRevenueCount" class="muted">Loading…</div></div>
+   <div class="card"><div class="metriclabel">Distinct conversations linked by hotel staff</div><div id="linkedConversationCount" class="metric">—</div><div class="muted">A conversation link is not proof of influence or causation.</div></div>
   </div>
   <div class="card" style="margin-top:14px">
    <h3 style="margin-top:0">Record a confirmed booking or paid add-on</h3>
@@ -234,6 +235,9 @@ function formatRevenue(amountMinor,currency){
 }
 async function loadRevenue(){
  const d=await api("/api/admin/revenue");
+ const formatWindow=(value)=>new Intl.DateTimeFormat(undefined,{dateStyle:"medium",timeStyle:"short",timeZone:"UTC"}).format(new Date(value))+" UTC";
+ $("revenueWindowLabel").textContent="Trailing 30×24 hours · "+formatWindow(d.windowStart)+" to "+formatWindow(d.windowEnd)+" · hotel-attested records";
+ $("linkedConversationCount").textContent=String(d.linkedConversationCount??0);
  $("revenueForm").classList.toggle("hidden",!["owner","admin"].includes(currentRole));
  const renderTotals=(items)=>items.length?items.map(x=>formatRevenue(x.amount_minor,x.currency)).join(" + "):"—";
  const count=(items)=>items.reduce((n,x)=>n+Number(x.event_count||0),0);

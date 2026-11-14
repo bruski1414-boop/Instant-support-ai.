@@ -13,7 +13,9 @@ Each record requires an external booking/payment reference, a hotel evidence-sou
 - `veyra_linked_hotel_attested`: an owner/admin selected a conversation belonging to the same hotel workspace. This is hotel-attested attribution, not independent proof that Veyra caused the booking.
 - `hotel_reported_unlinked`: the hotel supplied a confirmed revenue record but did not link it to a Veyra conversation. It is deliberately excluded from the Veyra-linked total.
 
-The dashboard shows these totals separately for the trailing 30 days and does not combine different currencies. Totals are net of recorded refunds and chargebacks.
+The dashboard shows these totals separately for a rolling 30 × 24-hour window and does not combine different currencies. The API returns the exact UTC `windowStart` (inclusive) and `windowEnd` (exclusive) used for both totals. Totals are net of all recorded refunds and chargebacks attached to events in that window, as of the report time; an adjustment recorded later can therefore reduce the current net total for an event in an earlier window. The event and adjustment tables show the latest 50 records and are history views, not window-limited lists.
+
+A separate `linkedConversationCount` counts distinct Veyra conversation IDs attached by hotel staff to eligible revenue events in the same reporting window. It is not an “influenced conversations” metric and does not establish that Veyra caused or incrementally generated revenue. Veyra does not yet calculate influenced conversations or staff time saved. Those measures require separately agreed hotel definitions and measured baseline data; no time-saving estimate is displayed until that evidence exists.
 
 ## Controls
 

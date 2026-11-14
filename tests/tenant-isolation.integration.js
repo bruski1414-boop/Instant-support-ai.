@@ -337,6 +337,19 @@ try {
   const createdA = await createA.json();
   assert.equal(createdA.event.attribution_status, "veyra_linked_hotel_attested");
   assert.equal(createdA.event.amount_minor, "25050");
+  const linkedAddonEvent = {
+    type: "addon_paid",
+    externalReference: `PAY-${tag}-ADDON-A`,
+    sourceReference: `Hotel payment reconciliation ${tag}`,
+    amount: "20.00",
+    currency: "EUR",
+    occurredAt: new Date(Date.now() - 45_000).toISOString(),
+    conversationId: tenants[0].conversationId,
+  };
+  const linkedAddonResponse = await submitRevenue(cookieA, csrfA, linkedAddonEvent);
+  assert.equal(linkedAddonResponse.status, 201, await linkedAddonResponse.clone().text());
+  const linkedAddonBody = await linkedAddonResponse.json();
+  assert.equal(linkedAddonBody.event.attribution_status, "veyra_linked_hotel_attested");
   const auditA = await pool.query(
     "SELECT count(*)::int AS count FROM audit_logs WHERE action='revenue.attested' AND target_id=$1",
     [createdA.event.id],
@@ -367,9 +380,9 @@ try {
   assert.equal(staffRefund.status, 403, "staff accounts must not record financial adjustments");
   const afterRefund = await readRevenue(cookieA);
   const afterRefundBody = await afterRefund.json();
-  assert.equal(afterRefundBody.linkedTotals[0].gross_amount_minor, "25050");
+  assert.equal(afterRefundBody.linkedTotals[0].gross_amount_minor, "45050");
   assert.equal(afterRefundBody.linkedTotals[0].adjusted_amount_minor, "5050");
-  assert.equal(afterRefundBody.linkedTotals[0].amount_minor, "20000", "linked net revenue must subtract refunds");
+  assert.equal(afterRefundBody.linkedTotals[0].amount_minor, "40000", "linked net revenue must subtract refunds");
   const secondRefund = await fetch(baseUrl + "/api/admin/revenue/adjustments", {
     method: "POST",
     headers: { cookie: cookieA, "content-type": "application/json", "X-CSRF-Token": csrfA },
@@ -378,9 +391,13 @@ try {
   assert.equal(secondRefund.status, 201, await secondRefund.clone().text());
   const afterSecondRefund = await readRevenue(cookieA);
   const afterSecondRefundBody = await afterSecondRefund.json();
-  assert.equal(afterSecondRefundBody.linkedTotals[0].gross_amount_minor, "25050", "multiple adjustments must not multiply gross revenue");
+  assert.equal(afterSecondRefundBody.linkedTotals[0].gross_amount_minor, "45050", "multiple adjustments must not multiply gross revenue");
   assert.equal(afterSecondRefundBody.linkedTotals[0].adjusted_amount_minor, "7550");
-  assert.equal(afterSecondRefundBody.linkedTotals[0].amount_minor, "17500");
+  assert.equal(afterSecondRefundBody.linkedTotals[0].amount_minor, "37500");
+  assert.equal(afterSecondRefundBody.linkedTotals[0].event_count, 2);
+  assert.equal(afterSecondRefundBody.linkedConversationCount, 1, "multiple linked events from one conversation must count as one distinct conversation");
+  assert.equal(afterSecondRefundBody.windowDays, 30);
+  assert.equal(Date.parse(afterSecondRefundBody.windowEnd) - Date.parse(afterSecondRefundBody.windowStart), 30 * 24 * 60 * 60 * 1000, "the reporting window must be an exact rolling 30 days");
   assert.equal(afterSecondRefundBody.adjustments.length, 2);
   const duplicateA = await submitRevenue(cookieA, csrfA, linkedEvent);
   assert.equal(duplicateA.status, 409, "duplicate revenue references must be rejected");
@@ -436,7 +453,11 @@ try {
   const deletedConversationEvent = afterDeleteBody.events.find(event => event.external_reference === linkedEvent.externalReference);
   assert.equal(deletedConversationEvent.conversation_id, null);
   assert.equal(deletedConversationEvent.attribution_status, "hotel_reported_unlinked");
+  const deletedAddonEvent = afterDeleteBody.events.find(event => event.external_reference === linkedAddonEvent.externalReference);
+  assert.equal(deletedAddonEvent.conversation_id, null);
+  assert.equal(deletedAddonEvent.attribution_status, "hotel_reported_unlinked");
   assert.equal(afterDeleteBody.linkedTotals.reduce((n, item) => n + Number(item.event_count), 0), 0);
+  assert.equal(afterDeleteBody.linkedConversationCount, 0);
 
   const orgA = await pool.query("SELECT id FROM organizations WHERE slug=$1", [tenants[0].slug]);
   const retentionOld = await pool.query(

@@ -362,3 +362,11 @@ test("demo chat HTTP endpoint rejects empty and oversized messages", async () =>
     assert.match((await response.json()).error, /1,200 characters/);
   }
 });
+
+
+test("unmatched approved knowledge triggers a staff escalation instead of an AI guess", () => {
+  const server = fs.readFileSync("server.js", "utf8");
+  assert.match(server, /if\(!retrieval\.matched\)\s*\{\s*answer=\{reply:/);
+  assert.match(server, /No relevant approved hotel knowledge matched the guest question/);
+  assert.match(server, /needsHuman:true/);
+});

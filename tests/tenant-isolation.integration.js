@@ -358,7 +358,7 @@ try {
   assert.equal(guestChatBody.needsHuman, false);
   assert.ok(guestChatBody.conversationId);
   assert.match(guestChatBody.conversationToken, /^[A-Za-z0-9_-]{40,64}$/);
-  assert.ok(guestChatBody.knowledgeSources.some(source => source.title === "Breakfast hours"));
+  assert.ok(guestChatBody.knowledgeSources.some(source => source.title === "Breakfast hours Alpha"));
   const persistedJourney = await pool.query("SELECT m.role,m.content,m.evidence FROM conversations c JOIN messages m ON m.conversation_id=c.id WHERE c.id=$1 AND c.organization_id=$2 ORDER BY m.created_at", [guestChatBody.conversationId, orgAForPilot.rows[0].id]);
   assert.equal(persistedJourney.rowCount, 2, "guest and AI reply must persist in the same tenant conversation");
   assert.equal(persistedJourney.rows[0].role, "guest");

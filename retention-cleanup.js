@@ -29,7 +29,7 @@ async function cleanupTenantRetention(pool, organization, apply = false) {
     const deleted = result.rows[0].deleted;
     if (deleted > 0) {
       await client.query(
-        "INSERT INTO audit_logs(organization_id,actor_user_id,action,target_type,target_id) VALUES($1,NULL,'retention.cleanup_scheduled','conversation_batch',$2)",
+        "INSERT INTO audit_logs(organization_id,actor_user_id,action,target_type,target_id) VALUES($1,NULL,'retention.cleanup_executed','conversation_batch',$2)",
         [organization.id, String(deleted)]
       );
     }

@@ -1,50 +1,78 @@
-# Veyra AI — first hotel pilot runbook
+# Veyra AI — supervised first-hotel pilot runbook
 
-## What this pilot is
-A controlled evaluation of a website customer-support assistant for one hotel. It is not yet a multi-tenant enterprise SaaS platform, a property-management-system integration, or an automated booking/refund agent.
+**Status: NOT APPROVED FOR REAL GUEST USE.** This runbook describes the path to a narrowly scoped, supervised pilot. A green CI run is necessary but is not a hotel launch approval.
 
-## Non-negotiable launch gates
-- A parent or guardian helps manage hosting, provider accounts, contracts, and billing because the founder is under 18.
-- The hotel gives written permission to use its name, approved FAQs, website widget, and any test data.
-- A hotel manager approves every answer source: breakfast times, check-in/out, facilities, parking, transport, accessibility, and contact routes.
-- Do not ingest guest names, passport details, payment data, rooming lists, medical details, or private booking records for this pilot.
-- Never claim a reservation, cancellation, refund, payment, or staff notification has been completed.
-- Keep a named hotel staff member responsible for escalations. The current backend only sets an escalation flag; it does not notify staff.
-- The hotel can disable the widget immediately and has a human contact route available at all times.
+## Pilot scope
 
-## Before the first guest-facing test
-1. Create a separate demo environment for the hotel; do not reuse another hotel's content.
-2. Replace the demo business name and FAQ with hotel-approved, dated information.
-3. Set OPENAI_API_KEY as a server secret in Render. Never commit it.
-4. Set ALLOWED_ORIGINS to the exact hotel website origins, not a wildcard.
-5. Confirm the health endpoint reports ai-configured; confirm the model and provider usage limits with the account owner.
-6. Run the automated tests with npm test.
-7. Test at least 30 hotel-approved questions, including unknown questions, outdated information, complaints, refund requests, allergies, safety issues, and attempts to override the assistant instructions.
-8. Verify uncertain and sensitive cases are routed to a visible human contact route. Until a real notification integration is implemented, staff must monitor the agreed channel manually.
-9. Get hotel approval before placing the widget on a public website.
+Start with one design-partner hotel and a website FAQ assistant only. The first pilot must not make or modify reservations, take payments, issue refunds, change guest records, or promise room availability. The current Mews connector is restricted to the official Mews demo environment; production PMS access is not implemented or certified.
 
-## Pilot measurement (baseline first)
-For 2–4 weeks, record aggregate counts only:
+Use a separate production-grade environment for the hotel. Do not use the public synthetic demo as a hotel deployment. The demo's fictional Aster House data, metrics, simulated queue and scripted responses are not live hotel functionality.
+
+## Non-negotiable ownership and approval
+
+- Because the founder is under 18, a parent/guardian and the hotel's authorised adult operator must manage hosting accounts, provider accounts, credentials, contracts, billing and legal/privacy decisions.
+- Obtain written permission from the hotel for the pilot, the hotel name/brand, website widget, approved knowledge and any permitted data processing.
+- The hotel's authorised operator must approve the privacy notice, data-processing terms, lawful basis/consent where required, retention schedule, deletion process and vendor/subprocessor arrangements. The dashboard acknowledgement is a record of acknowledgement, not legal approval or certification.
+- Name a hotel staff owner for escalations and a backup. Agree a manual contact route and a process for disabling the widget immediately.
+- Begin with synthetic test messages. For the first guest-facing phase, avoid collecting guest names, booking references, passport/identity data, payment data, rooming lists, medical details or other sensitive information. Do not use private booking records as knowledge.
+- Never claim a booking, cancellation, refund, payment, room availability or staff notification is complete unless a verified integration confirms the result. The Mews integration in this branch is demo-host-only and read-only.
+
+## Technical release gates
+
+All ten checks from `GET /api/readiness` must be true before the guest chat endpoint will operate:
+
+1. `DATABASE_URL` connects successfully.
+2. A server-side AI provider key is configured.
+3. `GUEST_DATA_STORAGE_ENABLED=true` is enabled only after the hotel has approved the data-processing and retention arrangements.
+4. A signed staff dispatcher URL and secret are configured.
+5. `DURABLE_BACKUPS_VERIFIED=true` only after automated durable backups and a documented restore drill have been verified.
+6. `TENANT_ISOLATION_TESTS_PASSED=true` only after the relevant two-hotel isolation suite passes on the release commit.
+7. `PROVIDER_OAUTH_TESTED=true` only after the exact provider OAuth flows used by the hotel have been tested with the hotel's approved app configuration.
+8. `HOTEL_PRIVACY_APPROVED=true` only after the authorised hotel operator signs off the actual privacy/data-processing arrangements. This is a global deployment gate; each workspace must also record its own current owner/admin approval in the dashboard.
+9. `STAFF_HANDOFF_TESTED=true` only after an end-to-end signed test reaches the correct hotel receiver and the manual fallback is confirmed.
+10. `PILOT_RELEASE_APPROVED=true` only after the authorised hotel operator and responsible adult platform operator approve the written pilot checklist.
+
+Do not set these flags just to make the health endpoint green. They are attestations that require supporting evidence. `GET /api/readiness` returns 503 until every gate is true. The endpoint is not an independent audit or certification.
+
+Additional per-hotel checks are enforced by guest chat: current privacy approval, AI and staff integration checks, a connected hotel-owned storage account with a successful sync, current approved knowledge, and enabled guest-data storage.
+
+## Before any guest-facing test
+
+1. Use a dedicated, durable production database and web service for the hotel. Do not use the free prototype database; it is temporary and scheduled to expire on 11 December 2026.
+2. Configure secrets only in the hosting provider's secret manager. Never put API keys, webhook secrets, OAuth credentials or provisioning tokens in Git, browser code, screenshots or hotel-facing pages.
+3. Restrict allowed origins to the exact hotel website origin and verify the widget cannot be embedded from an unrelated origin.
+4. Have the hotel's authorised operator create the workspace and own its credentials. The founder should not handle guest or hotel secrets.
+5. Have a hotel manager approve each knowledge source, its source reference and review date. Editing content must trigger reapproval.
+6. Complete and retain evidence for every technical release gate above.
+7. Run `npm test` and `npm run test:integration` on the exact release commit. Record commit SHA, workflow links, database migration state and test output.
+8. Complete every relevant item in `PILOT-TEST-PLAN.md`, including at least 30 hotel-approved questions and prompt-injection, outdated-information, unsupported-claim, complaint, refund, allergy and safety scenarios.
+9. Test the signed staff notification against a hotel-controlled test receiver. Confirm delivery status, retries, duplicate handling, staff ownership and manual fallback. HTTP acceptance does not prove a human read the alert.
+10. Verify the hotel's widget can be disabled and that a visible human contact route remains available.
+11. Obtain written go-live approval from the authorised hotel operator before installing the widget on a public website.
+
+## Measure the pilot honestly
+
+Capture a pre-pilot baseline and agree success criteria in writing. For a 2–4 week supervised pilot, collect aggregate operational measures only where possible:
+
 - conversations started
-- questions answered from approved information
-- conversations escalated
-- unanswered questions
-- staff time spent reviewing escalations
-- guest feedback or complaint rate, if the hotel already measures it
+- answers supported by current approved hotel knowledge
+- escalations and notification failures
+- unanswered or incorrectly answered questions
+- first-response time and staff review time
+- guest feedback and complaints, using the hotel's existing measurement process
 
-Compare with a pre-pilot baseline. Do not claim extra revenue or labour savings unless the hotel can verify them. Agree success criteria with the hotel before the pilot begins.
+Do not equate an AI-only conversation with a resolved guest issue. Do not claim revenue uplift, labour savings, conversion improvement or causation without independently verifiable hotel evidence. Keep hotel-reported revenue separate from Veyra-linked, hotel-attested records.
 
-## What must be built before selling this as a scalable subscription
-- Authentication, role-based access, and strict tenant isolation
-- Persistent database with per-hotel knowledge and audit history
-- Real staff notifications, retries, delivery status, and escalation ownership
-- Admin interface for hotel-approved knowledge updates
-- Privacy notice, data retention/deletion controls, consent and processor terms
-- Rate limits and abuse controls per tenant, not just per IP
-- Automated tests for prompt injection, hallucinations, privacy boundaries, and failure modes
-- Monitoring, backups, incident response, uptime checks, and restore testing
-- Secure billing and subscription lifecycle
-- Independent security review and hotel sign-off
+## Current known limitations
+
+- The public demo is synthetic, deterministic and isolated. It does not use the AI provider, database, Mews, or real staff notifications.
+- The Mews adapter is restricted to the official demo host. No production Mews credentials, partner approval, hotel connection or production inventory call has been verified.
+- Google/Microsoft OAuth and storage connectors require real app registration, tenant consent and end-to-end provider testing before relying on them.
+- Durable paid hosting, backup/restore evidence, production monitoring, incident response and a security review are not established by the current CI status.
+- Email verification, password recovery, MFA, subscription billing and a complete commercial support process are not yet release-complete.
+- Rate limiting currently includes shared IP-based middleware; distributed, per-tenant abuse controls and load testing must be reviewed before scaling beyond a controlled pilot.
+- Privacy approval records and readiness flags are gates, not legal advice, compliance certification or security certification.
 
 ## Commercial rule
-Start with one design-partner hotel and a time-limited pilot. Agree scope and success measures in writing. Do not promise a particular revenue increase, guaranteed uptime, staff replacement, or enterprise readiness before evidence supports it.
+
+Start with one design-partner hotel, a narrow written scope, a time-limited supervised pilot and agreed success measures. Do not sell Veyra as enterprise-ready, promise guaranteed uptime, staff replacement, booking automation or a specific financial return until those capabilities are implemented and evidenced.

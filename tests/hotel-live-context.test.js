@@ -19,7 +19,7 @@ const fresh = {
 test("includes only currently valid availability and exposes its expiry", () => {
   const result = buildLiveHotelContext({ availabilitySnapshots: [fresh], nowUtc });
   assert.equal(result.availabilityCount, 1);
-  assert.match(result.context, /2 room\\(s\\) reported available/);
+  assert.match(result.context, /2 room\(s\) reported available/);
   assert.equal(result.availabilityFreshUntil, fresh.validUntil);
 });
 

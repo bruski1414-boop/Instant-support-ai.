@@ -226,6 +226,24 @@ function createMewsConnectorClient({
       return { reservations: all, pages, complete: false, cursor };
     },
 
+    async getServiceAvailabilityAbsolute({ serviceId, firstTimeUnitStartUtc, lastTimeUnitStartUtc } = {}) {
+      const start = validUtc(firstTimeUnitStartUtc, "firstTimeUnitStartUtc");
+      const end = validUtc(lastTimeUnitStartUtc, "lastTimeUnitStartUtc");
+      if (Date.parse(end) < Date.parse(start)) throw new Error("lastTimeUnitStartUtc must not be before firstTimeUnitStartUtc.");
+      const result = await post("/api/connector/v1/services/getAvailability", {
+        ServiceId: nonEmpty(serviceId, "serviceId"),
+        FirstTimeUnitStartUtc: start,
+        LastTimeUnitStartUtc: end
+      });
+      return {
+        timeUnitStartsUtc: result.TimeUnitStartsUtc || [],
+        categoryAvailabilities: (result.CategoryAvailabilities || []).map((entry) => ({
+          categoryId: entry.CategoryId,
+          availabilities: entry.Availabilities || []
+        }))
+      };
+    },
+
     async getServiceAvailability({ serviceId, firstTimeUnitStartUtc, lastTimeUnitStartUtc, metrics = DEFAULT_METRICS } = {}) {
       const start = validUtc(firstTimeUnitStartUtc, "firstTimeUnitStartUtc");
       const end = validUtc(lastTimeUnitStartUtc, "lastTimeUnitStartUtc");

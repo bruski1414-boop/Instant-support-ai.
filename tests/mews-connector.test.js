@@ -75,7 +75,7 @@ test("validates reservation filters and three-month incremental window before ne
   await assert.rejects(() => client.getReservations({ states: ["Unknown"] }), /supported Mews reservation states/);
   await assert.rejects(() => client.getReservations({
     updatedUtc: { startUtc: "2026-01-01T00:00:00Z", endUtc: "2026-05-01T00:00:00Z" }
-  }), /three-month/);
+  }), /three-calendar-month/);
   assert.equal(mock.calls.length, 0);
 });
 

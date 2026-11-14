@@ -9,7 +9,8 @@ const UNAVAILABLE_CONTEXT =
 
 function unavailable(reason) {
   return Object.freeze({
-    available: false,
+    connected: false,
+    hasAvailableRooms: false,
     reason,
     snapshots: [],
     context: UNAVAILABLE_CONTEXT,
@@ -63,8 +64,9 @@ async function buildMewsGuestAvailabilityContext({
     });
     const live = buildLiveHotelContext({ availabilitySnapshots: snapshots, nowUtc });
     return Object.freeze({
-      available: live.availabilityCount > 0,
-      reason: live.availabilityCount > 0 ? null : "no_current_inventory",
+      connected: true,
+      hasAvailableRooms: snapshots.some((snapshot) => snapshot.roomsAvailable > 0),
+      reason: null,
       snapshots,
       context: live.context,
       availabilityCount: live.availabilityCount,

@@ -234,6 +234,12 @@ try {
   assert.equal(gatedChat.status, 503, "guest chat must not start before this hotel's integrations are verified");
   const gatedChatBody = await gatedChat.json();
   assert.match(gatedChatBody.error, /AI and staff notification integrations must be verified/i);
+  const tenantBWithoutApproval = await fetch(`${baseUrl}/api/public/${tenants[1].slug}/chat`, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ message: "What time is breakfast?" }),
+  });
+  assert.equal(tenantBWithoutApproval.status, 503);
+  assert.match((await tenantBWithoutApproval.json()).error, /privacy approval/i, "tenant A's approval must not authorise tenant B");
   const noPrematureConversation = await pool.query(
     "SELECT count(*)::int AS count FROM conversations WHERE organization_id=(SELECT id FROM organizations WHERE slug=$1)",
     [tenants[0].slug],
@@ -378,6 +384,13 @@ try {
   const guestStaffPoll = await fetch(baseUrl + "/api/public/" + tenants[0].slug + "/chat?conversationId=" + guestChatBody.conversationId, { headers: { "X-Veyra-Conversation-Token": guestChatBody.conversationToken } });
   assert.equal(guestStaffPoll.status, 200);
   assert.deepEqual((await guestStaffPoll.json()).messages, []);
+  await pool.query("UPDATE organization_privacy_approvals SET revoked_at=now() WHERE organization_id=$1", [orgAForPilot.rows[0].id]);
+  const chatAfterRevocation = await fetch(baseUrl + "/api/public/" + tenants[0].slug + "/chat", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ message: "What time is breakfast?" }),
+  });
+  assert.equal(chatAfterRevocation.status, 503, "revoking a hotel's approval must immediately block new guest chat");
+  assert.match((await chatAfterRevocation.json()).error, /privacy approval/i);
   const staffRotateWebhook = await fetch(`${baseUrl}/api/admin/integrations/revenue-webhook/rotate`, {
     method: "POST",
     headers: { cookie: staffCookie, "X-CSRF-Token": staffCsrf, "content-type": "application/json" },

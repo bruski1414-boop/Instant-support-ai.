@@ -29,6 +29,7 @@ let serverReady = false;
 const webhookSecret = "ci-webhook-secret-" + tag;
 const webhookRequests = [];
 let webhookResponseStatus = 200;
+let webhookDelayMs = 0;
 const mockAiServer = createServer(async (req, res) => {
   let raw = "";
   for await (const chunk of req) raw += chunk;
@@ -43,6 +44,7 @@ const mockWebhookServer = createServer(async (req, res) => {
   let raw = "";
   for await (const chunk of req) raw += chunk;
   webhookRequests.push({ body: raw, signature: req.headers["x-veyra-signature"] });
+  if (webhookDelayMs) await new Promise(resolve => setTimeout(resolve, webhookDelayMs));
   res.writeHead(webhookResponseStatus, { "content-type": "application/json" });
   res.end(JSON.stringify({ accepted: webhookResponseStatus >= 200 && webhookResponseStatus < 300 }));
 });
@@ -545,6 +547,37 @@ try {
   );
   assert.equal(betaEscalationsAfterAlphaRetry.rows[0].notification_status, "delivered");
   assert.equal(betaEscalationsAfterAlphaRetry.rows[0].notification_attempts, 1, "Alpha retry must not alter Beta's notification state");
+
+  // Concurrent manual retries must atomically claim the escalation so only
+  // one request can call the hotel's webhook.
+  webhookResponseStatus = 503;
+  const concurrentFailure = await fetch(baseUrl + "/api/public/" + tenants[0].slug + "/chat", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ message: "Please have a staff member contact me about an urgent issue." }),
+  });
+  assert.equal(concurrentFailure.status, 200, await concurrentFailure.clone().text());
+  const concurrentFailureBody = await concurrentFailure.json();
+  assert.equal(concurrentFailureBody.notificationStatus, "failed");
+  webhookResponseStatus = 200;
+  webhookDelayMs = 150;
+  const webhookCountBeforeConcurrentRetry = webhookRequests.length;
+  const retryRequest = () => fetch(baseUrl + "/api/admin/escalations/" + concurrentFailureBody.escalationId + "/notify", {
+    method: "POST",
+    headers: { cookie: cookieA, "content-type": "application/json", "X-CSRF-Token": csrfA },
+    body: JSON.stringify({}),
+  });
+  const concurrentRetries = await Promise.all([retryRequest(), retryRequest()]);
+  webhookDelayMs = 0;
+  const retryStatuses = concurrentRetries.map(response => response.status).sort((a, b) => a - b);
+  assert.deepEqual(retryStatuses, [200, 409], "exactly one concurrent retry must claim the notification; the other must be rejected");
+  assert.equal(webhookRequests.length, webhookCountBeforeConcurrentRetry + 1, "concurrent retries must produce exactly one webhook request");
+  const concurrentRetryRecord = await pool.query(
+    "SELECT notification_status,notification_attempts FROM escalations WHERE id=$1 AND organization_id=$2",
+    [concurrentFailureBody.escalationId, orgAForPilot.rows[0].id],
+  );
+  assert.equal(concurrentRetryRecord.rows[0].notification_status, "delivered");
+  assert.equal(concurrentRetryRecord.rows[0].notification_attempts, 2, "only the claimed retry must increment the attempt count");
 
   const guestStaffPoll = await fetch(baseUrl + "/api/public/" + tenants[0].slug + "/chat?conversationId=" + guestChatBody.conversationId, { headers: { "X-Veyra-Conversation-Token": guestChatBody.conversationToken } });
   assert.equal(guestStaffPoll.status, 200);

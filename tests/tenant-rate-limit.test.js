@@ -16,6 +16,13 @@ test("actual public hotel chat route extracts the hotel slug", () => {
   assert.ok(alpha.startsWith("hotel-alpha:"));
 });
 
+test("extracts tenant from Express-mounted public route using originalUrl", () => {
+  const alpha = tenantChatRateLimitKey({ baseUrl: "/api/public", path: "/hotel-alpha/chat", originalUrl: "/api/public/hotel-alpha/chat?lang=en", ip: "203.0.113.10" });
+  const beta = tenantChatRateLimitKey({ baseUrl: "/api/public", path: "/hotel-beta/chat", originalUrl: "/api/public/hotel-beta/chat", ip: "203.0.113.10" });
+  assert.notEqual(alpha, beta);
+  assert.ok(alpha.startsWith("hotel-alpha:"));
+});
+
 test("same hotel and client IP share a rate limit key", () => {
   const first = tenantChatRateLimitKey({ path: "/hotel-alpha/chat", ip: "203.0.113.10" });
   const second = tenantChatRateLimitKey({ path: "/hotel-alpha/chat", ip: "203.0.113.10" });

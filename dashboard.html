@@ -66,6 +66,24 @@ main{padding:28px clamp(16px,4vw,48px);max-width:1450px;width:100%;margin:auto}.
    </form>
   </div>
 
+  <div class="sectionrow"><h2>Mews property management connection</h2><span class="muted">Read-only demo integration</span></div>
+  <div class="card" id="mewsConnectionCard">
+   <div id="mewsConnectionStatus" class="notice">Checking connection status…</div>
+   <p class="muted">Connect the hotel's authorised Mews demo account. Veyra encrypts credentials on the server and never displays saved tokens. Only the official Mews demo environment is supported here. Do not use production credentials.</p>
+   <form id="mewsConnectionForm">
+    <div class="formrow">
+     <div class="field"><label for="mewsClientToken">Mews client token</label><input id="mewsClientToken" type="password" maxlength="2048" autocomplete="new-password" placeholder="Paste demo client token" required></div>
+     <div class="field"><label for="mewsAccessToken">Mews access token</label><input id="mewsAccessToken" type="password" maxlength="2048" autocomplete="new-password" placeholder="Paste demo access token" required></div>
+    </div>
+    <div class="formrow">
+     <div class="field"><label for="mewsPropertyReference">Mews property / enterprise ID</label><input id="mewsPropertyReference" maxlength="200" placeholder="Property ID" required></div>
+     <div class="field"><label for="mewsServiceId">Daily accommodation service ID</label><input id="mewsServiceId" maxlength="200" placeholder="Service ID" required></div>
+    </div>
+    <div class="field"><label for="mewsTimezone">Property time zone (IANA)</label><input id="mewsTimezone" maxlength="100" placeholder="Europe/Helsinki" required></div>
+    <div class="actions"><button class="btn primary" id="saveMewsConnection" type="submit">Save encrypted connection</button><button class="btn" id="verifyMewsConnection" type="button" disabled>Verify Mews connection</button><button class="btn danger" id="disconnectMewsConnection" type="button" hidden>Disconnect Mews</button></div>
+   </form>
+   <div id="mewsConnectionHelp" class="muted" style="font-size:11px;margin-top:12px">Saving does not activate live availability. Verification must succeed first. Verification expires after 30 days and must be renewed.</div>
+  </div>
   <div class="sectionrow"><h2>Guest conversation retention</h2><span class="muted">Owner/admin controlled</span></div>
   <div class="card">
    <p class="muted">Choose a retention period approved by the hotel. Only resolved conversations older than this period, with no open escalation, can be deleted. Knowledge documents are not affected.</p>
@@ -323,6 +341,60 @@ async function loadRetention(){
 $("saveRetention").addEventListener("click",async()=>{try{await api("/api/admin/retention",{method:"PUT",body:JSON.stringify({retentionDays:Number($("retentionDays").value)})});showToast("Retention policy saved.");await loadRetention();}catch(err){notice(err.message,"error");}});
 $("previewRetention").addEventListener("click",async()=>{try{await loadRetention();}catch(err){notice(err.message,"error");}});
 $("runRetention").addEventListener("click",async()=>{if(!confirm("Permanently delete eligible resolved conversations for this hotel? This cannot be undone."))return;try{const x=await api("/api/admin/retention/cleanup",{method:"POST",body:JSON.stringify({confirm:true})});showToast("Deleted "+x.deleted+" eligible conversation(s).");await loadRetention();}catch(err){notice(err.message,"error");}});
+async function loadMewsConnection(){
+ const card=$("mewsConnectionCard");
+ if(!["owner","admin"].includes(currentRole)){card.classList.add("hidden");return;}
+ card.classList.remove("hidden");
+ const d=await api("/api/admin/mews");
+ const x=d.connection;
+ const status=$("mewsConnectionStatus");
+ $("verifyMewsConnection").disabled=!x||!d.encryptionConfigured;
+ $("disconnectMewsConnection").hidden=!x||currentRole!=="owner";
+ $("mewsConnectionForm").querySelectorAll("input").forEach(input=>{input.disabled=!d.encryptionConfigured;});
+ if(!d.encryptionConfigured){
+  status.className="notice error";status.textContent="Server-side encryption is not configured. An authorised platform administrator must configure STORAGE_TOKEN_ENCRYPTION_KEY before saving credentials.";
+ }else if(!x){
+  status.className="notice";status.textContent="Not connected. Add the hotel's Mews demo credentials below.";
+ }else{
+  const verified=x.status==="verified"&&x.last_verified_at&&Date.now()-Date.parse(x.last_verified_at)<30*24*60*60*1000;
+  status.className="notice "+(verified?"":"error");
+  status.textContent=(verified?"Verified connection":"Connection requires verification")+
+   " · Property "+x.property_reference+" · "+x.timezone+
+   (x.last_verified_at?" · Last verified "+date(x.last_verified_at):"")+
+   (x.last_error?" · Last error: "+x.last_error:"");
+  $("mewsPropertyReference").value=x.property_reference||"";
+  $("mewsServiceId").value=x.service_id||"";
+  $("mewsTimezone").value=x.timezone||"";
+ }
+ $("mewsClientToken").value="";$("mewsAccessToken").value="";
+ $("mewsConnectionHelp").textContent="Saved tokens are never sent back to this page. To replace credentials, enter both tokens again and save. Saving resets verification. Only read-only availability lookups are supported; Veyra cannot create or change reservations.";
+}
+$("mewsConnectionForm").addEventListener("submit",async e=>{
+ e.preventDefault();
+ const button=$("saveMewsConnection");button.disabled=true;
+ try{
+  await api("/api/admin/mews",{method:"PUT",body:JSON.stringify({
+   clientToken:$("mewsClientToken").value,accessToken:$("mewsAccessToken").value,
+   propertyReference:$("mewsPropertyReference").value.trim(),serviceId:$("mewsServiceId").value.trim(),
+   timeZone:$("mewsTimezone").value.trim()
+  })});
+  $("mewsClientToken").value="";$("mewsAccessToken").value="";
+  showToast("Mews credentials encrypted and saved. Verify the connection next.");
+  await loadMewsConnection();
+ }catch(err){notice(err.message,"error");}finally{button.disabled=false;}
+});
+$("verifyMewsConnection").addEventListener("click",async()=>{
+ const button=$("verifyMewsConnection");button.disabled=true;button.textContent="Verifying…";
+ try{await api("/api/admin/mews/verify",{method:"POST",body:"{}"});showToast("Mews property and daily service verified.");await loadMewsConnection();}
+ catch(err){notice(err.message,"error");await loadMewsConnection();}
+ finally{button.disabled=false;button.textContent="Verify Mews connection";}
+});
+$("disconnectMewsConnection").addEventListener("click",async()=>{
+ if(!confirm("Disconnect Mews for this hotel? Encrypted credentials will be deleted and live availability will stop."))return;
+ const button=$("disconnectMewsConnection");button.disabled=true;
+ try{await api("/api/admin/mews",{method:"DELETE",body:"{}"});showToast("Mews connection disconnected.");await loadMewsConnection();}
+ catch(err){notice(err.message,"error");}finally{button.disabled=false;}
+});
 async function loadSetup(){
  const [s,o]=await Promise.all([api("/api/admin/settings"),api("/api/admin/onboarding")]);
  $("hotelWebsite").value=s.settings.website_url||"";

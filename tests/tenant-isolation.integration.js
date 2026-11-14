@@ -37,7 +37,7 @@ const mockAiServer = createServer(async (req, res) => {
   try { request = JSON.parse(raw); } catch {}
   const question = String(request.messages?.find(message => message.role === "user")?.content || "");
   const answer = /breakfast/i.test(question) ? { reply: "Breakfast is served daily from 6:30 AM to 10:30 AM.", needsHuman: false, handoffReason: "" } : { reply: "I will ask the hotel team to help you.", needsHuman: true, handoffReason: "Staff assistance requested in integration test." };
-  res.writeHead(200, { "content-type": "application/json" });
+  res.writeHead(200, { "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true" });
   res.end(JSON.stringify({ id: "chatcmpl-ci", object: "chat.completion", created: 1, model: "mock-veyra-test", choices: [{ index: 0, message: { role: "assistant", content: JSON.stringify(answer) }, finish_reason: "stop" }] }));
 });
 const mockWebhookServer = createServer(async (req, res) => {
@@ -45,7 +45,7 @@ const mockWebhookServer = createServer(async (req, res) => {
   for await (const chunk of req) raw += chunk;
   webhookRequests.push({ body: raw, signature: req.headers["x-veyra-signature"], idempotencyKey: req.headers["idempotency-key"] });
   if (webhookDelayMs) await new Promise(resolve => setTimeout(resolve, webhookDelayMs));
-  res.writeHead(webhookResponseStatus, { "content-type": "application/json" });
+  res.writeHead(webhookResponseStatus, { "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true" });
   res.end(JSON.stringify({ accepted: webhookResponseStatus >= 200 && webhookResponseStatus < 300 }));
 });
 async function listen(server) {
@@ -74,7 +74,7 @@ async function waitForServer() {
 async function provision(tenant) {
   const response = await fetch(`${baseUrl}/api/platform/organizations`, {
     method: "POST",
-    headers: { "content-type": "application/json", "X-Platform-Provisioning-Token": token },
+    headers: { "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true", "X-Platform-Provisioning-Token": token },
     body: JSON.stringify({
       organizationName: tenant.name,
       email: tenant.email,
@@ -89,7 +89,7 @@ async function provision(tenant) {
 async function login(tenant) {
   const response = await fetch(`${baseUrl}/api/auth/login`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true" },
     body: JSON.stringify({
       organizationSlug: tenant.slug,
       email: tenant.email,
@@ -149,7 +149,7 @@ async function csrfToken(cookie) {
 async function submitRevenue(cookie, csrf, event) {
   return fetch(`${baseUrl}/api/admin/revenue`, {
     method: "POST",
-    headers: { cookie, "content-type": "application/json", "X-CSRF-Token": csrf },
+    headers: { cookie, "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true", "X-CSRF-Token": csrf },
     body: JSON.stringify(event),
   });
 }
@@ -161,7 +161,7 @@ async function readRevenue(cookie) {
 async function rotateRevenueWebhook(cookie, csrf) {
   const response = await fetch(`${baseUrl}/api/admin/integrations/revenue-webhook/rotate`, {
     method: "POST",
-    headers: { cookie, "X-CSRF-Token": csrf, "content-type": "application/json" },
+    headers: { cookie, "X-CSRF-Token": csrf, "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true" },
     body: "{}",
   });
   const body = await response.json();
@@ -174,7 +174,7 @@ async function rotateRevenueWebhook(cookie, csrf) {
 async function sendProviderRevenue(slug, secret, event) {
   return fetch(`${baseUrl}/api/integrations/${slug}/revenue`, {
     method: "POST",
-    headers: { "content-type": "application/json", "X-Veyra-Webhook-Token": secret || "" },
+    headers: { "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true", "X-Veyra-Webhook-Token": secret || "" },
     body: JSON.stringify(event),
   });
 }
@@ -231,14 +231,14 @@ try {
   // The real guest-chat route must remain closed until every pilot release gate is verified.
   const gatedChat = await fetch(`${baseUrl}/api/public/${tenants[0].slug}/chat`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true" },
     body: JSON.stringify({ message: "What time is breakfast?" }),
   });
   assert.equal(gatedChat.status, 503, "guest chat must not start before this hotel's integrations are verified");
   const gatedChatBody = await gatedChat.json();
   assert.match(gatedChatBody.error, /AI and staff notification integrations must be verified/i);
   const tenantBWithoutApproval = await fetch(`${baseUrl}/api/public/${tenants[1].slug}/chat`, {
-    method: "POST", headers: { "content-type": "application/json" },
+    method: "POST", headers: { "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true" },
     body: JSON.stringify({ message: "What time is breakfast?" }),
   });
   assert.equal(tenantBWithoutApproval.status, 503);
@@ -298,7 +298,7 @@ try {
 
   const staffReply = await fetch(`${baseUrl}/api/admin/conversations/${tenants[0].conversationId}/reply`, {
     method: "POST",
-    headers: { cookie: staffCookie, "X-CSRF-Token": staffCsrf, "content-type": "application/json" },
+    headers: { cookie: staffCookie, "X-CSRF-Token": staffCsrf, "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true" },
     body: JSON.stringify({ message: "A member of our hotel team can help with that." }),
   });
   assert.equal(staffReply.status, 201, await staffReply.clone().text());
@@ -320,14 +320,14 @@ try {
 
   const crossTenantStaffReply = await fetch(`${baseUrl}/api/admin/conversations/${tenants[1].conversationId}/reply`, {
     method: "POST",
-    headers: { cookie: staffCookie, "X-CSRF-Token": staffCsrf, "content-type": "application/json" },
+    headers: { cookie: staffCookie, "X-CSRF-Token": staffCsrf, "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true" },
     body: JSON.stringify({ message: "This cross-hotel reply must be blocked." }),
   });
   assert.equal(crossTenantStaffReply.status, 404, "staff must not reply to another hotel's conversation");
 
   const staffReplyWithoutCsrf = await fetch(`${baseUrl}/api/admin/conversations/${tenants[0].conversationId}/reply`, {
     method: "POST",
-    headers: { cookie: staffCookie, "content-type": "application/json" },
+    headers: { cookie: staffCookie, "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true" },
     body: JSON.stringify({ message: "This reply must be blocked." }),
   });
   assert.equal(staffReplyWithoutCsrf.status, 403, "staff replies must require CSRF verification");
@@ -352,7 +352,7 @@ try {
 
   // Exercise the real tenant guest-chat route with local AI and webhook test doubles.
   const guestChat = await fetch(baseUrl + "/api/public/" + tenants[0].slug + "/chat", {
-    method: "POST", headers: { "content-type": "application/json" },
+    method: "POST", headers: { "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true" },
     body: JSON.stringify({ message: "What time is breakfast?" }),
   });
   assert.equal(guestChat.status, 200, await guestChat.clone().text());
@@ -373,7 +373,7 @@ try {
   // Beta independently answers from its own approved knowledge and persists
   // the guest journey under Beta's organization, without Alpha's source evidence.
   const guestChatB = await fetch(baseUrl + "/api/public/" + tenants[1].slug + "/chat", {
-    method: "POST", headers: { "content-type": "application/json" },
+    method: "POST", headers: { "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true" },
     body: JSON.stringify({ message: "What time is breakfast?" }),
   });
   assert.equal(guestChatB.status, 200, await guestChatB.clone().text());
@@ -403,7 +403,7 @@ try {
   assert.equal(alphaTokenAgainstBeta.status, 404, "Alpha guest tokens must not work against Beta's workspace");
 
   const guestEscalation = await fetch(baseUrl + "/api/public/" + tenants[0].slug + "/chat", {
-    method: "POST", headers: { "content-type": "application/json" },
+    method: "POST", headers: { "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true" },
     body: JSON.stringify({ message: "I have a serious allergy and need help." }),
   });
   assert.equal(guestEscalation.status, 200, await guestEscalation.clone().text());
@@ -430,7 +430,7 @@ try {
   // Beta's urgent request must notify the same test receiver but identify Beta,
   // persist under Beta's organization, and never be recorded as Alpha's escalation.
   const guestEscalationB = await fetch(baseUrl + "/api/public/" + tenants[1].slug + "/chat", {
-    method: "POST", headers: { "content-type": "application/json" },
+    method: "POST", headers: { "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true" },
     body: JSON.stringify({ message: "I have a serious allergy and need help." }),
   });
   assert.equal(guestEscalationB.status, 200, await guestEscalationB.clone().text());
@@ -468,34 +468,34 @@ try {
   assert.ok(!staffEscalationsBBody.escalations.some(item => item.id === guestEscalationBody.escalationId), "Beta must not see Alpha's escalation");
   const crossTenantEscalationUpdate = await fetch(baseUrl + "/api/admin/escalations/" + guestEscalationBBody.escalationId, {
     method: "PATCH",
-    headers: { cookie: staffCookie, "content-type": "application/json", "X-CSRF-Token": staffCsrf },
+    headers: { cookie: staffCookie, "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true", "X-CSRF-Token": staffCsrf },
     body: JSON.stringify({ status: "claimed" }),
   });
   assert.equal(crossTenantEscalationUpdate.status, 404, "Alpha staff must not claim Beta's escalation");
 
   const crossTenantNotificationRetry = await fetch(baseUrl + "/api/admin/escalations/" + guestEscalationBBody.escalationId + "/notify", {
     method: "POST",
-    headers: { cookie: staffCookie, "content-type": "application/json", "X-CSRF-Token": staffCsrf },
+    headers: { cookie: staffCookie, "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true", "X-CSRF-Token": staffCsrf },
     body: JSON.stringify({}),
   });
   assert.equal(crossTenantNotificationRetry.status, 404, "Alpha staff must not retry Beta's notification");
 
   const duplicateDeliveredNotification = await fetch(baseUrl + "/api/admin/escalations/" + guestEscalationBody.escalationId + "/notify", {
     method: "POST",
-    headers: { cookie: staffCookie, "content-type": "application/json", "X-CSRF-Token": staffCsrf },
+    headers: { cookie: staffCookie, "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true", "X-CSRF-Token": staffCsrf },
     body: JSON.stringify({}),
   });
   assert.equal(duplicateDeliveredNotification.status, 409, "a delivered notification must not be sent again");
 
   const resolveBetaEscalation = await fetch(baseUrl + "/api/admin/escalations/" + guestEscalationBBody.escalationId, {
     method: "PATCH",
-    headers: { cookie: cookieB, "content-type": "application/json", "X-CSRF-Token": csrfB },
+    headers: { cookie: cookieB, "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true", "X-CSRF-Token": csrfB },
     body: JSON.stringify({ status: "resolved" }),
   });
   assert.equal(resolveBetaEscalation.status, 200, await resolveBetaEscalation.clone().text());
   const retryResolvedEscalation = await fetch(baseUrl + "/api/admin/escalations/" + guestEscalationBBody.escalationId + "/notify", {
     method: "POST",
-    headers: { cookie: cookieB, "content-type": "application/json", "X-CSRF-Token": csrfB },
+    headers: { cookie: cookieB, "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true", "X-CSRF-Token": csrfB },
     body: JSON.stringify({}),
   });
   assert.equal(retryResolvedEscalation.status, 409, "resolved handoffs must not send another notification");
@@ -504,7 +504,7 @@ try {
   // only that tenant's pending handoff without creating a duplicate escalation.
   webhookResponseStatus = 503;
   const failedDelivery = await fetch(baseUrl + "/api/public/" + tenants[0].slug + "/chat", {
-    method: "POST", headers: { "content-type": "application/json" },
+    method: "POST", headers: { "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true" },
     body: JSON.stringify({ message: "Please get a staff member to help me." }),
   });
   assert.equal(failedDelivery.status, 200, await failedDelivery.clone().text());
@@ -524,7 +524,7 @@ try {
   const retriedDelivery = await fetch(baseUrl + "/api/public/" + tenants[0].slug + "/chat", {
     method: "POST",
     headers: {
-      "content-type": "application/json",
+      "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true",
       "X-Veyra-Conversation-Token": failedDeliveryBody.conversationToken,
     },
     body: JSON.stringify({
@@ -559,7 +559,7 @@ try {
   webhookResponseStatus = 503;
   const concurrentFailure = await fetch(baseUrl + "/api/public/" + tenants[0].slug + "/chat", {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true" },
     body: JSON.stringify({ message: "Please have a staff member contact me about an urgent issue." }),
   });
   assert.equal(concurrentFailure.status, 200, await concurrentFailure.clone().text());
@@ -570,7 +570,7 @@ try {
   const webhookCountBeforeConcurrentRetry = webhookRequests.length;
   const retryRequest = () => fetch(baseUrl + "/api/admin/escalations/" + concurrentFailureBody.escalationId + "/notify", {
     method: "POST",
-    headers: { cookie: cookieA, "content-type": "application/json", "X-CSRF-Token": csrfA },
+    headers: { cookie: cookieA, "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true", "X-CSRF-Token": csrfA },
     body: JSON.stringify({}),
   });
   const concurrentRetries = await Promise.all([retryRequest(), retryRequest()]);
@@ -589,7 +589,7 @@ try {
   webhookResponseStatus = 503;
   const concurrentGuestFailure = await fetch(baseUrl + "/api/public/" + tenants[0].slug + "/chat", {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true" },
     body: JSON.stringify({ message: "Please have the hotel team contact me about an urgent matter." }),
   });
   assert.equal(concurrentGuestFailure.status, 200, await concurrentGuestFailure.clone().text());
@@ -600,7 +600,7 @@ try {
   const webhookCountBeforeGuestRetries = webhookRequests.length;
   const guestRetry = message => fetch(baseUrl + "/api/public/" + tenants[0].slug + "/chat", {
     method: "POST",
-    headers: { "content-type": "application/json", "X-Veyra-Conversation-Token": concurrentGuestFailureBody.conversationToken },
+    headers: { "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true", "X-Veyra-Conversation-Token": concurrentGuestFailureBody.conversationToken },
     body: JSON.stringify({
       message,
       conversationId: concurrentGuestFailureBody.conversationId,
@@ -627,7 +627,7 @@ try {
   webhookResponseStatus = 503;
   const abandonedDelivery = await fetch(baseUrl + "/api/public/" + tenants[0].slug + "/chat", {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true" },
     body: JSON.stringify({ message: "Please ask the hotel team to contact me." }),
   });
   assert.equal(abandonedDelivery.status, 200, await abandonedDelivery.clone().text());
@@ -640,7 +640,7 @@ try {
   webhookResponseStatus = 200;
   const recoveredDelivery = await fetch(baseUrl + "/api/admin/escalations/" + abandonedDeliveryBody.escalationId + "/notify", {
     method: "POST",
-    headers: { cookie: cookieA, "content-type": "application/json", "X-CSRF-Token": csrfA },
+    headers: { cookie: cookieA, "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true", "X-CSRF-Token": csrfA },
     body: JSON.stringify({}),
   });
   assert.equal(recoveredDelivery.status, 200, await recoveredDelivery.clone().text());
@@ -658,21 +658,21 @@ try {
   assert.deepEqual((await guestStaffPoll.json()).messages, []);
   await pool.query("UPDATE organization_privacy_approvals SET revoked_at=now() WHERE organization_id=$1", [orgAForPilot.rows[0].id]);
   const chatAfterRevocation = await fetch(baseUrl + "/api/public/" + tenants[0].slug + "/chat", {
-    method: "POST", headers: { "content-type": "application/json" },
+    method: "POST", headers: { "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true" },
     body: JSON.stringify({ message: "What time is breakfast?" }),
   });
   assert.equal(chatAfterRevocation.status, 503, "revoking a hotel's approval must immediately block new guest chat");
   assert.match((await chatAfterRevocation.json()).error, /privacy approval/i);
   const cleanupWhilePrivacyRevoked = await fetch(`${baseUrl}/api/admin/retention/cleanup`, {
     method: "POST",
-    headers: { cookie: cookieA, "X-CSRF-Token": csrfA, "content-type": "application/json" },
+    headers: { cookie: cookieA, "X-CSRF-Token": csrfA, "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true" },
     body: JSON.stringify({ confirm: true }),
   });
   assert.equal(cleanupWhilePrivacyRevoked.status, 409, "retention deletion must be blocked while hotel privacy approval is revoked");
   await pool.query("UPDATE organization_privacy_approvals SET revoked_at=NULL,approved_at=now() WHERE organization_id=$1", [orgAForPilot.rows[0].id]);
   const staffRotateWebhook = await fetch(`${baseUrl}/api/admin/integrations/revenue-webhook/rotate`, {
     method: "POST",
-    headers: { cookie: staffCookie, "X-CSRF-Token": staffCsrf, "content-type": "application/json" },
+    headers: { cookie: staffCookie, "X-CSRF-Token": staffCsrf, "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true" },
     body: "{}",
   });
   assert.equal(staffRotateWebhook.status, 403, "staff accounts must not rotate financial webhook credentials");
@@ -763,7 +763,7 @@ try {
 
   const disableWebhook = await fetch(`${baseUrl}/api/admin/integrations/revenue-webhook`, {
     method: "DELETE",
-    headers: { cookie: cookieA, "X-CSRF-Token": csrfA, "content-type": "application/json" },
+    headers: { cookie: cookieA, "X-CSRF-Token": csrfA, "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true" },
     body: "{}",
   });
   assert.equal(disableWebhook.status, 200, "owners must be able to disable a revenue webhook");
@@ -825,17 +825,17 @@ try {
     currency: "EUR",
     occurredAt: new Date(Date.now() - 20000).toISOString(),
   };
-  const refundResponse = await fetch(baseUrl + "/api/admin/revenue/adjustments", { method: "POST", headers: { cookie: cookieA, "content-type": "application/json", "X-CSRF-Token": csrfA }, body: JSON.stringify(refundEvent) });
+  const refundResponse = await fetch(baseUrl + "/api/admin/revenue/adjustments", { method: "POST", headers: { cookie: cookieA, "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true", "X-CSRF-Token": csrfA }, body: JSON.stringify(refundEvent) });
   assert.equal(refundResponse.status, 201, await refundResponse.clone().text());
   const refundBody = await refundResponse.json();
   assert.equal(refundBody.adjustment.amount_minor, "5050");
-  const duplicateRefund = await fetch(baseUrl + "/api/admin/revenue/adjustments", { method: "POST", headers: { cookie: cookieA, "content-type": "application/json", "X-CSRF-Token": csrfA }, body: JSON.stringify(refundEvent) });
+  const duplicateRefund = await fetch(baseUrl + "/api/admin/revenue/adjustments", { method: "POST", headers: { cookie: cookieA, "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true", "X-CSRF-Token": csrfA }, body: JSON.stringify(refundEvent) });
   assert.equal(duplicateRefund.status, 409, "duplicate refund references must be rejected");
-  const excessiveRefund = await fetch(baseUrl + "/api/admin/revenue/adjustments", { method: "POST", headers: { cookie: cookieA, "content-type": "application/json", "X-CSRF-Token": csrfA }, body: JSON.stringify({ ...refundEvent, externalReference: "REFUND-" + tag + "-TOO-LARGE", amount: "200.01" }) });
+  const excessiveRefund = await fetch(baseUrl + "/api/admin/revenue/adjustments", { method: "POST", headers: { cookie: cookieA, "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true", "X-CSRF-Token": csrfA }, body: JSON.stringify({ ...refundEvent, externalReference: "REFUND-" + tag + "-TOO-LARGE", amount: "200.01" }) });
   assert.equal(excessiveRefund.status, 400, "refunds must not exceed the original event's remaining amount");
-  const wrongCurrencyRefund = await fetch(baseUrl + "/api/admin/revenue/adjustments", { method: "POST", headers: { cookie: cookieA, "content-type": "application/json", "X-CSRF-Token": csrfA }, body: JSON.stringify({ ...refundEvent, externalReference: "REFUND-" + tag + "-WRONG-CURRENCY", currency: "USD" }) });
+  const wrongCurrencyRefund = await fetch(baseUrl + "/api/admin/revenue/adjustments", { method: "POST", headers: { cookie: cookieA, "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true", "X-CSRF-Token": csrfA }, body: JSON.stringify({ ...refundEvent, externalReference: "REFUND-" + tag + "-WRONG-CURRENCY", currency: "USD" }) });
   assert.equal(wrongCurrencyRefund.status, 400, "refund currency must match the original event");
-  const staffRefund = await fetch(baseUrl + "/api/admin/revenue/adjustments", { method: "POST", headers: { cookie: staffCookie, "content-type": "application/json", "X-CSRF-Token": staffCsrf }, body: JSON.stringify({ ...refundEvent, externalReference: "REFUND-" + tag + "-STAFF" }) });
+  const staffRefund = await fetch(baseUrl + "/api/admin/revenue/adjustments", { method: "POST", headers: { cookie: staffCookie, "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true", "X-CSRF-Token": staffCsrf }, body: JSON.stringify({ ...refundEvent, externalReference: "REFUND-" + tag + "-STAFF" }) });
   assert.equal(staffRefund.status, 403, "staff accounts must not record financial adjustments");
   const afterRefund = await readRevenue(cookieA);
   const afterRefundBody = await afterRefund.json();
@@ -844,7 +844,7 @@ try {
   assert.equal(afterRefundBody.linkedTotals[0].amount_minor, "22000", "linked net revenue must subtract refunds");
   const secondRefund = await fetch(baseUrl + "/api/admin/revenue/adjustments", {
     method: "POST",
-    headers: { cookie: cookieA, "content-type": "application/json", "X-CSRF-Token": csrfA },
+    headers: { cookie: cookieA, "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true", "X-CSRF-Token": csrfA },
     body: JSON.stringify({ ...refundEvent, externalReference: "REFUND-" + tag + "-SECOND", amount: "25.00" }),
   });
   assert.equal(secondRefund.status, 201, await secondRefund.clone().text());
@@ -899,7 +899,7 @@ try {
 
   const missingCsrf = await fetch(`${baseUrl}/api/admin/revenue`, {
     method: "POST",
-    headers: { cookie: cookieA, "content-type": "application/json" },
+    headers: { cookie: cookieA, "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true" },
     body: JSON.stringify(linkedEvent),
   });
   assert.equal(missingCsrf.status, 403, "revenue writes must require CSRF verification");
@@ -947,13 +947,13 @@ try {
 
   const saveRetention = await fetch(`${baseUrl}/api/admin/retention`, {
     method: "PUT",
-    headers: { cookie: cookieA, "X-CSRF-Token": csrfA, "content-type": "application/json" },
+    headers: { cookie: cookieA, "X-CSRF-Token": csrfA, "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true" },
     body: JSON.stringify({ retentionDays: 30 }),
   });
   assert.equal(saveRetention.status, 200, await saveRetention.clone().text());
   const staffRetentionChange = await fetch(`${baseUrl}/api/admin/retention`, {
     method: "PUT",
-    headers: { cookie: staffCookie, "X-CSRF-Token": staffCsrf, "content-type": "application/json" },
+    headers: { cookie: staffCookie, "X-CSRF-Token": staffCsrf, "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true" },
     body: JSON.stringify({ retentionDays: 30 }),
   });
   assert.equal(staffRetentionChange.status, 403, "staff cannot change retention policy");
@@ -963,19 +963,19 @@ try {
   assert.equal(retentionPreviewBody.eligibleConversations, 1, "open escalations must protect old conversations");
   const missingRetentionConfirm = await fetch(`${baseUrl}/api/admin/retention/cleanup`, {
     method: "POST",
-    headers: { cookie: cookieA, "X-CSRF-Token": csrfA, "content-type": "application/json" },
+    headers: { cookie: cookieA, "X-CSRF-Token": csrfA, "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true" },
     body: JSON.stringify({}),
   });
   assert.equal(missingRetentionConfirm.status, 400, "retention deletion requires explicit confirmation");
   const staffRetentionCleanup = await fetch(`${baseUrl}/api/admin/retention/cleanup`, {
     method: "POST",
-    headers: { cookie: staffCookie, "X-CSRF-Token": staffCsrf, "content-type": "application/json" },
+    headers: { cookie: staffCookie, "X-CSRF-Token": staffCsrf, "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true" },
     body: JSON.stringify({ confirm: true }),
   });
   assert.equal(staffRetentionCleanup.status, 403, "staff cannot run retention cleanup");
   const retentionCleanup = await fetch(`${baseUrl}/api/admin/retention/cleanup`, {
     method: "POST",
-    headers: { cookie: cookieA, "X-CSRF-Token": csrfA, "content-type": "application/json" },
+    headers: { cookie: cookieA, "X-CSRF-Token": csrfA, "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true" },
     body: JSON.stringify({ confirm: true }),
   });
   assert.equal(retentionCleanup.status, 200, await retentionCleanup.clone().text());

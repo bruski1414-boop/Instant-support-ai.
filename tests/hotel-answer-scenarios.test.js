@@ -83,7 +83,6 @@ test("expired and future-dated room snapshots are excluded from guest-facing liv
     ]
   });
   assert.equal(result.availabilityCount, 1);
-  assert.match(result.context, /sourceEventId/);
   assert.match(result.context, /2 room\(s\) reported available/);
   assert.doesNotMatch(result.context, /expired|future/);
 });

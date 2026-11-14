@@ -18,7 +18,7 @@ const {validateAnswerGrounding}=require("./answer-grounding");
 const {isValidDateOnly,isOptionalBoolean}=require("./knowledge-validation");
 const {normalizeRevenueEvent,normalizeRevenueAdjustment}=require("./revenue-attribution");
 const {normalizeGuestConversationAccess,normalizeStaffReply,canReplyToConversation}=require("./guest-messaging");
-const {deliverStaffEscalation}=require("./staff-notifications");
+const {deliverStaffEscalation,shouldRetryStaffNotification}=require("./staff-notifications");
 const app=express();
 const PORT=Number(process.env.PORT||3000);
 const MODEL=process.env.OPENAI_MODEL||"gpt-4.1-mini";
@@ -416,7 +416,7 @@ app.post("/api/public/:slug/chat",async(q,r,n)=>{
  const savedMessages=await c.query("INSERT INTO messages(conversation_id,role,content) VALUES($1,'guest',$2),($1,'assistant',$3) RETURNING id,role",[cid,msg.trim(),reply]);const assistantMessage=savedMessages.rows.find(item=>item.role==="assistant");const evidence={status:groundingCheck.supported?"supported":(groundingCheck.reason||"not_checked"),sources:retrieval.sources,liveAvailabilityVerified:Boolean(liveAvailability?.verified),unsupportedNumbers:groundingCheck.unsupportedNumbers||[],handoffReason:flagHuman?String(answer.handoffReason||"Staff review required").slice(0,300):null};await c.query("UPDATE messages SET evidence=$1::jsonb WHERE id=$2 AND role='assistant'",[JSON.stringify(evidence),assistantMessage.id]);await c.query("UPDATE conversations SET last_message_at=now(),status=CASE WHEN $2 THEN 'escalated' WHEN status='resolved' THEN 'open' ELSE status END WHERE id=$1 AND organization_id=$3",[cid,flagHuman,org.id]);
  if(flagHuman){const prior=await c.query("SELECT id,notification_status,notification_attempts FROM escalations WHERE conversation_id=$1 AND organization_id=$2 AND status<>'resolved' ORDER BY created_at DESC LIMIT 1",[cid,org.id]);if(prior.rowCount){eid=prior.rows[0].id;existingNotificationStatus=prior.rows[0].notification_status;existingNotificationAttempts=Number(prior.rows[0].notification_attempts||0);}else{const e=await c.query("INSERT INTO escalations(organization_id,conversation_id,reason) VALUES($1,$2,$3) RETURNING id",[org.id,cid,String(answer.handoffReason||"Staff review required").slice(0,300)]);eid=e.rows[0].id;createdEscalation=true;}}
  await c.query("COMMIT");}catch(e){await c.query("ROLLBACK");throw e;}finally{c.release();}
- const retryNotification=Boolean(flagHuman&&!createdEscalation&&existingNotificationStatus!=="delivered"&&existingNotificationAttempts<3);
+ const retryNotification=shouldRetryStaffNotification({needsHuman:flagHuman,createdEscalation,notificationStatus:existingNotificationStatus,notificationAttempts:existingNotificationAttempts});
  const shouldNotify=createdEscalation||retryNotification;
  const notice=shouldNotify?await notify(org,cid,String(answer.handoffReason||"Staff review required").slice(0,300)):{configured:existingNotificationStatus!=="not_configured",delivered:existingNotificationStatus==="delivered",status:flagHuman?existingNotificationStatus:"not_configured"};
  if(shouldNotify)await db.query("UPDATE escalations SET notification_status=$1,notification_attempts=notification_attempts+CASE WHEN $2 THEN 1 ELSE 0 END,notification_last_attempt_at=CASE WHEN $2 THEN now() ELSE notification_last_attempt_at END WHERE id=$3 AND organization_id=$4",[notice.status,notice.configured,eid,org.id]);

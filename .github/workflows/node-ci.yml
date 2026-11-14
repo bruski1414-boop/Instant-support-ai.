@@ -27,3 +27,37 @@ jobs:
         run: npm install --no-audit --no-fund
       - name: Run syntax checks and unit tests
         run: npm test
+
+  postgres-integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: veyra_test
+          POSTGRES_PASSWORD: veyra_test_password
+          POSTGRES_DB: veyra_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U veyra_test -d veyra_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      CI: "true"
+      VEYRA_TENANT_TEST_DATABASE: "true"
+      DATABASE_URL: postgres://veyra_test:veyra_test_password@localhost:5432/veyra_test
+      DATABASE_SSL: "false"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Run PostgreSQL tenant-isolation integration tests
+        run: npm run test:integration

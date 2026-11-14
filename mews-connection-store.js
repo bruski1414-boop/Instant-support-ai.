@@ -42,7 +42,7 @@ function createMewsConnectionStore({ db, encryptionKey, clientName = "Veyra AI/0
 
   async function resolve(organizationId) {
     const result = await db.query(
-      "SELECT organization_id,encrypted_credentials,service_id,property_reference,timezone FROM mews_connections WHERE organization_id=$1 AND status='configured'",
+      "SELECT organization_id,encrypted_credentials,service_id,property_reference,timezone FROM mews_connections WHERE organization_id=$1 AND status IN ('configured','verified','error')",
       [organizationId]
     );
     if (!result.rowCount) return null;

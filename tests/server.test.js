@@ -312,3 +312,53 @@ test("hotel storage dashboard distinguishes disconnect from explicit imported-co
   assert.match(dashboard, /api\("\/api\/admin\/storage\/imports\/"\+b\.dataset\.storagePurge/);
   assert.match(dashboard, /Existing imported knowledge copies will remain in Veyra until separately deleted/);
 });
+
+
+test("demo metrics HTTP endpoint returns clearly labelled synthetic metrics", async () => {
+  const response = await fetch(`${baseUrl}/api/demo/metrics`);
+  const body = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(body.demoOnly, true);
+  assert.equal(body.conversations, 126);
+  assert.equal(body.resolvedWithoutStaff + body.staffHandoffs, body.conversations);
+  assert.equal(body.veyraLinkedRevenueMinor, 0);
+  assert.match(body.note, /not attributed to Veyra/);
+});
+
+test("demo chat HTTP endpoint answers approved hotel facts", async () => {
+  const response = await fetch(`${baseUrl}/api/demo/chat`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ message: "When is breakfast served?" })
+  });
+  const body = await response.json();
+  assert.equal(response.status, 200);
+  assert.match(body.reply, /6:30 AM to 10:30 AM/);
+  assert.equal(body.needsHuman, false);
+  assert.equal(body.demoOnly, true);
+});
+
+test("demo chat HTTP endpoint safely hands booking actions to the simulated queue", async () => {
+  const response = await fetch(`${baseUrl}/api/demo/chat`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ message: "Can you book me a room?" })
+  });
+  const body = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(body.needsHuman, true);
+  assert.equal(body.handoffStatus, "demo_queue_only");
+  assert.match(body.reply, /no real staff member is notified/i);
+});
+
+test("demo chat HTTP endpoint rejects empty and oversized messages", async () => {
+  for (const message of ["", "x".repeat(1201)]) {
+    const response = await fetch(`${baseUrl}/api/demo/chat`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ message })
+    });
+    assert.equal(response.status, 400);
+    assert.match((await response.json()).error, /1,200 characters/);
+  }
+});

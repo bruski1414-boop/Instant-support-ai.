@@ -235,7 +235,7 @@ async function loadOverview(){
  $("performanceAiOnly").textContent=safe(p.ai_only_so_far||0);
  $("performanceStaff").textContent=safe(p.staff_replied_conversations||0);
  $("performanceHandoff").textContent=(Number.isFinite(Number(p.handoff_rate_percent))?Number(p.handoff_rate_percent).toFixed(1)+"%":"—");
- const firstReply=Number(p.median_first_ai_response_seconds);
+ const firstReply=p.median_first_ai_response_seconds===null||p.median_first_ai_response_seconds===undefined?NaN:Number(p.median_first_ai_response_seconds);
  $("performanceMedianReply").textContent=Number.isFinite(firstReply)?(firstReply<60?Math.round(firstReply)+" sec":(firstReply/60).toFixed(1)+" min"):"—";
  $("revenueConversation").innerHTML='<option value="">No Veyra conversation — hotel-reported only</option>'+(d.conversations||[]).map(c=>'<option value="'+safe(c.id)+'">'+safe(c.id).slice(0,8)+' · '+safe(c.status)+' · '+date(c.started_at)+'</option>').join("");
  const rows=(d.conversations||[]).map(c=>'<tr><td><strong>'+safe(c.id).slice(0,8)+'</strong></td><td>'+safe(c.latest_message||"No message preview")+'</td><td>'+statusTag(c.status)+'</td><td>'+date(c.started_at)+'</td></tr>').join("");

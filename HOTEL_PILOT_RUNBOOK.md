@@ -70,7 +70,7 @@ Do not equate an AI-only conversation with a resolved guest issue. Do not claim 
 - Google/Microsoft OAuth and storage connectors require real app registration, tenant consent and end-to-end provider testing before relying on them.
 - Durable paid hosting, backup/restore evidence, production monitoring, incident response and a security review are not established by the current CI status.
 - Email verification, password recovery, MFA, subscription billing and a complete commercial support process are not yet release-complete.
-- Rate limiting currently includes shared IP-based middleware; distributed, per-tenant abuse controls and load testing must be reviewed before scaling beyond a controlled pilot.
+- Guest chat now has a per-hotel plus client-IP rate-limit key, in addition to the shared API limit. The default store is in-memory per process, not distributed; configure a shared store and validate proxy/IP settings before multi-instance scaling.
 - Privacy approval records and readiness flags are gates, not legal advice, compliance certification or security certification.
 
 ## Commercial rule

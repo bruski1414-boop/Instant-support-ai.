@@ -78,8 +78,19 @@ function createMewsConnectionStore({ db, encryptionKey, clientName = "Veyra AI/0
     if (configuration.enterprise.timeZoneIdentifier !== connection.timeZone) {
       throw new Error("The configured time zone does not match the authenticated Mews property's time zone.");
     }
-    const service = services.services.find((item) => item.id === connection.service.id && item.active);
-    if (!service || service.timeUnitPeriod !== "Day") throw new Error("Choose an active daily accommodation service in Mews.");
+    // A portfolio-scoped token can see services from more than one enterprise.
+    // Bind the selected service to this exact property and require a bookable
+    // daily service before treating its availability as room inventory.
+    const service = services.services.find((item) =>
+      item.id === connection.service.id &&
+      item.enterpriseId === configuration.enterprise.id &&
+      item.active &&
+      item.serviceType === "Bookable" &&
+      item.timeUnitPeriod === "Day"
+    );
+    if (!service) {
+      throw new Error("Choose an active daily Bookable service belonging to the configured Mews property.");
+    }
     await db.query("UPDATE mews_connections SET status='verified',last_verified_at=now(),last_error=NULL,updated_at=now() WHERE organization_id=$1", [organizationId]);
     return { verified: true, propertyTimeZone: configuration.enterprise.timeZoneIdentifier, serviceTimeUnit: service.timeUnitPeriod };
   }

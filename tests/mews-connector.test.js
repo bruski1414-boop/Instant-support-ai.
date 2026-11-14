@@ -165,3 +165,39 @@ test("does not leak raw Mews error bodies", async () => {
     return true;
   });
 });
+
+test("automatically follows service cursors, including when the helper is called unbound", async () => {
+  const mock = mockFetch(async (_url, options) => {
+    const body = JSON.parse(options.body);
+    if (!body.Limitation.Cursor) {
+      return jsonResponse({
+        Services: [
+          { Id: "svc-1", EnterpriseId: "hotel-1", IsActive: true, Names: { "en-US": "Rooms" } },
+          { Id: "svc-2", EnterpriseId: "hotel-1", IsActive: true, Names: { "en-US": "Spa" } }
+        ],
+        Cursor: "service-page-2"
+      });
+    }
+    return jsonResponse({
+      Services: [{ Id: "svc-3", EnterpriseId: "hotel-1", IsActive: true, Names: { "en-US": "Restaurant" } }],
+      Cursor: null
+    });
+  });
+  const client = createMewsConnectorClient({ ...credentials, fetchImpl: mock.fetchImpl });
+  const getAllServices = client.getAllServices;
+  const result = await getAllServices({ count: 2 });
+  assert.equal(mock.calls.length, 2);
+  assert.equal(JSON.parse(mock.calls[1].options.body).Limitation.Cursor, "service-page-2");
+  assert.deepEqual(result.services.map((service) => service.id), ["svc-1", "svc-2", "svc-3"]);
+  assert.equal(result.complete, true);
+});
+
+test("accepts Mews' documented 1000-record page limit and rejects values above it", async () => {
+  const mock = mockFetch(async () => jsonResponse({ Services: [], Reservations: [], Cursor: null }));
+  const client = createMewsConnectorClient({ ...credentials, fetchImpl: mock.fetchImpl });
+  await client.getServices({ count: 1000 });
+  await client.getReservations({ count: 1000 });
+  await assert.rejects(() => client.getServices({ count: 1001 }), /between 1 and 1000/);
+  await assert.rejects(() => client.getReservations({ count: 1001 }), /between 1 and 1000/);
+  assert.equal(mock.calls.length, 2);
+});

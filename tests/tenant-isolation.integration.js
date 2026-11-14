@@ -421,6 +421,33 @@ try {
   assert.equal(escalationRecord.rows[0].notification_status, "delivered");
   assert.equal(escalationRecord.rows[0].notification_attempts, 1);
   assert.equal(escalationRecord.rows[0].conversation_status, "escalated");
+
+  // Beta's urgent request must notify the same test receiver but identify Beta,
+  // persist under Beta's organization, and never be recorded as Alpha's escalation.
+  const guestEscalationB = await fetch(baseUrl + "/api/public/" + tenants[1].slug + "/chat", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ message: "I have a serious allergy and need help." }),
+  });
+  assert.equal(guestEscalationB.status, 200, await guestEscalationB.clone().text());
+  const guestEscalationBBody = await guestEscalationB.json();
+  assert.equal(guestEscalationBBody.needsHuman, true);
+  assert.equal(guestEscalationBBody.notificationStatus, "delivered");
+  assert.equal(webhookRequests.length, 2, "each hotel's escalation must produce exactly one staff notification");
+  const webhookRequestB = webhookRequests[1];
+  const expectedSignatureB = createHmac("sha256", webhookSecret).update(webhookRequestB.body).digest("hex");
+  assert.equal(webhookRequestB.signature, expectedSignatureB, "Beta staff webhook payload must carry a valid HMAC signature");
+  const webhookPayloadB = JSON.parse(webhookRequestB.body);
+  assert.equal(webhookPayloadB.event, "veyra.escalation.created");
+  assert.equal(webhookPayloadB.organizationSlug, tenants[1].slug);
+  assert.equal(webhookPayloadB.conversationId, guestEscalationBBody.conversationId);
+  const escalationRecordB = await pool.query("SELECT e.notification_status,e.notification_attempts,c.status AS conversation_status FROM escalations e JOIN conversations c ON c.id=e.conversation_id WHERE e.id=$1 AND e.organization_id=$2", [guestEscalationBBody.escalationId, orgBForPilot.rows[0].id]);
+  assert.equal(escalationRecordB.rowCount, 1, "Beta escalation must belong to Beta's organization");
+  assert.equal(escalationRecordB.rows[0].notification_status, "delivered");
+  assert.equal(escalationRecordB.rows[0].notification_attempts, 1);
+  assert.equal(escalationRecordB.rows[0].conversation_status, "escalated");
+  const betaEscalationInAlpha = await pool.query("SELECT count(*)::int AS count FROM escalations WHERE id=$1 AND organization_id=$2", [guestEscalationBBody.escalationId, orgAForPilot.rows[0].id]);
+  assert.equal(betaEscalationInAlpha.rows[0].count, 0, "Beta escalation must never be visible in Alpha's organization");
+
   const guestStaffPoll = await fetch(baseUrl + "/api/public/" + tenants[0].slug + "/chat?conversationId=" + guestChatBody.conversationId, { headers: { "X-Veyra-Conversation-Token": guestChatBody.conversationToken } });
   assert.equal(guestStaffPoll.status, 200);
   assert.deepEqual((await guestStaffPoll.json()).messages, []);

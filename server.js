@@ -21,8 +21,6 @@ const {normalizeRevenueEvent,normalizeRevenueAdjustment}=require("./revenue-attr
 const {normalizeGuestConversationAccess,normalizeStaffReply,canReplyToConversation}=require("./guest-messaging");
 const {deliverStaffEscalation,shouldRetryStaffNotification}=require("./staff-notifications");
 const app=express();
-// Render terminates TLS at one trusted proxy hop; use the forwarded client IP for rate limits.
-if (prod && process.env.RENDER_EXTERNAL_URL) app.set("trust proxy", 1);
 const PORT=Number(process.env.PORT||3000);
 const MODEL=process.env.OPENAI_MODEL||"gpt-4.1-mini";
 const origins=(process.env.ALLOWED_ORIGINS||"http://localhost:3000,http://127.0.0.1:3000").split(",").map(x=>x.trim()).filter(Boolean);
@@ -30,6 +28,8 @@ const ai=process.env.OPENAI_API_KEY?new OpenAI({apiKey:process.env.OPENAI_API_KE
 const db=process.env.DATABASE_URL?new Pool({connectionString:process.env.DATABASE_URL,ssl:process.env.DATABASE_SSL==="false"?false:{rejectUnauthorized:false},max:5,connectionTimeoutMillis:5000}):null;
 const scrypt=promisify(crypto.scrypt);
 const prod=process.env.NODE_ENV==="production";
+// Render terminates TLS at one trusted proxy hop; use the forwarded client IP for rate limits.
+if (prod && process.env.RENDER_EXTERNAL_URL) app.set("trust proxy", 1);
 const cookie=prod?"__Host-veyra_session":"veyra_session";
 app.disable("x-powered-by");
 app.use((_q,r,n)=>{r.setHeader("X-Content-Type-Options","nosniff");r.setHeader("X-Frame-Options","DENY");r.setHeader("Referrer-Policy","strict-origin-when-cross-origin");r.setHeader("Permissions-Policy","camera=(),microphone=(),geolocation=()");n();});

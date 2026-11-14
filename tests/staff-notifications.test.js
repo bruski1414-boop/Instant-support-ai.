@@ -122,6 +122,10 @@ test("public IPv4 filter rejects special-use, private and loopback ranges", () =
   assert.equal(isPublicIPv4("93.184.216.34"), true);
 });
 
+test("DNS resolution is bounded by a timeout", async () => {
+  await assert.rejects(() => resolvePublicAddress("slow.hotel.com", () => new Promise(() => {}), 5), /timed out/);
+});
+
 test("DNS resolver requires all answers to be public IPv4", async () => {
   const result = await resolvePublicAddress("hooks.hotel.com", publicLookup);
   assert.deepEqual(result, { address: "93.184.216.34", family: 4 });

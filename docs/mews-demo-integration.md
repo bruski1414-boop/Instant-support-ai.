@@ -50,3 +50,17 @@ Official documentation:
 - Authentication: https://docs.mews.com/connector-api/guidelines/authentication
 - Services and availability: https://docs.mews.com/connector-api/operations/services
 - API events/webhooks: https://docs.mews.com/connector-api/events
+
+
+## Tenant-specific encrypted connection setup
+
+The admin API now supports one Mews demo connection per hotel workspace:
+
+- `GET /api/admin/mews` returns connection metadata only; it never returns credentials.
+- `PUT /api/admin/mews` accepts `clientToken`, `accessToken`, `serviceId`, `propertyReference`, and `timeZone` from an authenticated owner/admin over HTTPS. Tokens are encrypted with the existing AES-256-GCM server key before database storage.
+- `POST /api/admin/mews/verify` performs read-only configuration and service checks. It confirms that the authenticated property ID and timezone match the saved hotel settings and that the selected service is active and daily.
+- `DELETE /api/admin/mews` lets the workspace owner remove the connection and encrypted credentials.
+
+The existing `STORAGE_TOKEN_ENCRYPTION_KEY` must be configured as a base64-encoded 32-byte key in the hosting secret manager. Never send Mews credentials in chat, commit them, place them in a browser bundle, or use credentials belonging to a different hotel. A hotel owner/operator should complete setup with an authorised adult platform operator supporting hosting configuration.
+
+Only the official Mews demo endpoint is enabled. The connection setup and verification do not yet enable guest-facing live availability; that requires a further review of the date-boundary calculation and wiring into the guest-response route. Failed verification remains retryable and never makes the connection eligible for guest availability.

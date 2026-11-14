@@ -41,7 +41,7 @@ test("health endpoint reports demo mode when no API key is configured", async ()
 });
 test("multi-tenant capability is not inferred from database connectivity alone", () => {
   const server = fs.readFileSync("server.js", "utf8");
-  assert.match(server, /multiTenant:gate\\.checks\\.tenantIsolationTestsPassed/);
+  assert.match(server, /multiTenant:gate\.checks\.tenantIsolationTestsPassed/);
 });
 
 test("pilot readiness remains blocked separately from process health", async () => {

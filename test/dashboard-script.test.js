@@ -35,6 +35,18 @@ for (const id of [
   "performanceStaff",
   "performanceHandoff",
   "performanceMedianReply",
+  "privacyApprovalCard",
+  "privacyApprovalStatus",
+  "privacyPurpose",
+  "privacyRetention",
+  "privacyBackups",
+  "privacyAccess",
+  "privacyDeletion",
+  "recordPrivacyApproval",
+  "revokePrivacyApproval",
 ]) {
   assert.match(html, new RegExp(`id=["']${id}["']`), `dashboard must include #${id}`);
 }
+
+assert.match(html, /\/api\/admin\/privacy-approval/, "dashboard must use the tenant-scoped privacy approval API");
+assert.match(html, /This is not a compliance certification/, "dashboard must not present acknowledgement as legal certification");

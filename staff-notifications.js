@@ -6,6 +6,7 @@ async function deliverStaffEscalation({
   organization,
   conversationId,
   reason,
+  idempotencyKey,
   webhookUrl,
   webhookSecret,
   fetchImpl = fetch,
@@ -21,6 +22,7 @@ async function deliverStaffEscalation({
     organization: organization.name,
     conversationId,
     reason,
+    idempotencyKey: idempotencyKey || null,
     createdAt: new Date().toISOString()
   });
   const signature = crypto.createHmac("sha256", webhookSecret).update(body).digest("hex");
@@ -29,7 +31,7 @@ async function deliverStaffEscalation({
   try {
     const response = await fetchImpl(webhookUrl, {
       method: "POST",
-      headers: { "content-type": "application/json", "x-veyra-signature": signature },
+      headers: { "content-type": "application/json", "x-veyra-signature": signature, ...(idempotencyKey ? { "idempotency-key": idempotencyKey } : {}) },
       body,
       signal: controller.signal
     });

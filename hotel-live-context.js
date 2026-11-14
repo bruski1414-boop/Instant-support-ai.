@@ -11,7 +11,7 @@ function safeText(value, field, max = 240) {
 
 function utcNow(value) {
   const input = value == null ? new Date().toISOString() : value;
-  if (typeof input !== "string" || !/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?Z$/.test(input) || !Number.isFinite(Date.parse(input))) {
+  if (typeof input !== "string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?Z$/.test(input) || !Number.isFinite(Date.parse(input))) {
     throw new Error("nowUtc must be a valid ISO-8601 UTC timestamp.");
   }
   return new Date(input).toISOString();
@@ -71,7 +71,7 @@ function buildLiveHotelContext({ availabilitySnapshots = [], serviceInformation 
   const nextExpiry = currentAvailability.reduce((min, item) =>
     Math.min(min, Date.parse(item.validUntil)), Infinity);
   return Object.freeze({
-    context: lines.join("\\n"),
+    context: lines.join("\n"),
     availabilityCount: currentAvailability.length,
     serviceCount: services.length,
     availabilityFreshUntil: Number.isFinite(nextExpiry) ? new Date(nextExpiry).toISOString() : null,

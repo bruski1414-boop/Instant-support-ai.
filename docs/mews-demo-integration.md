@@ -64,3 +64,22 @@ The admin API now supports one Mews demo connection per hotel workspace:
 The existing `STORAGE_TOKEN_ENCRYPTION_KEY` must be configured as a base64-encoded 32-byte key in the hosting secret manager. Never send Mews credentials in chat, commit them, place them in a browser bundle, or use credentials belonging to a different hotel. A hotel owner/operator should complete setup with an authorised adult platform operator supporting hosting configuration.
 
 Only the official Mews demo endpoint is enabled. The connection setup and verification do not yet enable guest-facing live availability; that requires a further review of the date-boundary calculation and wiring into the guest-response route. Failed verification remains retryable and never makes the connection eligible for guest availability.
+
+
+## Guest chat full-stay availability
+
+The public guest chat route can now accept an optional structured stay object alongside the guest message:
+
+```json
+{
+  "message": "Can you check room availability?",
+  "stay": {
+    "arrivalDate": "2026-12-02",
+    "departureDate": "2026-12-04"
+  }
+}
+```
+
+The widget reveals arrival and departure date fields when the guest asks about rooms or availability and sends them as `stay`. The server resolves only a connection whose status is `verified`, converts each property's local midnight to UTC, and requests all nightly inventory for the requested range. It reports the minimum inventory per room category across every night, never a single-night count as if it covered the whole stay. Requests over 30 nights, past dates, missing dates, incomplete provider responses, or API failures are not answered as available and are handed to staff.
+
+This is an availability lookup only. It does not create a reservation, hold inventory, quote a rate, or confirm a booking. The actual widget flow and API still require a connected, verified hotel Mews demo account to exercise end to end.

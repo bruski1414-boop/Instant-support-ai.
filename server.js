@@ -118,11 +118,12 @@ async function audit(a,action,type,id){await db.query("INSERT INTO audit_logs(or
 app.use("/api/admin/storage",requireDb,createStorageRouter({db,auth,role,audit}));
 const mewsStore=db?createMewsConnectionStore({db,encryptionKey:process.env.STORAGE_TOKEN_ENCRYPTION_KEY,clientName:process.env.MEWS_CLIENT_NAME||"Veyra AI/0.1"}):null;
 const escalate=requiresStaffEscalation;
-async function notify(org,cid,reason){
+async function notify(org,cid,reason,eid){
  return deliverStaffEscalation({
   organization:org,
   conversationId:cid,
   reason,
+  idempotencyKey:eid,
   webhookUrl:process.env.STAFF_WEBHOOK_URL,
   webhookSecret:process.env.STAFF_WEBHOOK_SECRET
  });
@@ -138,7 +139,7 @@ async function dispatchEscalationNotification({org,cid,reason,eid,organizationId
   const current=await db.query("SELECT notification_status,notification_attempts FROM escalations WHERE id=$1 AND organization_id=$2",[eid,organizationId]);
   return {claimed:false,status:current.rows[0]?.notification_status||"not_configured",configured:current.rows[0]?.notification_status!=="not_configured",delivered:current.rows[0]?.notification_status==="delivered"};
  }
- const result=await notify(org,cid,reason);
+ const result=await notify(org,cid,reason,eid);
  await db.query(
   "UPDATE escalations SET notification_status=$1,notification_attempts=notification_attempts-CASE WHEN $2 THEN 0 ELSE 1 END WHERE id=$3 AND organization_id=$4 AND notification_status='sending'",
   [result.status,result.configured,eid,organizationId]

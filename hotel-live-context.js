@@ -57,7 +57,7 @@ function buildLiveHotelContext({ availabilitySnapshots = [], serviceInformation 
     }
   }
   if (currentAvailability.length) {
-    lines.push("LIVE ROOM AVAILABILITY SNAPSHOTS (time-limited; not a reservation):");
+    lines.push("LIVE ROOM-NIGHT AVAILABILITY (time-limited; each row applies to one night only, not a multi-night stay or reservation):");
     for (const item of currentAvailability) {
       lines.push("- Room type " + item.roomTypeCode + ", " + item.arrivalDate + " to " +
         item.departureDate + ": " + item.roomsAvailable + " room(s) reported available. " +

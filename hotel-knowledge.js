@@ -63,7 +63,9 @@ function buildRelevantKnowledge(question, documents, options = {}) {
     .slice(0, maxDocuments);
   const sections = [];
   const sources = [];
+  const groundingSections = [];
   let used = 0;
+  let groundingUsed = 0;
   const separator = "\n\n---\n\n";
   for (const { doc, score, coverage } of selected) {
     const reviewed = doc.reviewed_at ? new Date(doc.reviewed_at).toISOString().slice(0, 10) : "not recorded";
@@ -80,6 +82,12 @@ function buildRelevantKnowledge(question, documents, options = {}) {
     if (remaining <= 0) break;
     const clipped = section.slice(0, remaining);
     sections.push(clipped);
+    const groundingRemaining = maxCharacters - groundingUsed;
+    if (groundingRemaining > 0) {
+      const groundingContent = String(doc.content).slice(0, groundingRemaining);
+      if (groundingContent) groundingSections.push(groundingContent);
+      groundingUsed += groundingContent.length;
+    }
     sources.push({
       title: String(doc.title).slice(0, 160),
       category: String(doc.category || "general").slice(0, 60),
@@ -94,6 +102,7 @@ function buildRelevantKnowledge(question, documents, options = {}) {
   }
   return {
     context: sections.join(separator),
+    groundingText: groundingSections.join("\n\n"),
     sources,
     selectedCount: sections.length,
     matched: sections.length > 0,

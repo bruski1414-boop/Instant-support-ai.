@@ -49,7 +49,7 @@ test("retention apply deletes only a bounded batch and writes an audit event", a
   const deleteSql = statements.find(x => x.sql?.startsWith("WITH candidates"));
   assert.equal(deleteSql.params[2], BATCH_LIMIT);
   assert.match(deleteSql.sql, /attribution_status='hotel_reported_unlinked'/);
-  assert.ok(statements.some(x => x.sql?.includes("retention.cleanup_scheduled")));
+  assert.ok(statements.some(x => x.sql?.includes("retention.cleanup_executed")));
   assert.ok(statements.some(x => x.released));
 });
 

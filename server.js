@@ -10,6 +10,7 @@ const {Pool}=require("pg");
 const {createStorageRouter}=require("./storage-integrations");
 const {createMewsConnectionStore}=require("./mews-connection-store");
 const {buildMewsStayAvailabilityContext}=require("./mews-stay-availability");
+const {DEMO_METRICS,respondToDemoMessage}=require("./demo-mode");
 const {requiresStaffEscalation,requiresLiveAvailabilityCheck,buildGuestSupportSystemPrompt}=require("./guest-support-policy");
 const {buildPilotReadiness}=require("./pilot-readiness");
 const {buildRelevantKnowledge}=require("./hotel-knowledge");
@@ -402,6 +403,14 @@ app.post("/api/public/:slug/chat",async(q,r,n)=>{
  r.json({reply,needsHuman:flagHuman,handoffConfigured:notice.configured,notificationDelivered:notice.delivered,notificationStatus:notice.status,conversationId:cid,conversationToken:guestToken,escalationId:eid||null});
  }catch(e){n(e);}
 });
+// Isolated demo routes: deterministic synthetic data only; no database, AI provider, PMS or staff webhook.
+app.get("/api/demo/metrics",(_q,r)=>r.json(DEMO_METRICS));
+app.post("/api/demo/chat",(q,r)=>{
+ try{
+  const result=respondToDemoMessage(q.body?.message,q.body?.stay||{});
+  r.json(result);
+ }catch(e){r.status(400).json({error:e.message});}
+});
 // Legacy prototype route is disabled when multi-tenant DB is active.
 app.post("/api/chat",async(q,r)=>{
  if(db)return r.status(400).json({error:"Use /api/public/:slug/chat for tenant-specific support."});
@@ -413,6 +422,7 @@ function publicFile(file,type){return(_q,r)=>{r.type(type);r.sendFile(path.join(
 app.get("/",publicFile("index.html","html"));
 app.get("/index.html",publicFile("index.html","html"));
 app.get("/dashboard.html",publicFile("dashboard.html","html"));
+app.get("/demo",publicFile("demo.html","html"));
 app.get("/setup.html",publicFile("setup.html","html"));
 app.get("/invite.html",publicFile("invite.html","html"));
 app.get("/widget.js",publicFile("widget.js","javascript"));

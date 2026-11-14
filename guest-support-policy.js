@@ -30,16 +30,16 @@ function requiresStaffEscalation(message) {
 }
 
 function requiresLiveAvailabilityCheck(message) {
-  const text = String(message || "").toLowerCase().replace(/\\s+/g, " ").trim();
+  const text = String(message || "").toLowerCase().replace(/\s+/g, " ").trim();
   if (!text) return false;
 
   // A request to check current inventory is an operational lookup, not a policy question.
   const explicitLookup =
-    /\\b(?:check|confirm|verify|look up|look\\s+for)\\b.{0,60}\\b(?:room|rooms|availability|vacancy|inventory)\\b/i.test(text) ||
-    /\\b(?:room|rooms|availability|vacancy|inventory)\\b.{0,60}\\b(?:check|confirm|verify|look up)\\b/i.test(text);
+    /\b(?:check|confirm|verify|look up|look\s+for)\b.{0,60}\b(?:room|rooms|availability|vacancy|inventory)\b/i.test(text) ||
+    /\b(?:room|rooms|availability|vacancy|inventory)\b.{0,60}\b(?:check|confirm|verify|look up)\b/i.test(text);
   const asksIfAvailable =
-    /\\b(?:are|is|do you have|have you got)\\b.{0,55}\\b(?:room|rooms|availability|vacancy)\\b.{0,35}\\bavailable\\b/i.test(text) ||
-    /\\b(?:room|rooms)\\b.{0,35}\\bavailable\\b.{0,45}\\b(?:on|for|between|from)\\b/i.test(text);
+    /\b(?:are|is|do you have|have you got)\b.{0,55}\b(?:room|rooms|availability|vacancy)\b.{0,35}\bavailable\b/i.test(text) ||
+    /\b(?:room|rooms)\b.{0,35}\bavailable\b.{0,45}\b(?:on|for|between|from)\b/i.test(text);
   return explicitLookup || asksIfAvailable;
 }
 

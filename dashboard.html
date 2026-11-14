@@ -550,7 +550,7 @@ $("kImportFile").addEventListener("change",async e=>{
   const content=await file.text();
   if(content.trim().length<5){status.textContent="The file appears to be empty.";e.target.value="";return;}
   if(content.length>12000){status.textContent="The extracted text exceeds 12,000 characters. Split it into smaller documents.";e.target.value="";return;}
-  $("kTitle").value=file.name.replace(/\\.(txt|md)$/i,"").slice(0,160);
+  $("kTitle").value=file.name.replace(/\.(txt|md)$/i,"").slice(0,160);
   $("kContent").value=content;
   $("kSource").value="Imported draft: "+file.name;
   $("kApproved").checked=false;

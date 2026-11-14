@@ -43,7 +43,7 @@ const mockAiServer = createServer(async (req, res) => {
 const mockWebhookServer = createServer(async (req, res) => {
   let raw = "";
   for await (const chunk of req) raw += chunk;
-  webhookRequests.push({ body: raw, signature: req.headers["x-veyra-signature"] });
+  webhookRequests.push({ body: raw, signature: req.headers["x-veyra-signature"], idempotencyKey: req.headers["idempotency-key"] });
   if (webhookDelayMs) await new Promise(resolve => setTimeout(resolve, webhookDelayMs));
   res.writeHead(webhookResponseStatus, { "content-type": "application/json" });
   res.end(JSON.stringify({ accepted: webhookResponseStatus >= 200 && webhookResponseStatus < 300 }));
@@ -419,6 +419,8 @@ try {
   assert.equal(webhookPayload.event, "veyra.escalation.created");
   assert.equal(webhookPayload.organizationSlug, tenants[0].slug);
   assert.equal(webhookPayload.conversationId, guestEscalationBody.conversationId);
+  assert.equal(webhookPayload.idempotencyKey, guestEscalationBody.escalationId, "the webhook event must use its escalation ID as a stable idempotency key");
+  assert.equal(webhookRequest.idempotencyKey, guestEscalationBody.escalationId, "the receiver must receive the stable idempotency key header");
   const escalationRecord = await pool.query("SELECT e.notification_status,e.notification_attempts,c.status AS conversation_status FROM escalations e JOIN conversations c ON c.id=e.conversation_id WHERE e.id=$1 AND e.organization_id=$2", [guestEscalationBody.escalationId, orgAForPilot.rows[0].id]);
   assert.equal(escalationRecord.rowCount, 1);
   assert.equal(escalationRecord.rows[0].notification_status, "delivered");
@@ -443,6 +445,8 @@ try {
   assert.equal(webhookPayloadB.event, "veyra.escalation.created");
   assert.equal(webhookPayloadB.organizationSlug, tenants[1].slug);
   assert.equal(webhookPayloadB.conversationId, guestEscalationBBody.conversationId);
+  assert.equal(webhookPayloadB.idempotencyKey, guestEscalationBBody.escalationId);
+  assert.equal(webhookRequestB.idempotencyKey, guestEscalationBBody.escalationId);
   const escalationRecordB = await pool.query("SELECT e.notification_status,e.notification_attempts,c.status AS conversation_status FROM escalations e JOIN conversations c ON c.id=e.conversation_id WHERE e.id=$1 AND e.organization_id=$2", [guestEscalationBBody.escalationId, orgBForPilot.rows[0].id]);
   assert.equal(escalationRecordB.rowCount, 1, "Beta escalation must belong to Beta's organization");
   assert.equal(escalationRecordB.rows[0].notification_status, "delivered");
@@ -535,6 +539,8 @@ try {
   assert.equal(retriedDeliveryBody.notificationStatus, "delivered");
   assert.equal(retriedDeliveryBody.notificationDelivered, true);
   assert.equal(retriedDeliveryBody.escalationId, failedDeliveryBody.escalationId, "retry must reuse the existing open escalation");
+  const retryWebhookPayload = JSON.parse(webhookRequests[webhookRequests.length - 1].body);
+  assert.equal(retryWebhookPayload.idempotencyKey, failedDeliveryBody.escalationId, "delivery retries must retain the original escalation idempotency key");
   const retriedEscalationRecord = await pool.query(
     "SELECT notification_status,notification_attempts FROM escalations WHERE id=$1 AND organization_id=$2",
     [failedDeliveryBody.escalationId, orgAForPilot.rows[0].id],

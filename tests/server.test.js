@@ -190,7 +190,7 @@ test("editing approved hotel knowledge requires reapproval", () => {
   const server = fs.readFileSync("server.js", "utf8");
   assert.match(server, /contentChanged\?false:Boolean\(v\.approved\)/);
   assert.match(server, /knowledge\.edited_unapproved/);
-  assert.match(server, /typeof body\.approved!=="boolean"/);
+  assert.match(server, /isOptionalBoolean\\(body\\.approved\\)/);
   assert.match(server, /body\.content\.length>12000/);
 });
 

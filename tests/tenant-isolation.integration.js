@@ -467,6 +467,20 @@ try {
   });
   assert.equal(crossTenantEscalationUpdate.status, 404, "Alpha staff must not claim Beta's escalation");
 
+  const crossTenantNotificationRetry = await fetch(baseUrl + "/api/admin/escalations/" + guestEscalationBBody.escalationId + "/notify", {
+    method: "POST",
+    headers: { cookie: staffCookie, "content-type": "application/json", "X-CSRF-Token": staffCsrf },
+    body: JSON.stringify({}),
+  });
+  assert.equal(crossTenantNotificationRetry.status, 404, "Alpha staff must not retry Beta's notification");
+
+  const duplicateDeliveredNotification = await fetch(baseUrl + "/api/admin/escalations/" + guestEscalationBody.escalationId + "/notify", {
+    method: "POST",
+    headers: { cookie: staffCookie, "content-type": "application/json", "X-CSRF-Token": staffCsrf },
+    body: JSON.stringify({}),
+  });
+  assert.equal(duplicateDeliveredNotification.status, 409, "a delivered notification must not be sent again");
+
   // A failed delivery is visible as failed, and a later guest message retries
   // only that tenant's pending handoff without creating a duplicate escalation.
   webhookResponseStatus = 503;

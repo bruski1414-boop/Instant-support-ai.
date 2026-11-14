@@ -55,6 +55,14 @@ test("booking-process and cancellation policy questions remain informational, wh
   assert.equal(requiresStaffEscalation("What is the cancellation policy?"), false);
   assert.equal(requiresStaffEscalation("Please cancel my reservation."), true);
   assert.equal(requiresStaffEscalation("Please book me a room for Friday."), true);
+  for (const message of [
+    "I have a serious food allergy.",
+    "There is a fire in the hotel.",
+    "I was charged twice and need a refund.",
+    "Please arrange late check-out for me.",
+    "Can I speak to a real person?"
+  ]) assert.equal(requiresStaffEscalation(message), true, message);
+  assert.equal(requiresStaffEscalation("What time does breakfast start?"), false);
 });
 
 test("live room inventory questions are distinguished from general room-policy questions", () => {

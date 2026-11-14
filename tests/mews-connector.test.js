@@ -79,6 +79,52 @@ test("validates reservation filters and three-month incremental window before ne
   assert.equal(mock.calls.length, 0);
 });
 
+test("automatically follows Mews reservation cursors and stops at the final page", async () => {
+  const mock = mockFetch(async (_url, options) => {
+    const body = JSON.parse(options.body);
+    if (!body.Limitation.Cursor) {
+      return jsonResponse({ Reservations: Array.from({ length: 2 }, (_, i) => ({
+        Id: "res-" + i, ServiceId: "svc-1", State: "Confirmed",
+        ScheduledStartUtc: "2026-12-01T15:00:00Z", ScheduledEndUtc: "2026-12-02T11:00:00Z",
+        CreatedUtc: "2026-11-01T12:00:00Z", UpdatedUtc: "2026-11-02T12:00:00Z"
+      })), Cursor: "cursor-page-2" });
+    }
+    return jsonResponse({ Reservations: [{
+      Id: "res-2", ServiceId: "svc-1", State: "Canceled",
+      ScheduledStartUtc: "2026-12-01T15:00:00Z", ScheduledEndUtc: "2026-12-02T11:00:00Z",
+      CreatedUtc: "2026-11-01T12:00:00Z", UpdatedUtc: "2026-11-03T12:00:00Z"
+    }], Cursor: null });
+  });
+  const client = createMewsConnectorClient({ ...credentials, fetchImpl: mock.fetchImpl });
+  const result = await client.getAllReservations({ count: 2 });
+  assert.equal(mock.calls.length, 2);
+  assert.equal(JSON.parse(mock.calls[1].options.body).Limitation.Cursor, "cursor-page-2");
+  assert.equal(result.reservations.length, 3);
+  assert.equal(result.complete, true);
+});
+
+test("returns an explicit incomplete result when the safe page cap is reached", async () => {
+  const mock = mockFetch(async (_url, options) => {
+    const cursor = JSON.parse(options.body).Limitation.Cursor;
+    return jsonResponse({ Reservations: [{ Id: "res-" + (cursor || "first"), ServiceId: "svc-1", State: "Confirmed" }], Cursor: cursor ? "cursor-2" : "cursor-1" });
+  });
+  const client = createMewsConnectorClient({ ...credentials, fetchImpl: mock.fetchImpl });
+  const result = await client.getAllReservations({ count: 1, maxPages: 1 });
+  assert.equal(result.complete, false);
+  assert.equal(result.cursor, "cursor-1");
+  assert.equal(result.pages, 1);
+});
+
+test("rejects impossible calendar timestamps", () => {
+  const mock = mockFetch(async () => jsonResponse({}));
+  const client = createMewsConnectorClient({ ...credentials, fetchImpl: mock.fetchImpl });
+  assert.rejects(() => client.getServiceAvailability({
+    serviceId: "svc-1",
+    firstTimeUnitStartUtc: "2026-02-31T00:00:00Z",
+    lastTimeUnitStartUtc: "2026-03-02T00:00:00Z"
+  }), /real UTC calendar timestamp/);
+});
+
 test("requests availability with the documented versioned endpoint and returns only availability fields", async () => {
   const mock = mockFetch(async () => jsonResponse({ TimeUnitStartsUtc: ["2026-12-01T00:00:00Z"], ResourceCategoryAvailabilities: [{ ResourceCategoryId: "room-deluxe", Metrics: { UsableResources: [8], ConfirmedReservations: [5] }, GuestEmail: "private@example.invalid" }] }));
   const client = createMewsConnectorClient({ ...credentials, fetchImpl: mock.fetchImpl });

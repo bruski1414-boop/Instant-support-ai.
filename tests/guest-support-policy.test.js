@@ -2,7 +2,7 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { requiresLiveAvailabilityCheck } = require("../guest-support-policy");
+const { requiresLiveAvailabilityCheck, requiresStaffEscalation } = require("../guest-support-policy");
 
 test("detects direct requests to check live room inventory", () => {
   for (const message of [
@@ -25,4 +25,13 @@ test("does not escalate general policy or process questions as live inventory ch
 test("handles empty and unrelated messages", () => {
   assert.equal(requiresLiveAvailabilityCheck(""), false);
   assert.equal(requiresLiveAvailabilityCheck("Thank you, the breakfast was lovely."), false);
+});
+
+test("escalates new reservation requests but not booking-process questions", () => {
+  for (const message of ["Please book me a room for Friday", "I would like to book a room", "Reserve me a room for two nights"]) {
+    assert.equal(requiresStaffEscalation(message), true, message);
+  }
+  for (const message of ["How do I book a room?", "What is your reservation policy?"]) {
+    assert.equal(requiresStaffEscalation(message), false, message);
+  }
 });

@@ -24,6 +24,10 @@ Set these server-side environment variables in a private local environment only:
 
 Never commit credentials, send them in chat, put them in browser code, or add them to a public issue. Mews supplies demo credentials and demo properties in its developer documentation. Production credentials are environment-specific and require Mews' integration onboarding/certification process.
 
+## Automated checks
+
+A GitHub Actions workflow now runs on updates to this integration branch and pull requests targeting the PMS foundation branch. It installs the Node 20 dependencies and runs the repository's `npm test` syntax/unit-test suite. The result must be green before the pull request is considered ready to merge.
+
 ## What is not connected
 
 No API call has been made from this repository because no credentials have been provisioned. No hotel account, live guest data, reservation feed or production environment is connected. The existing generic PMS canonical event layer remains separate from this read-only Mews client.

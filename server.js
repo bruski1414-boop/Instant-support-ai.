@@ -18,6 +18,7 @@ const {validateAnswerGrounding}=require("./answer-grounding");
 const {isValidDateOnly,isOptionalBoolean}=require("./knowledge-validation");
 const {normalizeRevenueEvent,normalizeRevenueAdjustment}=require("./revenue-attribution");
 const {normalizeGuestConversationAccess,normalizeStaffReply,canReplyToConversation}=require("./guest-messaging");
+const {deliverStaffEscalation}=require("./staff-notifications");
 const app=express();
 const PORT=Number(process.env.PORT||3000);
 const MODEL=process.env.OPENAI_MODEL||"gpt-4.1-mini";
@@ -113,8 +114,13 @@ app.use("/api/admin/storage",requireDb,createStorageRouter({db,auth,role,audit})
 const mewsStore=db?createMewsConnectionStore({db,encryptionKey:process.env.STORAGE_TOKEN_ENCRYPTION_KEY,clientName:process.env.MEWS_CLIENT_NAME||"Veyra AI/0.1"}):null;
 const escalate=requiresStaffEscalation;
 async function notify(org,cid,reason){
- if(!process.env.STAFF_WEBHOOK_URL||!process.env.STAFF_WEBHOOK_SECRET)return{configured:false,delivered:false,status:"not_configured"};
- try{const body=JSON.stringify({event:"veyra.escalation.created",organizationId:org.id,organizationSlug:org.slug,organization:org.name,conversationId:cid,reason,createdAt:new Date().toISOString()});const sig=crypto.createHmac("sha256",process.env.STAFF_WEBHOOK_SECRET).update(body).digest("hex");const ctl=new AbortController();const timer=setTimeout(()=>ctl.abort(),5000);try{const resp=await fetch(process.env.STAFF_WEBHOOK_URL,{method:"POST",headers:{"content-type":"application/json","x-veyra-signature":sig},body,signal:ctl.signal});return{configured:true,delivered:resp.ok,status:resp.ok?"delivered":"failed"};}finally{clearTimeout(timer);}}catch(e){console.error("Webhook failed:",e.message);return{configured:true,delivered:false,status:"failed"};}
+ return deliverStaffEscalation({
+  organization:org,
+  conversationId:cid,
+  reason,
+  webhookUrl:process.env.STAFF_WEBHOOK_URL,
+  webhookSecret:process.env.STAFF_WEBHOOK_SECRET
+ });
 }
 async function readinessSnapshot(){let database="not-configured";if(db){try{await db.query("SELECT 1");database="connected";}catch{database="unavailable";}}const guestDataStorage=process.env.GUEST_DATA_STORAGE_ENABLED==="true",humanHandoff=Boolean(process.env.STAFF_WEBHOOK_URL&&process.env.STAFF_WEBHOOK_SECRET);const gate=buildPilotReadiness({databaseConnected:database==="connected",aiConfigured:Boolean(ai),guestDataStorageEnabled:guestDataStorage,staffWebhookConfigured:humanHandoff,durableBackupsVerified:process.env.DURABLE_BACKUPS_VERIFIED==="true",tenantIsolationTestsPassed:process.env.TENANT_ISOLATION_TESTS_PASSED==="true",providerOAuthTested:process.env.PROVIDER_OAUTH_TESTED==="true",hotelPrivacyApproved:process.env.HOTEL_PRIVACY_APPROVED==="true",staffHandoffTested:process.env.STAFF_HANDOFF_TESTED==="true",pilotReleaseApproved:process.env.PILOT_RELEASE_APPROVED==="true"});return{service:"Veyra AI",mode:ai?"ai-configured":"demo-no-api-key",model:ai?MODEL:null,database,multiTenant:database==="connected",guestDataStorage,humanHandoff:humanHandoff?"webhook-configured":"not-configured",readyForPilot:gate.readyForPilot,checks:gate.checks};}
 app.get("/api/health",async(_q,r)=>{const state=await readinessSnapshot();r.status(200).json({status:state.readyForPilot?"ready":"degraded",...state});});

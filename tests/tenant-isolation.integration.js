@@ -28,6 +28,7 @@ let childOutput = "";
 let serverReady = false;
 const webhookSecret = "ci-webhook-secret-" + tag;
 const webhookRequests = [];
+let webhookResponseStatus = 200;
 const mockAiServer = createServer(async (req, res) => {
   let raw = "";
   for await (const chunk of req) raw += chunk;
@@ -42,8 +43,8 @@ const mockWebhookServer = createServer(async (req, res) => {
   let raw = "";
   for await (const chunk of req) raw += chunk;
   webhookRequests.push({ body: raw, signature: req.headers["x-veyra-signature"] });
-  res.writeHead(200, { "content-type": "application/json" });
-  res.end(JSON.stringify({ accepted: true }));
+  res.writeHead(webhookResponseStatus, { "content-type": "application/json" });
+  res.end(JSON.stringify({ accepted: webhookResponseStatus >= 200 && webhookResponseStatus < 300 }));
 });
 async function listen(server) {
   await new Promise((resolve, reject) => { server.once("error", reject); server.listen(0, "127.0.0.1", resolve); });
@@ -465,6 +466,57 @@ try {
     body: JSON.stringify({ status: "claimed" }),
   });
   assert.equal(crossTenantEscalationUpdate.status, 404, "Alpha staff must not claim Beta's escalation");
+
+  // A failed delivery is visible as failed, and a later guest message retries
+  // only that tenant's pending handoff without creating a duplicate escalation.
+  webhookResponseStatus = 503;
+  const failedDelivery = await fetch(baseUrl + "/api/public/" + tenants[0].slug + "/chat", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ message: "Please get a staff member to help me." }),
+  });
+  assert.equal(failedDelivery.status, 200, await failedDelivery.clone().text());
+  const failedDeliveryBody = await failedDelivery.json();
+  assert.equal(failedDeliveryBody.needsHuman, true);
+  assert.equal(failedDeliveryBody.notificationStatus, "failed");
+  assert.equal(failedDeliveryBody.notificationDelivered, false);
+  const failedEscalationRecord = await pool.query(
+    "SELECT notification_status,notification_attempts FROM escalations WHERE id=$1 AND organization_id=$2",
+    [failedDeliveryBody.escalationId, orgAForPilot.rows[0].id],
+  );
+  assert.equal(failedEscalationRecord.rowCount, 1);
+  assert.equal(failedEscalationRecord.rows[0].notification_status, "failed");
+  assert.equal(failedEscalationRecord.rows[0].notification_attempts, 1);
+
+  webhookResponseStatus = 200;
+  const retriedDelivery = await fetch(baseUrl + "/api/public/" + tenants[0].slug + "/chat", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "X-Veyra-Conversation-Token": failedDeliveryBody.conversationToken,
+    },
+    body: JSON.stringify({
+      message: "I still need a staff member, please.",
+      conversationId: failedDeliveryBody.conversationId,
+    }),
+  });
+  assert.equal(retriedDelivery.status, 200, await retriedDelivery.clone().text());
+  const retriedDeliveryBody = await retriedDelivery.json();
+  assert.equal(retriedDeliveryBody.needsHuman, true);
+  assert.equal(retriedDeliveryBody.notificationStatus, "delivered");
+  assert.equal(retriedDeliveryBody.notificationDelivered, true);
+  assert.equal(retriedDeliveryBody.escalationId, failedDeliveryBody.escalationId, "retry must reuse the existing open escalation");
+  const retriedEscalationRecord = await pool.query(
+    "SELECT notification_status,notification_attempts FROM escalations WHERE id=$1 AND organization_id=$2",
+    [failedDeliveryBody.escalationId, orgAForPilot.rows[0].id],
+  );
+  assert.equal(retriedEscalationRecord.rows[0].notification_status, "delivered");
+  assert.equal(retriedEscalationRecord.rows[0].notification_attempts, 2, "successful retry must be recorded as the second attempt");
+  const betaEscalationsAfterAlphaRetry = await pool.query(
+    "SELECT notification_status,notification_attempts FROM escalations WHERE id=$1 AND organization_id=$2",
+    [guestEscalationBBody.escalationId, orgBForPilot.rows[0].id],
+  );
+  assert.equal(betaEscalationsAfterAlphaRetry.rows[0].notification_status, "delivered");
+  assert.equal(betaEscalationsAfterAlphaRetry.rows[0].notification_attempts, 1, "Alpha retry must not alter Beta's notification state");
 
   const guestStaffPoll = await fetch(baseUrl + "/api/public/" + tenants[0].slug + "/chat?conversationId=" + guestChatBody.conversationId, { headers: { "X-Veyra-Conversation-Token": guestChatBody.conversationToken } });
   assert.equal(guestStaffPoll.status, 200);

@@ -228,10 +228,9 @@ try {
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ message: "What time is breakfast?" }),
   });
-  assert.equal(gatedChat.status, 503, "guest chat must not start before pilot readiness checks pass");
+  assert.equal(gatedChat.status, 503, "guest chat must not start before this hotel's integrations are verified");
   const gatedChatBody = await gatedChat.json();
-  assert.equal(gatedChatBody.readyForPilot, false);
-  assert.match(gatedChatBody.error, /release gates are not all verified/i);
+  assert.match(gatedChatBody.error, /AI and staff notification integrations must be verified/i);
   const noPrematureConversation = await pool.query(
     "SELECT count(*)::int AS count FROM conversations WHERE organization_id=(SELECT id FROM organizations WHERE slug=$1)",
     [tenants[0].slug],

@@ -8,7 +8,7 @@ const path=require("node:path");
 const {promisify}=require("node:util");
 const {Pool}=require("pg");
 const {createStorageRouter}=require("./storage-integrations");
-const {requiresStaffEscalation,buildGuestSupportSystemPrompt}=require("./guest-support-policy");
+const {requiresStaffEscalation,requiresLiveAvailabilityCheck,buildGuestSupportSystemPrompt}=require("./guest-support-policy");
 const {buildPilotReadiness}=require("./pilot-readiness");
 const {buildRelevantKnowledge}=require("./hotel-knowledge");
 const {normalizeRevenueEvent,normalizeRevenueAdjustment}=require("./revenue-attribution");
@@ -362,7 +362,7 @@ app.post("/api/public/:slug/chat",async(q,r,n)=>{
  if(!verifiedForHotel.has("ai_provider")||!verifiedForHotel.has("staff_webhook"))return r.status(503).json({error:"This hotel's AI and staff notification integrations must be verified in its setup dashboard before guest chat is enabled."});
  if(!hotelStorage.rowCount)return r.status(503).json({error:"This hotel must connect and authorize its own storage provider before guest chat is enabled."});
  const docs=await db.query("SELECT title,category,content,source_reference,reviewed_at,review_due_at FROM knowledge_documents WHERE organization_id=$1 AND approved=true AND (review_due_at IS NULL OR review_due_at>=CURRENT_DATE) ORDER BY updated_at DESC LIMIT 40",[org.id]);if(!docs.rowCount)return r.status(503).json({error:"No hotel information has been approved. Please contact the hotel team."});if(process.env.GUEST_DATA_STORAGE_ENABLED!=="true")return r.status(503).json({error:"Guest data storage is disabled until the hotel has approved its privacy notice, retention period and data-processing terms."});if(!ai)return r.status(503).json({error:"Live AI is not configured. Please contact the hotel team."});
- const retrieval=buildRelevantKnowledge(msg,docs.rows,{maxDocuments:10,maxCharacters:24000});const knowledge=retrieval.context;const flag=escalate(msg);
+ const retrieval=buildRelevantKnowledge(msg,docs.rows,{maxDocuments:10,maxCharacters:24000});const knowledge=retrieval.context;const availabilityCheck=requiresLiveAvailabilityCheck(msg);const flag=escalate(msg)||availabilityCheck;
  const requestedConversation=q.body?.conversationId,requestedToken=q.body?.conversationToken;
  if(requestedConversation!==undefined&&requestedConversation!==null&&requestedConversation!==""&&(typeof requestedConversation!=="string"||!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(requestedConversation)))return r.status(400).json({error:"Invalid conversation reference."});
  if(requestedConversation&&(typeof requestedToken!=="string"||!/^[A-Za-z0-9_-]{40,64}$/.test(requestedToken)))return r.status(400).json({error:"Conversation access token required."});
@@ -373,7 +373,7 @@ app.post("/api/public/:slug/chat",async(q,r,n)=>{
  {role:"system",content:buildGuestSupportSystemPrompt(org.name,knowledge)},
  ...history,
  {role:"user",content:msg.trim()}]});
- let answer;try{answer=JSON.parse(completion.choices[0]?.message?.content||"");}catch{answer={reply:"I cannot prepare a reliable answer. Please contact hotel staff.",needsHuman:true,handoffReason:"Response validation failed."};}
+ let answer;try{answer=JSON.parse(completion.choices[0]?.message?.content||"");}catch{answer={reply:"I cannot prepare a reliable answer. Please contact hotel staff.",needsHuman:true,handoffReason:"Response validation failed."};}if(availabilityCheck){answer.reply="I can’t verify live room availability in this chat. Please contact the hotel team so they can check the booking system and confirm it with you.";answer.needsHuman=true;answer.handoffReason="Guest requested a live room-availability check; no verified live PMS connection is enabled for this property.";}
  const reply=typeof answer.reply==="string"?answer.reply.slice(0,4000):"Please contact hotel staff.";const flagHuman=Boolean(flag||answer.needsHuman);
  const c=await db.connect();let cid=conversationId,eid,createdEscalation=false,existingNotificationStatus="not_configured";try{await c.query("BEGIN");if(!cid){const x=await c.query("INSERT INTO conversations(organization_id,channel,status,guest_token_hash) VALUES($1,'website',$2,$3) RETURNING id",[org.id,flagHuman?"escalated":"open",hash(guestToken)]);cid=x.rows[0].id;}else{const locked=await c.query("SELECT id FROM conversations WHERE id=$1 AND organization_id=$2 AND guest_token_hash=$3 FOR UPDATE",[cid,org.id,hash(guestToken)]);if(!locked.rowCount){await c.query("ROLLBACK");return r.status(404).json({error:"Conversation not found."});}}
  await c.query("INSERT INTO messages(conversation_id,role,content) VALUES($1,'guest',$2),($1,'assistant',$3)",[cid,msg.trim(),reply]);await c.query("UPDATE conversations SET last_message_at=now(),status=CASE WHEN $2 THEN 'escalated' WHEN status='resolved' THEN 'open' ELSE status END WHERE id=$1 AND organization_id=$3",[cid,flagHuman,org.id]);

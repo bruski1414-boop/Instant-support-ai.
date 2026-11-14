@@ -585,6 +585,43 @@ try {
   assert.equal(concurrentRetryRecord.rows[0].notification_status, "delivered");
   assert.equal(concurrentRetryRecord.rows[0].notification_attempts, 2, "only the claimed retry must increment the attempt count");
 
+  // Concurrent guest follow-ups use the same atomic claim as dashboard retries.
+  webhookResponseStatus = 503;
+  const concurrentGuestFailure = await fetch(baseUrl + "/api/public/" + tenants[0].slug + "/chat", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ message: "Please have the hotel team contact me about an urgent matter." }),
+  });
+  assert.equal(concurrentGuestFailure.status, 200, await concurrentGuestFailure.clone().text());
+  const concurrentGuestFailureBody = await concurrentGuestFailure.json();
+  assert.equal(concurrentGuestFailureBody.notificationStatus, "failed");
+  webhookResponseStatus = 200;
+  webhookDelayMs = 250;
+  const webhookCountBeforeGuestRetries = webhookRequests.length;
+  const guestRetry = message => fetch(baseUrl + "/api/public/" + tenants[0].slug + "/chat", {
+    method: "POST",
+    headers: { "content-type": "application/json", "X-Veyra-Conversation-Token": concurrentGuestFailureBody.conversationToken },
+    body: JSON.stringify({
+      message,
+      conversationId: concurrentGuestFailureBody.conversationId,
+      conversationToken: concurrentGuestFailureBody.conversationToken,
+    }),
+  });
+  const concurrentGuestRetries = await Promise.all([
+    guestRetry("I still need assistance, please."),
+    guestRetry("Please confirm a staff member can help."),
+  ]);
+  webhookDelayMs = 0;
+  assert.deepEqual(concurrentGuestRetries.map(response => response.status), [200, 200]);
+  assert.equal(webhookRequests.length, webhookCountBeforeGuestRetries + 1, "concurrent guest follow-ups must produce only one webhook request");
+  const concurrentGuestRecord = await pool.query(
+    "SELECT notification_status,notification_attempts FROM escalations WHERE id=$1 AND organization_id=$2",
+    [concurrentGuestFailureBody.escalationId, orgAForPilot.rows[0].id],
+  );
+  assert.equal(concurrentGuestRecord.rows[0].notification_status, "delivered");
+  assert.equal(concurrentGuestRecord.rows[0].notification_attempts, 2, "only one concurrent guest follow-up may claim the retry");
+
+
   // A worker crash must not leave a notification permanently locked in
   // "sending"; the two-minute lease makes an abandoned claim recoverable.
   webhookResponseStatus = 503;

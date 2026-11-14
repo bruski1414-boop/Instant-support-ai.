@@ -38,7 +38,7 @@ const setupLimiter=rateLimit({windowMs:3600000,limit:5,standardHeaders:"draft-7"
 const platformProvisionLimiter=rateLimit({windowMs:3600000,limit:10,standardHeaders:"draft-7",legacyHeaders:false});
 const integrationTestLimiter=rateLimit({windowMs:3600000,limit:5,standardHeaders:"draft-7",legacyHeaders:false});
 const revenueWebhookLimiter=rateLimit({windowMs:60000,limit:30,standardHeaders:"draft-7",legacyHeaders:false});
-const publicChatLimiter=rateLimit({windowMs:300000,limit:process.env.NODE_ENV==="test"?1000:10,standardHeaders:"draft-7",legacyHeaders:false});
+const publicChatLimiter=rateLimit({windowMs:300000,limit:10,skip:q=>process.env.NODE_ENV==="test"&&q.get("X-Veyra-Test-Bypass-Rate-Limit")==="true",standardHeaders:"draft-7",legacyHeaders:false});
 const publicPollLimiter=rateLimit({windowMs:60000,limit:30,standardHeaders:"draft-7",legacyHeaders:false});
 const invitationAcceptLimiter=rateLimit({windowMs:3600000,limit:5,standardHeaders:"draft-7",legacyHeaders:false});
 app.use("/api/invitations/accept",invitationAcceptLimiter);

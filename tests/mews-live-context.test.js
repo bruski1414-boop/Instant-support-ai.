@@ -70,3 +70,37 @@ test("fetches Mews data through the client and stamps it with a short freshness 
   assert.equal(snapshots[0].observedAt, base.observedAt);
   assert.equal(snapshots[0].validUntil, "2026-11-14T10:10:00.000Z");
 });
+
+test("connects the Mews API client response directly into canonical snapshots", async () => {
+  const { createMewsConnectorClient } = require("../mews-connector");
+  const { getMewsRoomNightSnapshots } = require("../mews-live-context");
+  const calls = [];
+  const client = createMewsConnectorClient({
+    clientToken: "demo-token",
+    accessToken: "demo-access",
+    fetchImpl: async (url, options) => {
+      calls.push({ url, options });
+      return {
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({
+          TimeUnitStartsUtc: ["2026-12-01T23:00:00.000Z"],
+          CategoryAvailabilities: [{ CategoryId: "cat-deluxe", Availabilities: [2] }]
+        })
+      };
+    }
+  });
+  const snapshots = await getMewsRoomNightSnapshots({
+    client,
+    service: base.service,
+    propertyReference: base.propertyReference,
+    timeZone: base.timeZone,
+    firstTimeUnitStartUtc: "2026-12-01T23:00:00.000Z",
+    lastTimeUnitStartUtc: "2026-12-01T23:00:00.000Z",
+    nowUtc: base.observedAt
+  });
+  assert.equal(calls.length, 1);
+  assert.match(calls[0].url, /services\\/getAvailability$/);
+  assert.equal(snapshots[0].roomsAvailable, 2);
+  assert.equal(snapshots[0].arrivalDate, "2026-12-02");
+});

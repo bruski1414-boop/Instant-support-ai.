@@ -21,6 +21,8 @@ const {normalizeRevenueEvent,normalizeRevenueAdjustment}=require("./revenue-attr
 const {normalizeGuestConversationAccess,normalizeStaffReply,canReplyToConversation}=require("./guest-messaging");
 const {deliverStaffEscalation,shouldRetryStaffNotification}=require("./staff-notifications");
 const app=express();
+// Render terminates TLS at one trusted proxy hop; use the forwarded client IP for rate limits.
+if (prod && process.env.RENDER_EXTERNAL_URL) app.set("trust proxy", 1);
 const PORT=Number(process.env.PORT||3000);
 const MODEL=process.env.OPENAI_MODEL||"gpt-4.1-mini";
 const origins=(process.env.ALLOWED_ORIGINS||"http://localhost:3000,http://127.0.0.1:3000").split(",").map(x=>x.trim()).filter(Boolean);

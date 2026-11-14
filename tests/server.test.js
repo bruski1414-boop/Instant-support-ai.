@@ -275,13 +275,17 @@ test("staff handoff events carry stable tenant identifiers for multi-hotel routi
   assert.match(server, /notify\(\{id:item\.organization_id,name:item\.name,slug:item\.slug\}/);
 });
 
-test("failed staff notifications are retried at most twice after the initial attempt", () => {
+test("failed staff notifications are retried at most twice after the initial attempt and visible to staff", () => {
   const server = fs.readFileSync("server.js", "utf8");
   const notifications = fs.readFileSync("staff-notifications.js", "utf8");
+  const dashboard = fs.readFileSync("dashboard.html", "utf8");
   assert.match(server, /notification_status,notification_attempts FROM escalations/);
   assert.match(server, /shouldRetryStaffNotification\(/);
   assert.match(server, /notification_attempts=notification_attempts\+CASE WHEN \$2 THEN 1 ELSE 0 END/);
   assert.match(notifications, /Number\(notificationAttempts\) < 3/);
+  assert.match(dashboard, /Attempts: .*notification_attempts/);
+  assert.match(dashboard, /notification_last_attempt_at/);
+  assert.match(dashboard, /Number\(x\.notification_attempts\|\|0\)<5/);
 });
 
 

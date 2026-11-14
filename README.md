@@ -106,6 +106,8 @@ Never commit secrets or place them in browser JavaScript.
 - `GET/POST/DELETE /api/admin/invitations` — owner/admin invitation management
 - `GET /api/admin/users` and `PATCH /api/admin/users/:id` — view team and activate/deactivate access
 - `GET /api/admin/storage/connections` — workspace-specific storage connection status
+- `GET/PUT/DELETE /api/admin/mews` — owner/admin setup and owner disconnect of the encrypted, tenant-specific Mews demo connection; credentials are never returned
+- `POST /api/admin/mews/verify` — read-only check of the property's identity, timezone and active daily service
 - `POST /api/admin/storage/connect/google|microsoft` — start provider OAuth
 - `GET /api/admin/storage/oauth/callback` — one-time OAuth callback
 - `GET /api/admin/storage/sites/microsoft` — discover SharePoint sites

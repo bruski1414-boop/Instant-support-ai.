@@ -40,10 +40,10 @@ function createMewsConnectionStore({ db, encryptionKey, clientName = "Veyra AI/0
     return result.rows[0] || null;
   }
 
-  async function resolveConnection(organizationId, allowedStatuses) {
+  async function resolveConnection(organizationId, allowedStatuses, requireFreshVerification = true) {
     const result = await db.query(
-      "SELECT organization_id,encrypted_credentials,service_id,property_reference,timezone FROM mews_connections WHERE organization_id=$1 AND status = ANY($2::text[]) AND (status <> 'verified' OR last_verified_at > now() - interval '30 days')",
-      [organizationId, allowedStatuses]
+      "SELECT organization_id,encrypted_credentials,service_id,property_reference,timezone FROM mews_connections WHERE organization_id=$1 AND status = ANY($2::text[]) AND ($3::boolean = false OR status <> 'verified' OR last_verified_at > now() - interval '30 days')",
+      [organizationId, allowedStatuses, requireFreshVerification]
     );
     if (!result.rowCount) return null;
     const row = result.rows[0];
@@ -66,7 +66,7 @@ function createMewsConnectionStore({ db, encryptionKey, clientName = "Veyra AI/0
   }
 
   async function verify(organizationId) {
-    const connection = await resolveConnection(organizationId, ['configured', 'error', 'verified']);
+    const connection = await resolveConnection(organizationId, ['configured', 'error', 'verified'], false);
     if (!connection) throw new Error("No Mews connection is configured for this hotel.");
     const [configuration, services] = await Promise.all([
       connection.client.getConfiguration(),

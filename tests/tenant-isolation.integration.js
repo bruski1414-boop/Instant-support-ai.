@@ -481,6 +481,19 @@ try {
   });
   assert.equal(duplicateDeliveredNotification.status, 409, "a delivered notification must not be sent again");
 
+  const resolveBetaEscalation = await fetch(baseUrl + "/api/admin/escalations/" + guestEscalationBBody.escalationId, {
+    method: "PATCH",
+    headers: { cookie: cookieB, "content-type": "application/json", "X-CSRF-Token": csrfB },
+    body: JSON.stringify({ status: "resolved" }),
+  });
+  assert.equal(resolveBetaEscalation.status, 200, await resolveBetaEscalation.clone().text());
+  const retryResolvedEscalation = await fetch(baseUrl + "/api/admin/escalations/" + guestEscalationBBody.escalationId + "/notify", {
+    method: "POST",
+    headers: { cookie: cookieB, "content-type": "application/json", "X-CSRF-Token": csrfB },
+    body: JSON.stringify({}),
+  });
+  assert.equal(retryResolvedEscalation.status, 409, "resolved handoffs must not send another notification");
+
   // A failed delivery is visible as failed, and a later guest message retries
   // only that tenant's pending handoff without creating a duplicate escalation.
   webhookResponseStatus = 503;

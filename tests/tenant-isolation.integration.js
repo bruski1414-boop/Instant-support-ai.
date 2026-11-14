@@ -100,8 +100,8 @@ async function seedConversation(tenant) {
   const guestTokenHash = createHash("sha256").update(tenant.guestToken).digest("hex");
   await pool.query("UPDATE conversations SET guest_token_hash=$1 WHERE id=$2", [guestTokenHash, tenant.conversationId]);
   await pool.query(
-    "INSERT INTO messages(conversation_id,role,content) VALUES($1,'guest',$2)",
-    [tenant.conversationId, tenant.message],
+    "INSERT INTO messages(conversation_id,role,content) VALUES($1,'guest',$2),($1,'assistant',$3)",
+    [tenant.conversationId, tenant.message, "Synthetic automated reply for performance testing"],
   );
 }
 
@@ -256,6 +256,24 @@ try {
     body: JSON.stringify({ message: "This reply must be blocked." }),
   });
   assert.equal(staffReplyWithoutCsrf.status, 403, "staff replies must require CSRF verification");
+
+  const performanceA = await fetch(`${baseUrl}/api/admin/performance`, { headers: { cookie: cookieA } });
+  const performanceB = await fetch(`${baseUrl}/api/admin/performance`, { headers: { cookie: cookieB } });
+  assert.equal(performanceA.status, 200);
+  assert.equal(performanceB.status, 200);
+  const performanceABody = await performanceA.json();
+  const performanceBBody = await performanceB.json();
+  assert.equal(performanceABody.total_conversations, 1);
+  assert.equal(performanceABody.ai_replies, 1);
+  assert.equal(performanceABody.staff_replies, 1);
+  assert.equal(performanceABody.staff_replied_conversations, 1);
+  assert.equal(performanceABody.ai_only_so_far, 0);
+  assert.equal(performanceBBody.total_conversations, 1);
+  assert.equal(performanceBBody.staff_replies, 0);
+  assert.equal(performanceBBody.ai_only_so_far, 1);
+  assert.ok(Number(performanceABody.median_first_ai_response_seconds) >= 0);
+  assert.equal(performanceABody.handoff_conversations, 0);
+  assert.equal(performanceBBody.handoff_conversations, 0);
 
   const staffRotateWebhook = await fetch(`${baseUrl}/api/admin/integrations/revenue-webhook/rotate`, {
     method: "POST",

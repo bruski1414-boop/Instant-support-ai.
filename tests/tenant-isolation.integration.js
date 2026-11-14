@@ -332,6 +332,51 @@ try {
   assert.equal(performanceABody.handoff_conversations, 0);
   assert.equal(performanceBBody.handoff_conversations, 0);
 
+  // Exercise the real tenant guest-chat route with local AI and webhook test doubles.
+  const guestChat = await fetch(baseUrl + "/api/public/" + tenants[0].slug + "/chat", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ message: "What time is breakfast?" }),
+  });
+  assert.equal(guestChat.status, 200, await guestChat.clone().text());
+  const guestChatBody = await guestChat.json();
+  assert.equal(guestChatBody.reply, "Breakfast is served daily from 6:30 AM to 10:30 AM.");
+  assert.equal(guestChatBody.needsHuman, false);
+  assert.ok(guestChatBody.conversationId);
+  assert.match(guestChatBody.conversationToken, /^[A-Za-z0-9_-]{40,64}$/);
+  assert.ok(guestChatBody.knowledgeSources.some(source => source.title === "Breakfast hours"));
+  const persistedJourney = await pool.query("SELECT m.role,m.content,m.evidence FROM conversations c JOIN messages m ON m.conversation_id=c.id WHERE c.id=$1 AND c.organization_id=$2 ORDER BY m.created_at", [guestChatBody.conversationId, orgAForPilot.rows[0].id]);
+  assert.equal(persistedJourney.rowCount, 2, "guest and AI reply must persist in the same tenant conversation");
+  assert.equal(persistedJourney.rows[0].role, "guest");
+  assert.equal(persistedJourney.rows[1].role, "assistant");
+  assert.equal(persistedJourney.rows[1].content, guestChatBody.reply);
+  assert.equal(persistedJourney.rows[1].evidence.status, "supported");
+  assert.ok(persistedJourney.rows[1].evidence.sources.some(source => source.title === "Breakfast hours"));
+
+  const guestEscalation = await fetch(baseUrl + "/api/public/" + tenants[0].slug + "/chat", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ message: "I have a serious allergy and need help." }),
+  });
+  assert.equal(guestEscalation.status, 200, await guestEscalation.clone().text());
+  const guestEscalationBody = await guestEscalation.json();
+  assert.equal(guestEscalationBody.needsHuman, true);
+  assert.equal(guestEscalationBody.notificationStatus, "delivered");
+  assert.equal(guestEscalationBody.notificationDelivered, true);
+  assert.equal(webhookRequests.length, 1, "the staff webhook must receive the escalation exactly once");
+  const webhookRequest = webhookRequests[0];
+  const expectedSignature = createHmac("sha256", webhookSecret).update(webhookRequest.body).digest("hex");
+  assert.equal(webhookRequest.signature, expectedSignature, "staff webhook payload must carry a valid HMAC signature");
+  const webhookPayload = JSON.parse(webhookRequest.body);
+  assert.equal(webhookPayload.event, "veyra.escalation.created");
+  assert.equal(webhookPayload.organizationSlug, tenants[0].slug);
+  assert.equal(webhookPayload.conversationId, guestEscalationBody.conversationId);
+  const escalationRecord = await pool.query("SELECT e.notification_status,e.notification_attempts,c.status AS conversation_status FROM escalations e JOIN conversations c ON c.id=e.conversation_id WHERE e.id=$1 AND e.organization_id=$2", [guestEscalationBody.escalationId, orgAForPilot.rows[0].id]);
+  assert.equal(escalationRecord.rowCount, 1);
+  assert.equal(escalationRecord.rows[0].notification_status, "delivered");
+  assert.equal(escalationRecord.rows[0].notification_attempts, 1);
+  assert.equal(escalationRecord.rows[0].conversation_status, "escalated");
+  const guestStaffPoll = await fetch(baseUrl + "/api/public/" + tenants[0].slug + "/chat?conversationId=" + guestChatBody.conversationId, { headers: { "X-Veyra-Conversation-Token": guestChatBody.conversationToken } });
+  assert.equal(guestStaffPoll.status, 200);
+  assert.deepEqual((await guestStaffPoll.json()).messages, []);
   const staffRotateWebhook = await fetch(`${baseUrl}/api/admin/integrations/revenue-webhook/rotate`, {
     method: "POST",
     headers: { cookie: staffCookie, "X-CSRF-Token": staffCsrf, "content-type": "application/json" },

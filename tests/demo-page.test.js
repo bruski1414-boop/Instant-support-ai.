@@ -20,7 +20,9 @@ test("demo page clearly labels simulated inventory, metrics and staff handoffs",
   assert.match(html, /simulated inventory/);
   assert.match(html, /no real hotel employee has been contacted|no real notification was sent/i);
   assert.match(html, /hotel-reported booking value/i);
-  assert.match(html, /Veyra-linked revenue evidence/i);\n  assert.match(html, /not a live AI model/i);\n  assert.match(html, /median first response/i);
+  assert.match(html, /Veyra-linked revenue evidence/i);
+  assert.match(html, /not a live AI model/i);
+  assert.match(html, /median first response/i);
 });
 
 test("demo page uses the isolated demo API and renders guest text safely", () => {

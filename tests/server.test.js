@@ -474,7 +474,7 @@ test("HTTP demo metrics identify sample values and report zero Veyra-linked reve
 test("live hotel guest chat remains blocked when its database and pilot prerequisites are absent", async () => {
   const response = await fetch(`${baseUrl}/api/public/sample-hotel/chat`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true" },
     body: JSON.stringify({ message: "What time is breakfast?" })
   });
   const body = await response.json();

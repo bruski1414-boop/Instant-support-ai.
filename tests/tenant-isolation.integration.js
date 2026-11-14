@@ -391,6 +391,13 @@ try {
   });
   assert.equal(chatAfterRevocation.status, 503, "revoking a hotel's approval must immediately block new guest chat");
   assert.match((await chatAfterRevocation.json()).error, /privacy approval/i);
+  const cleanupWhilePrivacyRevoked = await fetch(`${baseUrl}/api/admin/retention/cleanup`, {
+    method: "POST",
+    headers: { cookie: cookieA, "X-CSRF-Token": csrfA, "content-type": "application/json" },
+    body: JSON.stringify({ confirm: true }),
+  });
+  assert.equal(cleanupWhilePrivacyRevoked.status, 409, "retention deletion must be blocked while hotel privacy approval is revoked");
+  await pool.query("UPDATE organization_privacy_approvals SET revoked_at=NULL,approved_at=now() WHERE organization_id=$1", [orgAForPilot.rows[0].id]);
   const staffRotateWebhook = await fetch(`${baseUrl}/api/admin/integrations/revenue-webhook/rotate`, {
     method: "POST",
     headers: { cookie: staffCookie, "X-CSRF-Token": staffCsrf, "content-type": "application/json" },

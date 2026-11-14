@@ -46,3 +46,27 @@ test("returns no room claims when Mews has no categories", () => {
   const snapshots = mapMewsAbsoluteAvailability({ ...base, availability: { ...base.availability, categoryAvailabilities: [] } });
   assert.deepEqual(snapshots, []);
 });
+
+test("fetches Mews data through the client and stamps it with a short freshness window", async () => {
+  const calls = [];
+  const client = {
+    async getServiceAvailabilityAbsolute(args) {
+      calls.push(args);
+      return base.availability;
+    }
+  };
+  const { getMewsRoomNightSnapshots } = require("../mews-live-context");
+  const snapshots = await getMewsRoomNightSnapshots({
+    client,
+    service: base.service,
+    propertyReference: base.propertyReference,
+    timeZone: base.timeZone,
+    firstTimeUnitStartUtc: "2026-12-01T00:00:00.000Z",
+    lastTimeUnitStartUtc: "2026-12-02T00:00:00.000Z",
+    nowUtc: base.observedAt
+  });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].serviceId, base.service.id);
+  assert.equal(snapshots[0].observedAt, base.observedAt);
+  assert.equal(snapshots[0].validUntil, "2026-11-14T10:10:00.000Z");
+});

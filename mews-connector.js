@@ -108,7 +108,7 @@ function createMewsConnectorClient({
     },
 
     async getServices({ enterpriseIds, serviceIds, cursor, count = 100 } = {}) {
-      if (!Number.isInteger(count) || count < 1 || count > 100) throw new Error("count must be between 1 and 100.");
+      if (!Number.isInteger(count) || count < 1 || count > 1000) throw new Error("count must be between 1 and 100.");
       const fields = { Limitation: { Count: count } };
       if (Array.isArray(enterpriseIds) && enterpriseIds.length) fields.EnterpriseIds = enterpriseIds.map((v) => nonEmpty(v, "enterpriseId"));
       if (Array.isArray(serviceIds) && serviceIds.length) fields.ServiceIds = serviceIds.map((v) => nonEmpty(v, "serviceId"));

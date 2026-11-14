@@ -95,8 +95,10 @@ function createMewsConnectorClient({
   }
 
   const client = {
-    async getConfiguration() {
-      const result = await post("/api/connector/v1/configuration/get");
+    async getConfiguration({ enterpriseId } = {}) {
+      const fields = {};
+      if (enterpriseId != null) fields.EnterpriseId = nonEmpty(enterpriseId, "enterpriseId");
+      const result = await post("/api/connector/v1/configuration/get", fields);
       return {
         enterprise: result.Enterprise ? {
           id: result.Enterprise.Id || null,

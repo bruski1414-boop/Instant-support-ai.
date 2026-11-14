@@ -345,6 +345,21 @@ test("onboarding readiness requires verified storage authorization, a successful
   assert.match(server, /No current hotel owner\/admin privacy acknowledgement/);
 });
 
+test("staff notification destinations and verification are stored per hotel", () => {
+  const server = fs.readFileSync("server.js", "utf8");
+  const dashboard = fs.readFileSync("dashboard.html", "utf8");
+  assert.match(server, /CREATE TABLE IF NOT EXISTS organization_staff_webhooks/);
+  assert.match(server, /WHERE organization_id=\$1/);
+  assert.match(server, /encryptSecret\(supplied,key\)/);
+  assert.match(server, /decryptSecret\(configured\.rows\[0\]\.encrypted_secret,key\)/);
+  assert.match(server, /app\.put\("\/api\/admin\/staff-webhook"/);
+  assert.match(server, /app\.delete\("\/api\/admin\/staff-webhook"/);
+  assert.match(server, /app\.post\("\/api\/admin\/integrations\/test-staff-webhook"/);
+  assert.match(server, /handoffConfigured=Boolean\(staffWebhook\.rowCount\)/);
+  assert.match(dashboard, /id="staffWebhookForm"/);
+  assert.match(dashboard, /api\("\/api\/admin\/staff-webhook"/);
+});
+
 test("AI and staff integrations require live verification before onboarding marks them complete", () => {
   const server = fs.readFileSync("server.js", "utf8");
   assert.match(server, /organization_integration_checks/);

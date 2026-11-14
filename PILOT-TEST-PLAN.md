@@ -71,6 +71,10 @@ Any cross-workspace exposure is a release-blocking defect.
 - [ ] An authorised hotel operator approves the privacy notice, data-processing terms, lawful basis/consent where applicable, subprocessors, retention schedule and deletion process.
 - [ ] Each hotel records its current workspace privacy approval; the platform-wide readiness flag is supported by documented evidence.
 - [ ] Durable database hosting and automated backups are configured, and a restore drill succeeds.
+- [ ] Run `npm run retention:cleanup` and review the dry-run counts before any deletion.
+- [ ] Verify the guarded scheduled cleanup command refuses `--apply` unless `RETENTION_CLEANUP_ENABLED=true` is also set.
+- [ ] Test a scheduled cleanup against synthetic records: only current-policy-approved tenants, expired resolved conversations, no unresolved escalations, max 500 per tenant, revenue attribution detached, audit event written.
+- [ ] Configure a daily scheduler only after the hotel owner approves the retention period and the adult platform operator reviews the dry-run; verify scheduler logs and failures.
 - [ ] Deletion behavior is documented for active records, audit logs, provider copies and backup retention.
 - [ ] Secrets are stored only in the hosting secret manager and rotated under an approved procedure.
 - [ ] Request size, rate limits, abuse controls, session security, CORS, CSRF and security headers are tested.

@@ -579,6 +579,37 @@ try {
   assert.equal(concurrentRetryRecord.rows[0].notification_status, "delivered");
   assert.equal(concurrentRetryRecord.rows[0].notification_attempts, 2, "only the claimed retry must increment the attempt count");
 
+  // A worker crash must not leave a notification permanently locked in
+  // "sending"; the two-minute lease makes an abandoned claim recoverable.
+  webhookResponseStatus = 503;
+  const abandonedDelivery = await fetch(baseUrl + "/api/public/" + tenants[0].slug + "/chat", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ message: "Please ask the hotel team to contact me." }),
+  });
+  assert.equal(abandonedDelivery.status, 200, await abandonedDelivery.clone().text());
+  const abandonedDeliveryBody = await abandonedDelivery.json();
+  assert.equal(abandonedDeliveryBody.notificationStatus, "failed");
+  await pool.query(
+    "UPDATE escalations SET notification_status='sending',notification_last_attempt_at=now()-interval '3 minutes' WHERE id=$1 AND organization_id=$2",
+    [abandonedDeliveryBody.escalationId, orgAForPilot.rows[0].id],
+  );
+  webhookResponseStatus = 200;
+  const recoveredDelivery = await fetch(baseUrl + "/api/admin/escalations/" + abandonedDeliveryBody.escalationId + "/notify", {
+    method: "POST",
+    headers: { cookie: cookieA, "content-type": "application/json", "X-CSRF-Token": csrfA },
+    body: JSON.stringify({}),
+  });
+  assert.equal(recoveredDelivery.status, 200, await recoveredDelivery.clone().text());
+  const recoveredDeliveryBody = await recoveredDelivery.json();
+  assert.equal(recoveredDeliveryBody.notificationStatus, "delivered");
+  const recoveredRecord = await pool.query(
+    "SELECT notification_status,notification_attempts FROM escalations WHERE id=$1 AND organization_id=$2",
+    [abandonedDeliveryBody.escalationId, orgAForPilot.rows[0].id],
+  );
+  assert.equal(recoveredRecord.rows[0].notification_status, "delivered");
+  assert.equal(recoveredRecord.rows[0].notification_attempts, 2, "recovering an abandoned claim must count the new attempt");
+
   const guestStaffPoll = await fetch(baseUrl + "/api/public/" + tenants[0].slug + "/chat?conversationId=" + guestChatBody.conversationId, { headers: { "X-Veyra-Conversation-Token": guestChatBody.conversationToken } });
   assert.equal(guestStaffPoll.status, 200);
   assert.deepEqual((await guestStaffPoll.json()).messages, []);

@@ -185,6 +185,23 @@ try {
   serverReady = true;
 
   for (const tenant of tenants) await provision(tenant);
+
+  // The real guest-chat route must remain closed until every pilot release gate is verified.
+  const gatedChat = await fetch(`${baseUrl}/api/public/${tenants[0].slug}/chat`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ message: "What time is breakfast?" }),
+  });
+  assert.equal(gatedChat.status, 503, "guest chat must not start before pilot readiness checks pass");
+  const gatedChatBody = await gatedChat.json();
+  assert.equal(gatedChatBody.readyForPilot, false);
+  assert.match(gatedChatBody.error, /release gates are not all verified/i);
+  const noPrematureConversation = await pool.query(
+    "SELECT count(*)::int AS count FROM conversations WHERE organization_id=(SELECT id FROM organizations WHERE slug=$1)",
+    [tenants[0].slug],
+  );
+  assert.equal(noPrematureConversation.rows[0].count, 0, "a blocked guest request must not create a conversation");
+
   const [cookieA, cookieB] = await Promise.all(tenants.map(login));
   const staffCookie = await login(await seedStaff(tenants[0]));
   await Promise.all(tenants.map(seedConversation));

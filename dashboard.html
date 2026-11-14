@@ -361,7 +361,7 @@ async function loadMewsConnection(){
   status.textContent=(verified?"Verified connection":"Connection requires verification")+
    " · Property "+x.property_reference+" · "+x.timezone+
    (x.last_verified_at?" · Last verified "+date(x.last_verified_at):"")+
-   (x.last_error?" · Last error: "+x.last_error:"");
+   (x.status==="error"?" · Verification did not pass. Check the demo credentials, property and service settings.":"");
   $("mewsPropertyReference").value=x.property_reference||"";
   $("mewsServiceId").value=x.service_id||"";
   $("mewsTimezone").value=x.timezone||"";

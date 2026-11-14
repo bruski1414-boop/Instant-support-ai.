@@ -60,7 +60,7 @@ function createMewsConnectorClient({
   }
 
   async function post(path, fields = {}) {
-    if (!/^\/api\/connector\/v1\/[a-zA-Z0-9/]+$/.test(path)) throw new Error("Invalid Mews operation path.");
+    if (!/^\/api\/connector\/v1\/[a-zA-Z0-9/-]+$/.test(path)) throw new Error("Invalid Mews operation path.");
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {

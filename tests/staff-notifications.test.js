@@ -3,7 +3,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const crypto = require("node:crypto");
-const { deliverStaffEscalation, shouldRetryStaffNotification } = require("../staff-notifications");
+const { deliverStaffEscalation, shouldRetryStaffNotification, encryptSecret, decryptSecret, validateWebhookUrl } = require("../staff-notifications");
 
 const input = {
   organization: { id: "org-1", slug: "aster-house", name: "Aster House" },
@@ -67,4 +67,48 @@ test("failed staff notifications retry only while an escalation is open and atte
   assert.equal(shouldRetryStaffNotification({
     needsHuman: true, createdEscalation: true, notificationStatus: "not_configured", notificationAttempts: 0
   }), false);
+});
+
+test("hotel webhook secrets are encrypted and authenticated on decrypt", () => {
+  const secret = "a-long-random-hotel-webhook-secret-value";
+  const key = "test-encryption-key-with-more-than-32-characters";
+  const encrypted = encryptSecret(secret, key);
+  assert.notEqual(encrypted, secret);
+  assert.equal(decryptSecret(encrypted, key), secret);
+  assert.throws(() => decryptSecret(encrypted, "a-different-key-with-more-than-32-characters"));
+});
+
+test("hotel webhook URL validation requires public HTTPS destinations", () => {
+  assert.equal(validateWebhookUrl("https://hooks.hotel.example/events"), "https://hooks.hotel.example/events");
+  for (const url of [
+    "http://hooks.hotel.example/events",
+    "https://localhost/hook",
+    "https://127.0.0.1/hook",
+    "https://10.0.0.8/hook",
+    "https://192.168.1.2/hook",
+    "https://172.16.0.1/hook",
+    "https://user:pass@hooks.hotel.example/hook"
+  ]) assert.throws(() => validateWebhookUrl(url), undefined, url);
+});
+
+test("notification redirects are disabled", async () => {
+  let request;
+  await deliverStaffEscalation({
+    ...input,
+    fetchImpl: async (_url, options) => { request = options; return { ok: true }; }
+  });
+  assert.equal(request.redirect, "error");
+});
+
+test("integration test event is signed and marked as a test", async () => {
+  let request;
+  await deliverStaffEscalation({
+    ...input, event: "veyra.integration.test", test: true,
+    fetchImpl: async (_url, options) => { request = options; return { ok: true }; }
+  });
+  const payload = JSON.parse(request.body);
+  assert.equal(payload.event, "veyra.integration.test");
+  assert.equal(payload.test, true);
+  assert.equal(payload.conversationId, undefined);
+  assert.equal(request.headers["x-veyra-signature"], crypto.createHmac("sha256", input.webhookSecret).update(request.body).digest("hex"));
 });

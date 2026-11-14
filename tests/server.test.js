@@ -16,7 +16,7 @@ async function getFreePort() {
 before(async () => {
   const port = await getFreePort();
   baseUrl = `http://127.0.0.1:${port}`;
-  child = spawn(process.execPath, ["server.js"], { cwd: process.cwd(), env: { ...process.env, PORT: String(port), OPENAI_API_KEY: "", ALLOWED_ORIGINS: "http://localhost:3000" }, stdio: "ignore" });
+  child = spawn(process.execPath, ["server.js"], { cwd: process.cwd(), env: { ...process.env, PORT: String(port), NODE_ENV: "test", OPENAI_API_KEY: "", ALLOWED_ORIGINS: "http://localhost:3000" }, stdio: "ignore" });
   let ready = false;
   for (let attempt = 0; attempt < 60; attempt += 1) {
     if (child.exitCode !== null) throw new Error("Veyra server exited before tests started");
@@ -190,7 +190,7 @@ test("editing approved hotel knowledge requires reapproval", () => {
   const server = fs.readFileSync("server.js", "utf8");
   assert.match(server, /contentChanged\?false:Boolean\(v\.approved\)/);
   assert.match(server, /knowledge\.edited_unapproved/);
-  assert.match(server, /typeof body\.approved!=="boolean"/);
+  assert.match(server, /isOptionalBoolean\(body\.approved\)/);
   assert.match(server, /body\.content\.length>12000/);
 });
 
@@ -202,6 +202,8 @@ test("retention policy is tenant-controlled, disabled by default and requires ex
   assert.match(server, /app\.put\("\/api\/admin\/retention",requireDb,auth,role\("owner","admin"\)/);
   assert.match(server, /app\.post\("\/api\/admin\/retention\/cleanup",requireDb,auth,role\("owner","admin"\)/);
   assert.match(server, /q\.body\?\.confirm!==true/);
+  assert.match(server, /A current, complete and unrevoked hotel privacy approval is required before retention cleanup/);
+  assert.match(server, /policy_version=.*revoked_at IS NULL FOR SHARE/);
   assert.match(server, /c\.status='resolved'/);
   assert.match(server, /e\.status<>'resolved'/);
   assert.match(dashboard, /id="retentionDays"/);
@@ -237,6 +239,28 @@ test("knowledge documents retain tenant-scoped version history", () => {
   assert.match(dashboard, /knowledgeHistory/);
 });
 
+test("hotel policy text import loads a limited browser-side unapproved draft", () => {
+  const dashboard = fs.readFileSync("dashboard.html", "utf8");
+  assert.match(dashboard, /id="kImportFile" type="file" accept="\.txt,\.md,text\/plain,text\/markdown"/);
+  assert.match(dashboard, /file\.size>12000/);
+  assert.match(dashboard, /content\.length>12000/);
+  assert.match(dashboard, /\$\("kApproved"\)\.checked=false/);
+  assert.match(dashboard, /\$\("kCategory"\)\.value="general"/);
+  assert.match(dashboard, /Loaded as an unapproved draft/);
+  assert.match(dashboard, /Imported draft:/);
+});
+
+test("knowledge approval cannot use an expired review date and overdue documents require a new review date", () => {
+  const server = fs.readFileSync("server.js", "utf8");
+  const dashboard = fs.readFileSync("dashboard.html", "utf8");
+  assert.match(server, /SELECT \$1::date < CURRENT_DATE AS past/);
+  assert.match(server, /An approved document needs a review date today or later/);
+  assert.match(dashboard, /review due soon/);
+  assert.match(dashboard, /Last reviewed/);
+  assert.match(dashboard, /Enter its next review date/);
+  assert.match(dashboard, /payload\.review_due_at=nextReview/);
+});
+
 test("guest conversation writes lock and revalidate the tenant-owned conversation before appending messages", () => {
   const server = fs.readFileSync("server.js", "utf8");
   assert.match(server, /SELECT id FROM conversations WHERE id=\$1 AND organization_id=\$2 AND guest_token_hash=\$3 FOR UPDATE/);
@@ -246,9 +270,24 @@ test("guest conversation writes lock and revalidate the tenant-owned conversatio
 
 test("staff handoff events carry stable tenant identifiers for multi-hotel routing", () => {
   const server = fs.readFileSync("server.js", "utf8");
-  assert.match(server, /organizationId:org\.id,organizationSlug:org\.slug/);
+  const notifications = fs.readFileSync("staff-notifications.js", "utf8");
+  assert.match(notifications, /organizationId: organization\.id/);
+  assert.match(notifications, /organizationSlug: organization\.slug/);
   assert.match(server, /o\.id AS organization_id,o\.name,o\.slug FROM escalations e JOIN organizations o ON o\.id=e\.organization_id/);
   assert.match(server, /notify\(\{id:item\.organization_id,name:item\.name,slug:item\.slug\}/);
+});
+
+test("failed staff notifications are retried at most twice after the initial attempt and visible to staff", () => {
+  const server = fs.readFileSync("server.js", "utf8");
+  const notifications = fs.readFileSync("staff-notifications.js", "utf8");
+  const dashboard = fs.readFileSync("dashboard.html", "utf8");
+  assert.match(server, /notification_status,notification_attempts FROM escalations/);
+  assert.match(server, /shouldRetryStaffNotification\(/);
+  assert.match(server, /notification_attempts=notification_attempts\+CASE WHEN \$2 THEN 1 ELSE 0 END/);
+  assert.match(notifications, /Number\(notificationAttempts\) < 3/);
+  assert.match(dashboard, /Attempts: .*notification_attempts/);
+  assert.match(dashboard, /notification_last_attempt_at/);
+  assert.match(dashboard, /Number\(x\.notification_attempts\|\|0\)<5/);
 });
 
 
@@ -263,9 +302,24 @@ test("public guest chat requires fresh tenant-specific AI, staff and storage ver
   assert.match(server, /verified_at>now\(\)-interval '30 days'/);
   assert.match(server, /verifiedForHotel\.has\("ai_provider"\)/);
   assert.match(server, /verifiedForHotel\.has\("staff_webhook"\)/);
-  assert.match(server, /FROM organization_storage_connections WHERE organization_id=\$1 AND status='connected'/);
+  assert.match(server, /FROM organization_storage_connections WHERE organization_id=\$1 AND status='connected' AND connected_at IS NOT NULL AND last_sync_at IS NOT NULL AND last_sync_status='success' AND last_sync_error=''/);
   assert.match(server, /This hotel's AI and staff notification integrations must be verified/);
-  assert.match(server, /This hotel must connect and authorize its own storage provider/);
+  assert.match(server, /This hotel must authorize its own storage provider and complete a successful sync/);
+});
+
+test("onboarding readiness requires verified storage authorization, a successful sync and separate hotel privacy approval", () => {
+  const server = fs.readFileSync("server.js", "utf8");
+  assert.match(server, /last_sync_status,last_sync_error FROM organization_storage_connections/);
+  assert.match(server, /Boolean\(storage\.rows\[0\]\.connected_at\)/);
+  assert.match(server, /Boolean\(storage\.rows\[0\]\.last_sync_at\)/);
+  assert.match(server, /storage\.rows\[0\]\.last_sync_status==="success"/);
+  assert.match(server, /Hotel privacy and retention approval/);
+  assert.match(server, /No current hotel owner\/admin privacy acknowledgement is recorded/);
+  assert.match(server, /CREATE TABLE IF NOT EXISTS organization_privacy_approvals/);
+  assert.match(server, /app\.put\("\/api\/admin\/privacy-approval",requireDb,auth,role\("owner","admin"\)/);
+  assert.match(server, /app\.delete\("\/api\/admin\/privacy-approval",requireDb,auth,role\("owner","admin"\)/);
+  assert.match(server, /Current owner\/admin acknowledgement recorded/);
+  assert.match(server, /No current hotel owner\/admin privacy acknowledgement/);
 });
 
 test("AI and staff integrations require live verification before onboarding marks them complete", () => {
@@ -312,3 +366,137 @@ test("hotel storage dashboard distinguishes disconnect from explicit imported-co
   assert.match(dashboard, /api\("\/api\/admin\/storage\/imports\/"\+b\.dataset\.storagePurge/);
   assert.match(dashboard, /Existing imported knowledge copies will remain in Veyra until separately deleted/);
 });
+
+
+test("demo metrics HTTP endpoint returns clearly labelled synthetic metrics", async () => {
+  const response = await fetch(`${baseUrl}/api/demo/metrics`);
+  const body = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(body.demoOnly, true);
+  assert.equal(body.conversations, 126);
+  assert.equal(body.resolvedWithoutStaff + body.staffHandoffs, body.conversations);
+  assert.equal(body.veyraLinkedRevenueMinor, 0);
+  assert.match(body.note, /not attributed to Veyra/);
+});
+
+test("demo chat HTTP endpoint answers approved hotel facts", async () => {
+  const response = await fetch(`${baseUrl}/api/demo/chat`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ message: "When is breakfast served?" })
+  });
+  const body = await response.json();
+  assert.equal(response.status, 200);
+  assert.match(body.reply, /6:30 AM to 10:30 AM/);
+  assert.equal(body.needsHuman, false);
+  assert.equal(body.demoOnly, true);
+});
+
+test("demo chat HTTP endpoint safely hands booking actions to the simulated queue", async () => {
+  const response = await fetch(`${baseUrl}/api/demo/chat`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ message: "Can you book me a room?" })
+  });
+  const body = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(body.needsHuman, true);
+  assert.equal(body.handoffStatus, "demo_queue_only");
+  assert.match(body.reply, /no real staff member is notified/i);
+});
+
+test("demo chat HTTP endpoint rejects empty and oversized messages", async () => {
+  for (const message of ["", "x".repeat(1201)]) {
+    const response = await fetch(`${baseUrl}/api/demo/chat`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ message })
+    });
+    assert.equal(response.status, 400);
+    assert.match((await response.json()).error, /1,200 characters/);
+  }
+});
+
+
+test("unmatched approved knowledge triggers a staff escalation instead of an AI guess", () => {
+  const server = fs.readFileSync("server.js", "utf8");
+  assert.match(server, /if\(!retrieval\.matched\)\s*\{\s*answer=\{reply:/);
+  assert.match(server, /No relevant approved hotel knowledge matched the guest question/);
+  assert.match(server, /needsHuman:true/);
+});
+
+
+test("unsupported numeric AI claims are replaced with a staff-confirmation handoff", () => {
+  const server = fs.readFileSync("server.js", "utf8");
+  assert.match(server, /validateAnswerGrounding\(answer\.reply,retrieval\.groundingText/);
+  assert.match(server, /Generated answer contained unsupported numeric details/);
+  assert.match(server, /I can’t confidently verify every detail in that answer/);
+  assert.match(server, /answer\.needsHuman=true/);
+});
+
+
+test("conversation evidence is tenant-scoped and exposes approved source provenance to managers", () => {
+  const server = fs.readFileSync("server.js", "utf8");
+  const dashboard = fs.readFileSync("dashboard.html", "utf8");
+  assert.match(server, /ALTER TABLE messages ADD COLUMN IF NOT EXISTS evidence JSONB/);
+  assert.match(server, /UPDATE messages SET evidence=\$1::jsonb WHERE id=\$2 AND role='assistant'/);
+  assert.match(server, /SELECT m\.id,m\.role,m\.content,m\.evidence,m\.created_at FROM messages m JOIN conversations c/);
+  assert.match(server, /c\.organization_id=\$2/);
+  assert.match(dashboard, /function renderConversationMessage\(m\)/);
+  assert.match(dashboard, /Approved knowledge sources/);
+  assert.match(dashboard, /Last reviewed:/);
+  assert.match(dashboard, /Staff handoff:/);
+});
+
+test("HTTP demo guest journey returns approved sample information and labels it as simulated", async () => {
+  const response = await fetch(`${baseUrl}/api/demo/chat`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ message: "What time is breakfast?" })
+  });
+  const body = await response.json();
+  assert.equal(response.status, 200);
+  assert.match(body.reply, /6:30 AM to 10:30 AM/);
+  assert.equal(body.needsHuman, false);
+  assert.equal(body.mode, "demo-simulation");
+  assert.equal(body.demoOnly, true);
+  assert.equal(body.handoffStatus, "not_required");
+});
+
+test("HTTP demo guest journey sends unsupported requests to the simulated staff queue without claiming real notification", async () => {
+  const response = await fetch(`${baseUrl}/api/demo/chat`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ message: "Can you arrange a helicopter transfer?" })
+  });
+  const body = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(body.needsHuman, true);
+  assert.equal(body.handoffStatus, "demo_queue_only");
+  assert.equal(body.mode, "demo-simulation");
+  assert.equal(body.demoOnly, true);
+  assert.match(body.reply, /none are booked in this demo|simulated/i);
+});
+
+test("HTTP demo metrics identify sample values and report zero Veyra-linked revenue", async () => {
+  const response = await fetch(`${baseUrl}/api/demo/metrics`);
+  const body = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(body.demoOnly, true);
+  assert.match(body.label, /Illustrative sample data/);
+  assert.equal(body.veyraLinkedRevenueMinor, 0);
+  assert.match(body.note, /not attributed to Veyra/);
+});
+
+test("live hotel guest chat remains blocked when its database and pilot prerequisites are absent", async () => {
+  const response = await fetch(`${baseUrl}/api/public/sample-hotel/chat`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true" },
+    body: JSON.stringify({ message: "What time is breakfast?" })
+  });
+  const body = await response.json();
+  assert.equal(response.status, 503);
+  assert.match(body.error, /privacy approval|platform is not configured/i);
+  assert.notEqual(body.mode, "demo-simulation");
+});
+

@@ -6,6 +6,7 @@ Veyra AI is a hotel customer-support platform prototype. It is designed to answe
 
 - Public demo site: https://veyra-ai-prototype.onrender.com
 - Owner dashboard: https://veyra-ai-prototype.onrender.com/dashboard.html
+- Synthetic interactive hotel demo (separate pinned Render deployment; not the current feature-branch head): https://veyra-demo-6y5a.onrender.com/demo
 - First workspace setup: https://veyra-ai-prototype.onrender.com/setup.html
 - Source code: https://github.com/bruski1414-boop/Instant-support-ai.
 
@@ -33,12 +34,12 @@ The web service and database are currently on Render's free plans. The database 
 - Embeddable guest chat widget with multi-turn conversation continuity, bounded history and a per-conversation access token stored only as a hash server-side.
 - Public file allowlist so source files, tests and internal documentation are not served as website assets.
 - Baseline browser security headers (content-type sniffing, framing, referrer and permissions policies).
-- Tenant-scoped owner/admin conversation deletion from active database records (backup/provider retention may differ) with an audit record. Manual retention cleanup only removes resolved conversations past the hotel's chosen retention period when no unresolved escalation exists; it processes at most 500 per run, preserves audit history, and downgrades linked revenue records to hotel-reported/unlinked before deleting transcripts. Retention cleanup is manual and must be run by an authorized hotel owner/admin; no automatic purge schedule is enabled.
+- Tenant-scoped owner/admin conversation deletion from active database records (backup/provider retention may differ) with an audit record. Manual retention cleanup only removes resolved conversations past the hotel's chosen retention period when no unresolved escalation exists; it processes at most 500 per run, preserves audit history, and downgrades linked revenue records to hotel-reported/unlinked before deleting transcripts. Retention cleanup can be previewed with `npm run retention:cleanup`. Actual deletion requires both `--apply` and `RETENTION_CLEANUP_ENABLED=true`, processes at most 500 eligible resolved conversations per hotel per run, requires a current complete privacy approval, preserves unresolved escalations, detaches revenue attribution and writes an audit event. No automatic schedule is enabled; an authorised operator must review dry-run output and configure/monitor a scheduler.
 - Tenant-scoped, read-only Google Drive and Microsoft OneDrive/SharePoint OAuth connectors. OAuth tokens are encrypted at rest with AES-256-GCM; each workspace stores its own provider connection; OAuth state is single-use and expires after ten minutes.
 - Hotel owners/admins can browse plain-text documents and Google Docs, choose individual files, and import them into that hotel's knowledge base. Imports are unapproved by default and must be manager-verified before guest use. SharePoint site discovery and site-root text-file browsing are included.
 - AI answer generation constrained to each hotel's approved knowledge, with conservative escalation for uncertain or sensitive requests.
 - Optional signed staff webhook with persisted delivery status, attempt count and a dashboard retry action for failed notifications.
-- Separate rate limits for public guest chat and first-owner bootstrap.
+- Per-hotel plus client-IP rate limits for public guest chat, plus separate first-owner bootstrap, authentication, invitation and provisioning limits. The default limiter store is in-memory per process and is not distributed across multiple instances.
 - Guest conversation storage is disabled by default until privacy and retention arrangements are approved.
 - GitHub Actions CI runs syntax checks and Node's test suite against PostgreSQL 16. The two-hotel integration test provisions separate workspaces, signs in as both owners, checks tenant separation across knowledge, settings, staff, audit events, storage connections, conversations and escalations, attempts cross-tenant reads/edits/deletes, verifies distinct website CORS origins, tests signed staff-dispatcher events for both hotels and sends concurrent dashboard requests. The AI connection test correctly reports unconfigured when no provider key is present. Live Google/Microsoft OAuth, real provider credentials, production notification routing, backup/restore and sustained load testing remain outstanding.
 
@@ -106,6 +107,8 @@ Never commit secrets or place them in browser JavaScript.
 - `GET/POST/DELETE /api/admin/invitations` — owner/admin invitation management
 - `GET /api/admin/users` and `PATCH /api/admin/users/:id` — view team and activate/deactivate access
 - `GET /api/admin/storage/connections` — workspace-specific storage connection status
+- `GET/PUT/DELETE /api/admin/mews` — owner/admin setup and owner disconnect of the encrypted, tenant-specific Mews demo connection; credentials are never returned
+- `POST /api/admin/mews/verify` — read-only check of the property's identity, timezone and active daily service
 - `POST /api/admin/storage/connect/google|microsoft` — start provider OAuth
 - `GET /api/admin/storage/oauth/callback` — one-time OAuth callback
 - `GET /api/admin/storage/sites/microsoft` — discover SharePoint sites
@@ -148,4 +151,11 @@ Knowledge documents retain a version history. The dashboard can review saved ver
 
 ## PMS integration foundation
 
-A provider-neutral adapter contract is available in `pms-integration.js`, with canonical reservation-event and short-lived availability-snapshot validation. See `docs/pms-integration-contract.md`. This is an adapter foundation only: no named PMS provider, live API connection, credentials, booking sync or live inventory lookup is connected yet. Select the hotel's PMS and complete its documented authentication, webhook verification, sandbox and reconciliation work before describing this as a live integration.
+A provider-neutral adapter contract is available in `pms-integration.js`. The first provider-specific implementation is a read-only Mews Connector API client in `mews-connector.js`, restricted to the official Mews demo environment. It supports configuration verification, service discovery and service availability reads. See `docs/pms-integration-contract.md` and `docs/mews-demo-integration.md`.
+
+No credentials have been provisioned and no external API call, hotel connection, booking sync or production inventory lookup has been performed. Production access is intentionally disabled pending Mews partner onboarding/certification and explicit hotel authorization.
+
+
+## Isolated interactive hotel demo
+
+The new `/demo` route is a standalone, deterministic walkthrough using fictional hotel knowledge, simulated room inventory, an on-screen-only staff handoff queue, and clearly labelled synthetic metrics. It does not call the AI provider, PostgreSQL, Mews or staff notifications and does not persist guest messages. It must not be presented as live hotel performance or live availability. See `docs/mews-demo-integration.md` for details.

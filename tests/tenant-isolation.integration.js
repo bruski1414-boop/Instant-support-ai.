@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { randomUUID, randomBytes, scrypt as scryptCallback, createHash } from "node:crypto";
+import { createServer } from "node:http";
+import { randomUUID, randomBytes, scrypt as scryptCallback, createHash, createHmac } from "node:crypto";
 import { promisify } from "node:util";
 import pg from "pg";
 const { Pool } = pg;
@@ -25,6 +26,32 @@ const tenants = [
 let child;
 let childOutput = "";
 let serverReady = false;
+const webhookSecret = "ci-webhook-secret-" + tag;
+const webhookRequests = [];
+const mockAiServer = createServer(async (req, res) => {
+  let raw = "";
+  for await (const chunk of req) raw += chunk;
+  let request = {};
+  try { request = JSON.parse(raw); } catch {}
+  const question = String(request.messages?.find(message => message.role === "user")?.content || "");
+  const answer = /breakfast/i.test(question) ? { reply: "Breakfast is served daily from 6:30 AM to 10:30 AM.", needsHuman: false, handoffReason: "" } : { reply: "I will ask the hotel team to help you.", needsHuman: true, handoffReason: "Staff assistance requested in integration test." };
+  res.writeHead(200, { "content-type": "application/json" });
+  res.end(JSON.stringify({ id: "chatcmpl-ci", object: "chat.completion", created: 1, model: "mock-veyra-test", choices: [{ index: 0, message: { role: "assistant", content: JSON.stringify(answer) }, finish_reason: "stop" }] }));
+});
+const mockWebhookServer = createServer(async (req, res) => {
+  let raw = "";
+  for await (const chunk of req) raw += chunk;
+  webhookRequests.push({ body: raw, signature: req.headers["x-veyra-signature"] });
+  res.writeHead(200, { "content-type": "application/json" });
+  res.end(JSON.stringify({ accepted: true }));
+});
+async function listen(server) {
+  await new Promise((resolve, reject) => { server.once("error", reject); server.listen(0, "127.0.0.1", resolve); });
+  return server.address().port;
+}
+async function closeServer(server) {
+  if (server.listening) await new Promise(resolve => server.close(resolve));
+}
 
 async function waitForServer() {
   for (let attempt = 0; attempt < 100; attempt += 1) {
@@ -163,6 +190,8 @@ async function readKnowledgeVersions(cookie, documentId) {
 }
 
 try {
+  const mockAiPort = await listen(mockAiServer);
+  const mockWebhookPort = await listen(mockWebhookServer);
   child = spawn(process.execPath, ["server.js"], {
     cwd: process.cwd(),
     env: {
@@ -172,10 +201,17 @@ try {
       DATABASE_SSL: "false",
       BOOTSTRAP_TOKEN: `bootstrap-${tag}`,
       PLATFORM_PROVISIONING_TOKEN: token,
-      OPENAI_API_KEY: "",
-      STAFF_WEBHOOK_URL: "",
-      STAFF_WEBHOOK_SECRET: "",
-      GUEST_DATA_STORAGE_ENABLED: "false",
+      OPENAI_API_KEY: "ci-mock-api-key",
+      OPENAI_BASE_URL: "http://127.0.0.1:" + mockAiPort + "/v1",
+      STAFF_WEBHOOK_URL: "http://127.0.0.1:" + mockWebhookPort + "/notify",
+      STAFF_WEBHOOK_SECRET: webhookSecret,
+      GUEST_DATA_STORAGE_ENABLED: "true",
+      DURABLE_BACKUPS_VERIFIED: "true",
+      TENANT_ISOLATION_TESTS_PASSED: "true",
+      PROVIDER_OAUTH_TESTED: "true",
+      HOTEL_PRIVACY_APPROVED: "true",
+      STAFF_HANDOFF_TESTED: "true",
+      PILOT_RELEASE_APPROVED: "true",
     },
     stdio: ["ignore", "ignore", "pipe"],
   });
@@ -185,6 +221,34 @@ try {
   serverReady = true;
 
   for (const tenant of tenants) await provision(tenant);
+
+  const orgAForPilot = await pool.query("SELECT id FROM organizations WHERE slug=$1", [tenants[0].slug]);
+  await pool.query("INSERT INTO organization_privacy_approvals(organization_id,policy_version,purpose_acknowledged,retention_acknowledged,backup_acknowledged,access_acknowledged,deletion_acknowledged,approved_by) SELECT $1,'2026-11-14-v1',true,true,true,true,true,id FROM users WHERE organization_id=$1 AND role='owner'", [orgAForPilot.rows[0].id]);
+
+  // The real guest-chat route must remain closed until every pilot release gate is verified.
+  const gatedChat = await fetch(`${baseUrl}/api/public/${tenants[0].slug}/chat`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ message: "What time is breakfast?" }),
+  });
+  assert.equal(gatedChat.status, 503, "guest chat must not start before this hotel's integrations are verified");
+  const gatedChatBody = await gatedChat.json();
+  assert.match(gatedChatBody.error, /AI and staff notification integrations must be verified/i);
+  const tenantBWithoutApproval = await fetch(`${baseUrl}/api/public/${tenants[1].slug}/chat`, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ message: "What time is breakfast?" }),
+  });
+  assert.equal(tenantBWithoutApproval.status, 503);
+  assert.match((await tenantBWithoutApproval.json()).error, /privacy approval/i, "tenant A's approval must not authorise tenant B");
+  const noPrematureConversation = await pool.query(
+    "SELECT count(*)::int AS count FROM conversations WHERE organization_id=(SELECT id FROM organizations WHERE slug=$1)",
+    [tenants[0].slug],
+  );
+  assert.equal(noPrematureConversation.rows[0].count, 0, "a blocked guest request must not create a conversation");
+
+  await pool.query("INSERT INTO organization_integration_checks(organization_id,integration,verified_at) VALUES($1,$2,now()),($1,$3,now())", [orgAForPilot.rows[0].id, "ai_provider", "staff_webhook"]);
+  await pool.query("INSERT INTO organization_storage_connections(organization_id,provider,workspace_reference,root_folder_reference,status,connected_at,last_sync_at,last_sync_status,last_sync_error) VALUES($1,$2,$3,$4,$5,now(),now(),'success','')", [orgAForPilot.rows[0].id, "google_drive", "ci-workspace", "ci-folder", "connected"]);
+  await pool.query("INSERT INTO knowledge_documents(organization_id,title,category,content,approved,source_reference,reviewed_at) VALUES($1,$2,$3,$4,true,$5,now())", [orgAForPilot.rows[0].id, "Breakfast hours", "services", "Breakfast is served daily from 6:30 AM to 10:30 AM.", "ci-approved-hotel-handbook"]);
   const [cookieA, cookieB] = await Promise.all(tenants.map(login));
   const staffCookie = await login(await seedStaff(tenants[0]));
   await Promise.all(tenants.map(seedConversation));
@@ -275,6 +339,65 @@ try {
   assert.equal(performanceABody.handoff_conversations, 0);
   assert.equal(performanceBBody.handoff_conversations, 0);
 
+  // Exercise the real tenant guest-chat route with local AI and webhook test doubles.
+  const guestChat = await fetch(baseUrl + "/api/public/" + tenants[0].slug + "/chat", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ message: "What time is breakfast?" }),
+  });
+  assert.equal(guestChat.status, 200, await guestChat.clone().text());
+  const guestChatBody = await guestChat.json();
+  assert.equal(guestChatBody.reply, "Breakfast is served daily from 6:30 AM to 10:30 AM.");
+  assert.equal(guestChatBody.needsHuman, false);
+  assert.ok(guestChatBody.conversationId);
+  assert.match(guestChatBody.conversationToken, /^[A-Za-z0-9_-]{40,64}$/);
+  assert.ok(guestChatBody.knowledgeSources.some(source => source.title === "Breakfast hours"));
+  const persistedJourney = await pool.query("SELECT m.role,m.content,m.evidence FROM conversations c JOIN messages m ON m.conversation_id=c.id WHERE c.id=$1 AND c.organization_id=$2 ORDER BY m.created_at", [guestChatBody.conversationId, orgAForPilot.rows[0].id]);
+  assert.equal(persistedJourney.rowCount, 2, "guest and AI reply must persist in the same tenant conversation");
+  assert.equal(persistedJourney.rows[0].role, "guest");
+  assert.equal(persistedJourney.rows[1].role, "assistant");
+  assert.equal(persistedJourney.rows[1].content, guestChatBody.reply);
+  assert.equal(persistedJourney.rows[1].evidence.status, "supported");
+  assert.ok(persistedJourney.rows[1].evidence.sources.some(source => source.title === "Breakfast hours"));
+
+  const guestEscalation = await fetch(baseUrl + "/api/public/" + tenants[0].slug + "/chat", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ message: "I have a serious allergy and need help." }),
+  });
+  assert.equal(guestEscalation.status, 200, await guestEscalation.clone().text());
+  const guestEscalationBody = await guestEscalation.json();
+  assert.equal(guestEscalationBody.needsHuman, true);
+  assert.equal(guestEscalationBody.notificationStatus, "delivered");
+  assert.equal(guestEscalationBody.notificationDelivered, true);
+  assert.equal(webhookRequests.length, 1, "the staff webhook must receive the escalation exactly once");
+  const webhookRequest = webhookRequests[0];
+  const expectedSignature = createHmac("sha256", webhookSecret).update(webhookRequest.body).digest("hex");
+  assert.equal(webhookRequest.signature, expectedSignature, "staff webhook payload must carry a valid HMAC signature");
+  const webhookPayload = JSON.parse(webhookRequest.body);
+  assert.equal(webhookPayload.event, "veyra.escalation.created");
+  assert.equal(webhookPayload.organizationSlug, tenants[0].slug);
+  assert.equal(webhookPayload.conversationId, guestEscalationBody.conversationId);
+  const escalationRecord = await pool.query("SELECT e.notification_status,e.notification_attempts,c.status AS conversation_status FROM escalations e JOIN conversations c ON c.id=e.conversation_id WHERE e.id=$1 AND e.organization_id=$2", [guestEscalationBody.escalationId, orgAForPilot.rows[0].id]);
+  assert.equal(escalationRecord.rowCount, 1);
+  assert.equal(escalationRecord.rows[0].notification_status, "delivered");
+  assert.equal(escalationRecord.rows[0].notification_attempts, 1);
+  assert.equal(escalationRecord.rows[0].conversation_status, "escalated");
+  const guestStaffPoll = await fetch(baseUrl + "/api/public/" + tenants[0].slug + "/chat?conversationId=" + guestChatBody.conversationId, { headers: { "X-Veyra-Conversation-Token": guestChatBody.conversationToken } });
+  assert.equal(guestStaffPoll.status, 200);
+  assert.deepEqual((await guestStaffPoll.json()).messages, []);
+  await pool.query("UPDATE organization_privacy_approvals SET revoked_at=now() WHERE organization_id=$1", [orgAForPilot.rows[0].id]);
+  const chatAfterRevocation = await fetch(baseUrl + "/api/public/" + tenants[0].slug + "/chat", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ message: "What time is breakfast?" }),
+  });
+  assert.equal(chatAfterRevocation.status, 503, "revoking a hotel's approval must immediately block new guest chat");
+  assert.match((await chatAfterRevocation.json()).error, /privacy approval/i);
+  const cleanupWhilePrivacyRevoked = await fetch(`${baseUrl}/api/admin/retention/cleanup`, {
+    method: "POST",
+    headers: { cookie: cookieA, "X-CSRF-Token": csrfA, "content-type": "application/json" },
+    body: JSON.stringify({ confirm: true }),
+  });
+  assert.equal(cleanupWhilePrivacyRevoked.status, 409, "retention deletion must be blocked while hotel privacy approval is revoked");
+  await pool.query("UPDATE organization_privacy_approvals SET revoked_at=NULL,approved_at=now() WHERE organization_id=$1", [orgAForPilot.rows[0].id]);
   const staffRotateWebhook = await fetch(`${baseUrl}/api/admin/integrations/revenue-webhook/rotate`, {
     method: "POST",
     headers: { cookie: staffCookie, "X-CSRF-Token": staffCsrf, "content-type": "application/json" },
@@ -604,7 +727,7 @@ try {
   );
   assert.equal(retentionAudit.rows[0].count, 1, "retention cleanup must be audited");
 
-  console.log("PASS: tenant-scoped transcripts, knowledge history and revenue evidence verified for two hotel workspaces.");
+  console.log("PASS: tenant isolation, grounded guest answer, PostgreSQL persistence, signed staff handoff and revenue evidence verified.");
 
 } finally {
   if (serverReady) {
@@ -622,4 +745,5 @@ try {
     });
   }
   await pool.end();
+  await Promise.all([closeServer(mockAiServer), closeServer(mockWebhookServer)]);
 }

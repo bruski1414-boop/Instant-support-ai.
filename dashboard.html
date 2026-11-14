@@ -46,7 +46,7 @@ main{padding:28px clamp(16px,4vw,48px);max-width:1450px;width:100%;margin:auto}.
  <div class="sidefoot">VEYRA AI · HOTEL SUPPORT PLATFORM<br>Workspace data is private to your organization.</div>
 </aside>
 <main>
- <header class="top"><div><div class="crumb" id="crumb">WORKSPACE / OVERVIEW</div><h1 id="heading">Support overview</h1><div class="muted" id="subheading">A live view of conversations and staff attention.</div></div><div class="actions"><button class="btn" id="refresh">↻ Refresh</button></div></header>
+ <header class="top"><div><div class="crumb" id="crumb">WORKSPACE / OVERVIEW</div><h1 id="heading">Support overview</h1><div class="muted" id="subheading">A live view of conversations and staff attention.</div></div><div class="actions"><a class="btn" href="/demo">Open product demo ↗</a><button class="btn" id="refresh">↻ Refresh</button></div></header>
  <div id="globalNotice" class="notice hidden"></div>
 
  <section id="panel-setup" class="panel">
@@ -64,6 +64,39 @@ main{padding:28px clamp(16px,4vw,48px);max-width:1450px;width:100%;margin:auto}.
     <div class="field"><label for="fallbackInstructions">Staff fallback instructions (no secrets)</label><textarea id="fallbackInstructions" maxlength="1500" placeholder="Example: For urgent guest matters, call the front desk using the hotel's published number."></textarea></div>
     <button class="btn primary" type="submit">Save hotel profile</button>
    </form>
+  </div>
+
+  <div class="sectionrow"><h2>Mews property management connection</h2><span class="muted">Read-only demo integration</span></div>
+  <div class="card" id="mewsConnectionCard">
+   <div id="mewsConnectionStatus" class="notice">Checking connection status…</div>
+   <p class="muted">Connect the hotel's authorised Mews demo account. Veyra encrypts credentials on the server and never displays saved tokens. Only the official Mews demo environment is supported here. Do not use production credentials.</p>
+   <form id="mewsConnectionForm">
+    <div class="formrow">
+     <div class="field"><label for="mewsClientToken">Mews client token</label><input id="mewsClientToken" type="password" maxlength="2048" autocomplete="new-password" placeholder="Paste demo client token" required></div>
+     <div class="field"><label for="mewsAccessToken">Mews access token</label><input id="mewsAccessToken" type="password" maxlength="2048" autocomplete="new-password" placeholder="Paste demo access token" required></div>
+    </div>
+    <div class="formrow">
+     <div class="field"><label for="mewsPropertyReference">Mews property / enterprise ID</label><input id="mewsPropertyReference" maxlength="200" placeholder="Property ID" required></div>
+     <div class="field"><label for="mewsServiceId">Daily accommodation service ID</label><input id="mewsServiceId" maxlength="200" placeholder="Service ID" required></div>
+    </div>
+    <div class="field"><label for="mewsTimezone">Property time zone (IANA)</label><input id="mewsTimezone" maxlength="100" placeholder="Europe/Helsinki" required></div>
+    <div class="actions"><button class="btn primary" id="saveMewsConnection" type="submit">Save encrypted connection</button><button class="btn" id="verifyMewsConnection" type="button" disabled>Verify Mews connection</button><button class="btn danger" id="disconnectMewsConnection" type="button" hidden>Disconnect Mews</button></div>
+   </form>
+   <div id="mewsConnectionHelp" class="muted" style="font-size:11px;margin-top:12px">Saving does not activate live availability. Verification must succeed first. Verification expires after 30 days and must be renewed.</div>
+  </div>
+  <div class="sectionrow"><h2>Hotel privacy and retention approval</h2><span class="muted">Owner/admin controlled</span></div>
+  <div class="card" id="privacyApprovalCard">
+   <div id="privacyApprovalStatus" class="notice">Checking current hotel approval…</div>
+   <p class="muted">An authorised adult hotel owner or administrator must review the hotel's actual arrangements before recording approval. This records acknowledgement only; it is not legal advice, a compliance assessment or a security certification. Do not enable real guest data until the hotel has independently reviewed its obligations and arrangements.</p>
+   <div id="privacyApprovalControls">
+    <label class="field"><span><input type="checkbox" id="privacyPurpose"> I have reviewed and approve the specific purposes for which Veyra processes guest and conversation data.</span></label>
+    <label class="field"><span><input type="checkbox" id="privacyRetention"> I have reviewed and approved the hotel's retention periods and deletion process.</span></label>
+    <label class="field"><span><input type="checkbox" id="privacyBackups"> I have reviewed and approved backup, recovery and data-resilience arrangements.</span></label>
+    <label class="field"><span><input type="checkbox" id="privacyAccess"> I have reviewed and approved staff access controls and who can access guest information.</span></label>
+    <label class="field"><span><input type="checkbox" id="privacyDeletion"> I have reviewed and approved how guest data can be exported and deleted when required.</span></label>
+    <div class="actions"><button class="btn primary" id="recordPrivacyApproval" type="button">Record hotel approval</button><button class="btn danger" id="revokePrivacyApproval" type="button" hidden>Revoke approval</button></div>
+   </div>
+   <div class="muted" style="font-size:11px;margin-top:10px">Policy version: 2026-11-14-v1. A future policy version requires a fresh review and acknowledgement.</div>
   </div>
 
   <div class="sectionrow"><h2>Guest conversation retention</h2><span class="muted">Owner/admin controlled</span></div>
@@ -162,6 +195,7 @@ main{padding:28px clamp(16px,4vw,48px);max-width:1450px;width:100%;margin:auto}.
   <div class="sectionrow"><h2>Approved business knowledge</h2><span class="muted">Only approved documents can inform the guest assistant.</span></div>
   <div class="card">
    <h3 style="margin:0 0 6px">Add a knowledge document</h3><p class="muted" style="font-size:12px">Use hotel-approved, current information. Leave it unapproved until a manager checks it.</p>
+   <div class="field" style="margin:10px 0"><label for="kImportFile">Import a text or Markdown policy (.txt or .md)</label><input id="kImportFile" type="file" accept=".txt,.md,text/plain,text/markdown"><small class="muted">Up to 12 KB. The file is read in this browser only and placed into the draft fields. Nothing is approved or uploaded automatically.</small><div id="kImportStatus" class="muted" aria-live="polite"></div></div>
    <form id="knowledgeForm">
     <div class="formrow"><div class="field"><label for="kTitle">Document title</label><input id="kTitle" required maxlength="160" placeholder="e.g. Breakfast hours"></div><div class="field"><label for="kCategory">Category</label><select id="kCategory"><option>general</option><option>rooms</option><option>dining</option><option>facilities</option><option>policies</option><option>transport</option><option>accessibility</option><option>local-area</option></select></div></div>
     <div class="field"><label for="kContent">Approved facts and policy text</label><textarea id="kContent" required maxlength="12000" placeholder="Write exact facts, times, prices, conditions and who can confirm exceptions."></textarea></div>\n    <div class="formrow"><div class="field"><label for="kSource">Source / document reference</label><input id="kSource" maxlength="500" placeholder="e.g. Front desk policy, version 4"></div><div class="field"><label for="kReviewDue">Review due date (optional)</label><input id="kReviewDue" type="date"></div></div>
@@ -218,6 +252,14 @@ async function api(path,options){
  return data;
 }
 function date(v){try{return new Date(v).toLocaleString();}catch{return "—";}}
+function renderConversationMessage(m){
+ const evidence=typeof m.evidence==="string"?(function(){try{return JSON.parse(m.evidence);}catch{return {};}})():(m.evidence||{});
+ const sources=Array.isArray(evidence.sources)?evidence.sources:[];
+ const check=evidence.status==="supported"?"Numeric-claim check passed":evidence.status==="unsupported_numeric_claim"?"Unsupported numeric claim — escalated":evidence.status==="no_retrieved_knowledge"?"No approved source match":"Not checked";
+ const evidenceHtml=m.role==="assistant"&&(sources.length||evidence.status||evidence.handoffReason)?'<div class="card" style="margin-top:10px;background:#101b29;border-color:#34465d"><strong style="font-size:12px">Answer evidence · '+safe(check)+'</strong>'+(evidence.liveAvailabilityVerified?'<div class="muted" style="font-size:11px;margin-top:5px">Verified live availability context used.</div>':'')+(sources.length?'<div style="margin-top:8px;font-size:11px;color:#c4d2e2">Approved knowledge sources</div>'+sources.map(source=>'<div style="margin-top:6px;padding-top:6px;border-top:1px solid #29394b"><strong>'+safe(source.title||"Untitled document")+'</strong><div class="muted" style="font-size:11px">'+safe(source.category||"general")+' · '+safe(source.sourceReference||"Source not recorded")+'</div><div class="muted" style="font-size:11px">Last reviewed: '+safe(source.reviewedAt||"not recorded")+' · Review due: '+safe(source.reviewDueAt||"not scheduled")+'</div></div>').join(""):'<div class="muted" style="font-size:11px;margin-top:6px">No approved knowledge document was matched.</div>')+(evidence.handoffReason?'<div style="margin-top:8px;color:#f2cf8b;font-size:11px">Staff handoff: '+safe(evidence.handoffReason)+'</div>':'')+'</div>':'';
+ return '<article class="card"><strong>'+safe(m.role)+'</strong><div style="white-space:pre-wrap;margin:7px 0">'+safe(m.content)+'</div><small class="muted">'+date(m.created_at)+'</small>'+evidenceHtml+'</article>';
+}
+
 function statusTag(s){const cls=s==="resolved"?"good":s==="escalated"||s==="open"?"warn":"bad";return '<span class="tag '+cls+'">'+safe(s)+'</span>';}
 function switchPanel(name){
  activePanel=name;
@@ -266,11 +308,21 @@ async function loadRevenue(){
 }
 async function loadKnowledge(){
  const d=await api("/api/admin/knowledge");
- $("knowledgeList").innerHTML=(d.documents||[]).map(x=>{const overdue=Boolean(x.review_due_at&&new Date(x.review_due_at+"T00:00:00")<new Date(new Date().toDateString()));const status=overdue?"review overdue":x.approved?"approved":"pending review";const actionLabel=overdue?"Mark reviewed & approve":x.approved?"Unapprove":"Approve after verification";const actionValue=overdue||!x.approved;return '<article class="card" data-id="'+safe(x.id)+'"><div style="display:flex;justify-content:space-between;gap:12px;align-items:start;flex-wrap:wrap"><div><strong>'+safe(x.title)+'</strong><div class="muted" style="font-size:11px">'+safe(x.category)+' · Updated '+date(x.updated_at)+' · Review due '+(x.review_due_at||'not set')+(x.source_reference?' · Source: '+safe(x.source_reference):' · Source not recorded')+'</div></div>'+statusTag(status)+'</div><p style="white-space:pre-wrap;color:#bdc9d8">'+safe(x.content)+'</p><div class="actions"><button class="btn" data-action="toggle-knowledge" data-id="'+safe(x.id)+'" data-approved="'+actionValue+'">'+actionLabel+'</button><button class="btn" data-action="history-knowledge" data-id="'+safe(x.id)+'">Version history</button><button class="btn danger" data-action="delete-knowledge" data-id="'+safe(x.id)+'">Delete</button></div><div class="knowledgeHistory" style="display:none;margin-top:12px"></div></article>';}).join("")||'<div class="card empty">No knowledge documents yet. Add hotel-approved information above.</div>';
+ $( "knowledgeList" ).innerHTML=(d.documents||[]).map(x=>{
+  const due=x.review_due_at?new Date(x.review_due_at+"T00:00:00"):null;
+  const today=new Date();today.setHours(0,0,0,0);
+  const daysLeft=due?Math.ceil((due-today)/86400000):null;
+  const overdue=daysLeft!==null&&daysLeft<0;
+  const dueSoon=daysLeft!==null&&daysLeft>=0&&daysLeft<=30;
+  const status=overdue?"review overdue":dueSoon?"review due soon":x.approved?"approved":"pending review";
+  const actionValue=overdue||dueSoon||!x.approved;
+  const actionLabel=overdue?"Renew review & approve":dueSoon&&x.approved?"Confirm review & keep approved":x.approved?"Unapprove":"Approve after verification";
+  return '<article class="card" data-id="'+safe(x.id)+'"><div style="display:flex;justify-content:space-between;gap:12px;align-items:start;flex-wrap:wrap"><div><strong>'+safe(x.title)+'</strong><div class="muted" style="font-size:11px">'+safe(x.category)+' · Updated '+date(x.updated_at)+' · Review due '+(x.review_due_at||'not set')+' · Last reviewed '+(x.reviewed_at?date(x.reviewed_at):'not yet')+(x.source_reference?' · Source: '+safe(x.source_reference):' · Source not recorded')+'</div></div>'+statusTag(status)+'</div><p style="white-space:pre-wrap;color:#bdc9d8">'+safe(x.content)+'</p><div class="actions"><button class="btn" data-action="toggle-knowledge" data-id="'+safe(x.id)+'" data-approved="'+actionValue+'" data-needs-review="'+(overdue||dueSoon)+'">'+actionLabel+'</button><button class="btn" data-action="history-knowledge" data-id="'+safe(x.id)+'">Version history</button><button class="btn danger" data-action="delete-knowledge" data-id="'+safe(x.id)+'">Delete</button></div><div class="knowledgeHistory" style="display:none;margin-top:12px"></div></article>';
+ }).join("")||'<div class="card empty">No knowledge documents yet. Add hotel-approved information above.</div>';
 }
 async function loadEscalations(){
  const d=await api("/api/admin/escalations");
- $("escalationRows").innerHTML=(d.escalations||[]).map(x=>'<tr><td>'+safe(x.reason)+'</td><td>'+statusTag(x.status)+'</td><td><span class="tag '+(x.notification_status==="delivered"?"good":x.notification_status==="failed"?"bad":"warn")+'">'+safe(x.notification_status||"not_configured")+'</span>'+(x.notification_status==="failed"?' <button class="btn" data-action="retry-notification" data-id="'+safe(x.id)+'">Retry</button>':"")+'</td><td>'+date(x.created_at)+'</td><td><select data-action="escalation-status" data-id="'+safe(x.id)+'"><option value="open" '+(x.status==="open"?"selected":"")+' >Open</option><option value="claimed" '+(x.status==="claimed"?"selected":"")+' >Claimed</option><option value="resolved" '+(x.status==="resolved"?"selected":"")+' >Resolved</option></select></td></tr>').join("")||'<tr><td colspan="5" class="empty">No staff handoffs yet.</td></tr>';
+ $("escalationRows").innerHTML=(d.escalations||[]).map(x=>'<tr><td>'+safe(x.reason)+'</td><td>'+statusTag(x.status)+'</td><td><span class="tag '+(x.notification_status==="delivered"?"good":x.notification_status==="failed"?"bad":"warn")+'">'+safe(x.notification_status||"not_configured")+'</span><div class="muted">Attempts: '+Number(x.notification_attempts||0)+' · Last attempt: '+(x.notification_last_attempt_at?date(x.notification_last_attempt_at):"not yet")+'</div>' +(x.notification_status==="failed"&&Number(x.notification_attempts||0)<5?' <button class="btn" data-action="retry-notification" data-id="'+safe(x.id)+'">Retry</button>':"")+'</td><td>'+date(x.created_at)+'</td><td><select data-action="escalation-status" data-id="'+safe(x.id)+'"><option value="open" '+(x.status==="open"?"selected":"")+' >Open</option><option value="claimed" '+(x.status==="claimed"?"selected":"")+' >Claimed</option><option value="resolved" '+(x.status==="resolved"?"selected":"")+' >Resolved</option></select></td></tr>').join("")||'<tr><td colspan="5" class="empty">No staff handoffs yet.</td></tr>';
 }
 async function loadPanel(name){
  try{if(name==="overview"||name==="conversations")await loadOverview();if(name==="knowledge")await loadKnowledge();if(name==="escalations")await loadEscalations();if(name==="team")await loadInvitations();if(name==="setup")await loadSetup();if(name==="storage")await loadStorage();$("globalNotice").classList.add("hidden");}
@@ -323,8 +375,63 @@ async function loadRetention(){
 $("saveRetention").addEventListener("click",async()=>{try{await api("/api/admin/retention",{method:"PUT",body:JSON.stringify({retentionDays:Number($("retentionDays").value)})});showToast("Retention policy saved.");await loadRetention();}catch(err){notice(err.message,"error");}});
 $("previewRetention").addEventListener("click",async()=>{try{await loadRetention();}catch(err){notice(err.message,"error");}});
 $("runRetention").addEventListener("click",async()=>{if(!confirm("Permanently delete eligible resolved conversations for this hotel? This cannot be undone."))return;try{const x=await api("/api/admin/retention/cleanup",{method:"POST",body:JSON.stringify({confirm:true})});showToast("Deleted "+x.deleted+" eligible conversation(s).");await loadRetention();}catch(err){notice(err.message,"error");}});
+async function loadMewsConnection(){
+ const card=$("mewsConnectionCard");
+ if(!["owner","admin"].includes(currentRole)){card.classList.add("hidden");return;}
+ card.classList.remove("hidden");
+ const d=await api("/api/admin/mews");
+ const x=d.connection;
+ const status=$("mewsConnectionStatus");
+ $("verifyMewsConnection").disabled=!x||!d.encryptionConfigured;
+ $("disconnectMewsConnection").hidden=!x||currentRole!=="owner";
+ $("mewsConnectionForm").querySelectorAll("input").forEach(input=>{input.disabled=!d.encryptionConfigured;});
+ if(!d.encryptionConfigured){
+  status.className="notice error";status.textContent="Server-side encryption is not configured. An authorised platform administrator must configure STORAGE_TOKEN_ENCRYPTION_KEY before saving credentials.";
+ }else if(!x){
+  status.className="notice";status.textContent="Not connected. Add the hotel's Mews demo credentials below.";
+ }else{
+  const verified=x.status==="verified"&&x.last_verified_at&&Date.now()-Date.parse(x.last_verified_at)<30*24*60*60*1000;
+  status.className="notice "+(verified?"":"error");
+  status.textContent=(verified?"Verified connection":"Connection requires verification")+
+   " · Property "+x.property_reference+" · "+x.timezone+
+   (x.last_verified_at?" · Last verified "+date(x.last_verified_at):"")+
+   (x.status==="error"?" · Verification did not pass. Check the demo credentials, property and service settings.":"");
+  $("mewsPropertyReference").value=x.property_reference||"";
+  $("mewsServiceId").value=x.service_id||"";
+  $("mewsTimezone").value=x.timezone||"";
+ }
+ $("mewsClientToken").value="";$("mewsAccessToken").value="";
+ $("mewsConnectionHelp").textContent="Saved tokens are never sent back to this page. To replace credentials, enter both tokens again and save. Saving resets verification. Only read-only availability lookups are supported; Veyra cannot create or change reservations.";
+}
+$("mewsConnectionForm").addEventListener("submit",async e=>{
+ e.preventDefault();
+ const button=$("saveMewsConnection");button.disabled=true;
+ try{
+  await api("/api/admin/mews",{method:"PUT",body:JSON.stringify({
+   clientToken:$("mewsClientToken").value,accessToken:$("mewsAccessToken").value,
+   propertyReference:$("mewsPropertyReference").value.trim(),serviceId:$("mewsServiceId").value.trim(),
+   timeZone:$("mewsTimezone").value.trim()
+  })});
+  $("mewsClientToken").value="";$("mewsAccessToken").value="";
+  showToast("Mews credentials encrypted and saved. Verify the connection next.");
+  await loadMewsConnection();
+ }catch(err){notice(err.message,"error");}finally{button.disabled=false;}
+});
+$("verifyMewsConnection").addEventListener("click",async()=>{
+ const button=$("verifyMewsConnection");button.disabled=true;button.textContent="Verifying…";
+ try{await api("/api/admin/mews/verify",{method:"POST",body:"{}"});showToast("Mews property and daily service verified.");await loadMewsConnection();}
+ catch(err){notice(err.message,"error");await loadMewsConnection();}
+ finally{button.disabled=false;button.textContent="Verify Mews connection";}
+});
+$("disconnectMewsConnection").addEventListener("click",async()=>{
+ if(!confirm("Disconnect Mews for this hotel? Encrypted credentials will be deleted and live availability will stop."))return;
+ const button=$("disconnectMewsConnection");button.disabled=true;
+ try{await api("/api/admin/mews",{method:"DELETE",body:"{}"});showToast("Mews connection disconnected.");await loadMewsConnection();}
+ catch(err){notice(err.message,"error");}finally{button.disabled=false;}
+});
 async function loadSetup(){
  const [s,o]=await Promise.all([api("/api/admin/settings"),api("/api/admin/onboarding")]);
+ await loadPrivacyApproval();
  $("hotelWebsite").value=s.settings.website_url||"";
  $("supportEmail").value=s.settings.support_email||"";
  $("hotelTimezone").value=s.settings.timezone||"UTC";
@@ -336,6 +443,36 @@ async function loadSetup(){
  $("readinessSummary").className="tag "+(o.readyForPilot?"good":"warn");
  $("readinessList").innerHTML=o.checks.map(x=>'<article class="card" style="display:flex;align-items:flex-start;gap:12px"><span class="tag '+(x.done?"good":"warn")+'">'+(x.done?"Complete":"Action needed")+'</span><div><strong>'+safe(x.label)+'</strong><div class="muted" style="font-size:12px;margin-top:4px">'+safe(x.detail)+'</div></div></article>').join("");
 }
+async function loadPrivacyApproval(){
+ const card=$("privacyApprovalCard");
+ if(!["owner","admin"].includes(currentRole)){card.classList.add("hidden");return;}
+ card.classList.remove("hidden");
+ const d=await api("/api/admin/privacy-approval");
+ const approved=Boolean(d.approved);
+ const a=d.approval;
+ $("privacyApprovalStatus").textContent=approved
+  ? "Current approval recorded · "+(a.approved_at?date(a.approved_at):"date unavailable")+". "+(a.policy_version||"")
+  : "No current approval is recorded. Guest chat remains blocked until an authorised hotel owner/admin completes this review.";
+ $("privacyApprovalStatus").className="notice "+(approved?"good":"");
+ $("recordPrivacyApproval").disabled=approved;
+ $("revokePrivacyApproval").hidden=!approved;
+ ["privacyPurpose","privacyRetention","privacyBackups","privacyAccess","privacyDeletion"].forEach(id=>{$(id).checked=false;$(id).disabled=approved;});
+}
+$("recordPrivacyApproval").addEventListener("click",async()=>{
+ const ids=["privacyPurpose","privacyRetention","privacyBackups","privacyAccess","privacyDeletion"];
+ if(ids.some(id=>!$(id).checked)){notice("Review and acknowledge every item before recording approval.","error");return;}
+ if(!confirm("Confirm that an authorised hotel owner/admin has reviewed the hotel's real privacy, retention, backup, access and deletion arrangements?"))return;
+ const button=$("recordPrivacyApproval");button.disabled=true;
+ try{await api("/api/admin/privacy-approval",{method:"PUT",body:JSON.stringify({policyVersion:"2026-11-14-v1",purpose:true,retention:true,backups:true,access:true,deletion:true})});showToast("Hotel acknowledgement recorded. This is not a compliance certification.");await loadSetup();}
+ catch(err){notice(err.message,"error");}finally{button.disabled=false;}
+});
+$("revokePrivacyApproval").addEventListener("click",async()=>{
+ if(!confirm("Revoke this hotel's privacy approval? New guest-chat requests will be blocked immediately."))return;
+ const button=$("revokePrivacyApproval");button.disabled=true;
+ try{await api("/api/admin/privacy-approval",{method:"DELETE",body:"{}"});showToast("Hotel approval revoked. Guest chat is blocked.");await loadSetup();}
+ catch(err){notice(err.message,"error");}finally{button.disabled=false;}
+});
+
 $("settingsForm").addEventListener("submit",async e=>{e.preventDefault();try{await api("/api/admin/settings",{method:"PUT",body:JSON.stringify({website_url:$("hotelWebsite").value,support_email:$("supportEmail").value,timezone:$("hotelTimezone").value,language:$("hotelLanguage").value,fallback_instructions:$("fallbackInstructions").value})});showToast("Hotel profile saved.");await loadSetup();}catch(err){notice(err.message,"error");}});
 
 async function loadRevenueWebhook(){
@@ -457,11 +594,29 @@ $("revenueAdjustmentForm").addEventListener("submit",async e=>{
 $("inviteForm").addEventListener("submit",async e=>{e.preventDefault();const result=$("inviteResult");result.classList.add("hidden");try{const x=await api("/api/admin/invitations",{method:"POST",body:JSON.stringify({email:$("inviteEmail").value,role:$("inviteRole").value})});const url=location.origin+x.invitePath;result.innerHTML='<strong>Invitation created.</strong><p>'+safe(x.message)+'</p><input id="newInviteLink" readonly style="width:100%;background:#080e16;border:1px solid #33445b;color:white;border-radius:8px;padding:10px" value="'+safe(url)+'"><button class="btn" id="copyInviteLink" type="button" style="margin-top:8px">Copy invitation link</button>';result.className="notice good";$("inviteForm").reset();$("copyInviteLink").addEventListener("click",async()=>{try{await navigator.clipboard.writeText(url);showToast("Invitation link copied.");}catch{$("newInviteLink").select();showToast("Select and copy the invitation link.");}});await loadInvitations();}catch(err){result.textContent=err.message;result.className="notice error";}});
 $("memberList").addEventListener("click",async e=>{const b=e.target.closest('button[data-action="toggle-user"]');if(!b)return;const active=b.dataset.active==="true";if(!confirm((active?"Reactivate":"Deactivate")+" this team member? "+(!active?"Their active sessions will be revoked.":"")))return;b.disabled=true;try{await api("/api/admin/users/"+encodeURIComponent(b.dataset.id),{method:"PATCH",body:JSON.stringify({active})});showToast(active?"Team account reactivated.":"Team access revoked.");await loadUsers();}catch(err){notice(err.message,"error");b.disabled=false;}});
 $("invitationList").addEventListener("click",async e=>{const b=e.target.closest('button[data-action="revoke-invitation"]');if(!b)return;if(!confirm("Revoke this unused invitation?"))return;b.disabled=true;try{await api("/api/admin/invitations/"+encodeURIComponent(b.dataset.id),{method:"DELETE",body:"{}"});showToast("Invitation revoked.");await loadInvitations();}catch(err){notice(err.message,"error");b.disabled=false;}});
+$("kImportFile").addEventListener("change",async e=>{
+ const file=e.target.files&&e.target.files[0],status=$("kImportStatus");
+ if(!file)return;
+ const extension=file.name.toLowerCase().split(".").pop();
+ if(!["txt","md"].includes(extension)){status.textContent="Choose a .txt or .md file.";e.target.value="";return;}
+ if(file.size>12000){status.textContent="This file is over the 12 KB knowledge-document limit. Split it into smaller documents.";e.target.value="";return;}
+ try{
+  const content=await file.text();
+  if(content.trim().length<5){status.textContent="The file appears to be empty.";e.target.value="";return;}
+  if(content.length>12000){status.textContent="The extracted text exceeds 12,000 characters. Split it into smaller documents.";e.target.value="";return;}
+  $("kTitle").value=file.name.replace(/\.(txt|md)$/i,"").slice(0,160);
+  $("kCategory").value="general";
+  $("kContent").value=content;
+  $("kSource").value="Imported draft: "+file.name;
+  $("kApproved").checked=false;
+  status.textContent="Loaded as an unapproved draft. Review the text, source and category, then save it.";
+ }catch(err){status.textContent="Could not read this file. Try a plain-text .txt or .md document.";}
+});
 $("knowledgeForm").addEventListener("submit",async e=>{e.preventDefault();try{await api("/api/admin/knowledge",{method:"POST",body:JSON.stringify({title:$("kTitle").value,category:$("kCategory").value,content:$("kContent").value,source_reference:$("kSource").value,review_due_at:$("kReviewDue").value||null,approved:$("kApproved").checked})});$("knowledgeForm").reset();showToast("Knowledge saved.");await loadKnowledge();}catch(err){notice(err.message,"error");}});
-$("knowledgeList").addEventListener("click",async e=>{const b=e.target.closest("button[data-action]");if(!b)return;try{if(b.dataset.action==="history-knowledge"){const d=await api("/api/admin/knowledge/"+encodeURIComponent(b.dataset.id)+"/versions");const panel=b.closest("article").querySelector(".knowledgeHistory");panel.style.display="grid";panel.style.gap="8px";panel.innerHTML=(d.versions||[]).map(v=>'<div class="card"><div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap"><strong>'+safe(v.title)+'</strong>'+statusTag(v.approved?"approved":"not approved")+'</div><small class="muted">'+safe(v.change_type)+' · '+date(v.created_at)+' · Source: '+safe(v.source_reference||'not recorded')+' · Review due: '+safe(v.review_due_at||'not set')+'</small><p style="white-space:pre-wrap;margin:8px 0">'+safe(v.content)+'</p></div>').join("")||'<p class="muted">No saved versions.</p>';return;}if(b.dataset.action==="toggle-knowledge"){await api("/api/admin/knowledge/"+encodeURIComponent(b.dataset.id),{method:"PATCH",body:JSON.stringify({approved:b.dataset.approved==="true"})});showToast("Knowledge approval updated.");}else if(b.dataset.action==="delete-knowledge"){if(!confirm("Delete this knowledge document?"))return;await api("/api/admin/knowledge/"+encodeURIComponent(b.dataset.id),{method:"DELETE",body:"{}"});showToast("Knowledge deleted.");}await loadKnowledge();}catch(err){notice(err.message,"error");}});
-$("conversationRows").addEventListener("click",async e=>{const b=e.target.closest("button[data-action]");if(!b)return;const id=encodeURIComponent(b.dataset.id);if(b.dataset.action==="view-conversation"){b.disabled=true;try{const d=await api("/api/admin/conversations/"+id);const el=$("conversationDetail");el.dataset.conversationId=d.conversation.id;el.classList.remove("hidden");el.innerHTML='<div style="display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap"><div><strong>Conversation '+safe(d.conversation.id).slice(0,8)+'</strong><div class="muted" style="font-size:11px">'+safe(d.conversation.status)+' · Started '+date(d.conversation.started_at)+'</div></div><button class="btn" data-action="close-conversation">Close</button></div><div style="display:grid;gap:9px;margin-top:14px">'+(d.messages||[]).map(m=>'<article class="card"><strong>'+safe(m.role)+'</strong><div style="white-space:pre-wrap;margin:7px 0">'+safe(m.content)+'</div><small class="muted">'+date(m.created_at)+'</small></article>').join("")+'</div>'+([ "owner","admin","staff" ].includes(currentRole)&&d.conversation.status!=="resolved"?'<form id="staffReplyForm" style="margin-top:14px"><label for="staffReplyMessage">Reply to guest in the open chat</label><textarea id="staffReplyMessage" required maxlength="4000" placeholder="Write a clear reply from the hotel team."></textarea><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><button class="btn primary" type="submit">Send reply</button><small id="staffReplyStatus" class="muted" aria-live="polite"></small></div></form>':'');}catch(err){notice(err.message,"error");}finally{b.disabled=false;}return;}if(b.dataset.action==="delete-conversation"){if(!confirm("Delete this conversation from active Veyra records? Backup and provider retention may differ."))return;b.disabled=true;try{await api("/api/admin/conversations/"+id,{method:"DELETE",body:"{}"});$("conversationDetail").classList.add("hidden");showToast("Conversation deleted.");await loadOverview();}catch(err){notice(err.message,"error");b.disabled=false;}}});
+$("knowledgeList").addEventListener("click",async e=>{const b=e.target.closest("button[data-action]");if(!b)return;try{if(b.dataset.action==="history-knowledge"){const d=await api("/api/admin/knowledge/"+encodeURIComponent(b.dataset.id)+"/versions");const panel=b.closest("article").querySelector(".knowledgeHistory");panel.style.display="grid";panel.style.gap="8px";panel.innerHTML=(d.versions||[]).map(v=>'<div class="card"><div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap"><strong>'+safe(v.title)+'</strong>'+statusTag(v.approved?"approved":"not approved")+'</div><small class="muted">'+safe(v.change_type)+' · '+date(v.created_at)+' · Source: '+safe(v.source_reference||'not recorded')+' · Review due: '+safe(v.review_due_at||'not set')+'</small><p style="white-space:pre-wrap;margin:8px 0">'+safe(v.content)+'</p></div>').join("")||'<p class="muted">No saved versions.</p>';return;}if(b.dataset.action==="toggle-knowledge"){const approved=b.dataset.approved==="true",payload={approved};if(approved&&b.dataset.needsReview==="true"){const nextReview=prompt("This document needs a fresh review. Enter its next review date (YYYY-MM-DD):");if(!nextReview)return;payload.review_due_at=nextReview;}await api("/api/admin/knowledge/"+encodeURIComponent(b.dataset.id),{method:"PATCH",body:JSON.stringify(payload)});showToast("Knowledge review updated.");}else if(b.dataset.action==="delete-knowledge"){if(!confirm("Delete this knowledge document?"))return;await api("/api/admin/knowledge/"+encodeURIComponent(b.dataset.id),{method:"DELETE",body:"{}"});showToast("Knowledge deleted.");}await loadKnowledge();}catch(err){notice(err.message,"error");}});
+$("conversationRows").addEventListener("click",async e=>{const b=e.target.closest("button[data-action]");if(!b)return;const id=encodeURIComponent(b.dataset.id);if(b.dataset.action==="view-conversation"){b.disabled=true;try{const d=await api("/api/admin/conversations/"+id);const el=$("conversationDetail");el.dataset.conversationId=d.conversation.id;el.classList.remove("hidden");el.innerHTML='<div style="display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap"><div><strong>Conversation '+safe(d.conversation.id).slice(0,8)+'</strong><div class="muted" style="font-size:11px">'+safe(d.conversation.status)+' · Started '+date(d.conversation.started_at)+'</div></div><button class="btn" data-action="close-conversation">Close</button></div><div style="display:grid;gap:9px;margin-top:14px">'+(d.messages||[]).map(renderConversationMessage).join("")+'</div>'+([ "owner","admin","staff" ].includes(currentRole)&&d.conversation.status!=="resolved"?'<form id="staffReplyForm" style="margin-top:14px"><label for="staffReplyMessage">Reply to guest in the open chat</label><textarea id="staffReplyMessage" required maxlength="4000" placeholder="Write a clear reply from the hotel team."></textarea><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><button class="btn primary" type="submit">Send reply</button><small id="staffReplyStatus" class="muted" aria-live="polite"></small></div></form>':'');}catch(err){notice(err.message,"error");}finally{b.disabled=false;}return;}if(b.dataset.action==="delete-conversation"){if(!confirm("Delete this conversation from active Veyra records? Backup and provider retention may differ."))return;b.disabled=true;try{await api("/api/admin/conversations/"+id,{method:"DELETE",body:"{}"});$("conversationDetail").classList.add("hidden");showToast("Conversation deleted.");await loadOverview();}catch(err){notice(err.message,"error");b.disabled=false;}}});
 $("conversationDetail").addEventListener("click",e=>{if(e.target.closest('button[data-action="close-conversation"]'))$("conversationDetail").classList.add("hidden");});
-$("conversationDetail").addEventListener("submit",async e=>{const form=e.target.closest("#staffReplyForm");if(!form)return;e.preventDefault();const status=$("staffReplyStatus"),button=form.querySelector("button[type=submit]"),message=$("staffReplyMessage").value.trim(),id=$("conversationDetail").dataset.conversationId;if(!message)return;button.disabled=true;status.textContent="Sending…";try{await api("/api/admin/conversations/"+encodeURIComponent(id)+"/reply",{method:"POST",body:JSON.stringify({message})});status.textContent="Reply saved. It will appear in the guest chat shortly.";form.reset();const detail=await api("/api/admin/conversations/"+encodeURIComponent(id));const refreshed=detail.messages||[];const cards=refreshed.map(m=>'<article class="card"><strong>'+safe(m.role)+'</strong><div style="white-space:pre-wrap;margin:7px 0">'+safe(m.content)+'</div><small class="muted">'+date(m.created_at)+'</small></article>').join("");const list=$("conversationDetail").querySelector("div[style*='display:grid']");if(list)list.innerHTML=cards;await loadOverview();}catch(err){status.textContent=err.message;}finally{button.disabled=false;}});
+$("conversationDetail").addEventListener("submit",async e=>{const form=e.target.closest("#staffReplyForm");if(!form)return;e.preventDefault();const status=$("staffReplyStatus"),button=form.querySelector("button[type=submit]"),message=$("staffReplyMessage").value.trim(),id=$("conversationDetail").dataset.conversationId;if(!message)return;button.disabled=true;status.textContent="Sending…";try{await api("/api/admin/conversations/"+encodeURIComponent(id)+"/reply",{method:"POST",body:JSON.stringify({message})});status.textContent="Reply saved. It will appear in the guest chat shortly.";form.reset();const detail=await api("/api/admin/conversations/"+encodeURIComponent(id));const refreshed=detail.messages||[];const cards=refreshed.map(renderConversationMessage).join("");const list=$("conversationDetail").querySelector("div[style*='display:grid']");if(list)list.innerHTML=cards;await loadOverview();}catch(err){status.textContent=err.message;}finally{button.disabled=false;}});
 $("escalationRows").addEventListener("change",async e=>{const s=e.target.closest('select[data-action="escalation-status"]');if(!s)return;try{await api("/api/admin/escalations/"+encodeURIComponent(s.dataset.id),{method:"PATCH",body:JSON.stringify({status:s.value})});showToast("Handoff status updated.");await loadEscalations();}catch(err){notice(err.message,"error");}});
 $("escalationRows").addEventListener("click",async e=>{const b=e.target.closest('button[data-action="retry-notification"]');if(!b)return;b.disabled=true;try{const d=await api("/api/admin/escalations/"+encodeURIComponent(b.dataset.id)+"/notify",{method:"POST",body:"{}"});showToast(d.delivered?"Hotel notification delivered.":"Notification still not confirmed.");await loadEscalations();}catch(err){notice(err.message,"error");b.disabled=false;}});
 enterWorkspace();

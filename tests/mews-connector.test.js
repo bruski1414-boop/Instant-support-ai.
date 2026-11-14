@@ -115,10 +115,10 @@ test("returns an explicit incomplete result when the safe page cap is reached", 
   assert.equal(result.pages, 1);
 });
 
-test("rejects impossible calendar timestamps", () => {
+test("rejects impossible calendar timestamps", async () => {
   const mock = mockFetch(async () => jsonResponse({}));
   const client = createMewsConnectorClient({ ...credentials, fetchImpl: mock.fetchImpl });
-  assert.rejects(() => client.getServiceAvailability({
+  await assert.rejects(() => client.getServiceAvailability({
     serviceId: "svc-1",
     firstTimeUnitStartUtc: "2026-02-31T00:00:00Z",
     lastTimeUnitStartUtc: "2026-03-02T00:00:00Z"

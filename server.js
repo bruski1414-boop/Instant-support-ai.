@@ -2,6 +2,7 @@ require("dotenv").config();
 const express=require("express");
 const cors=require("cors");
 const rateLimit=require("express-rate-limit");
+const {tenantChatRateLimitKey}=require("./tenant-rate-limit");
 const OpenAI=require("openai");
 const crypto=require("node:crypto");
 const path=require("node:path");
@@ -38,7 +39,7 @@ const setupLimiter=rateLimit({windowMs:3600000,limit:5,standardHeaders:"draft-7"
 const platformProvisionLimiter=rateLimit({windowMs:3600000,limit:10,standardHeaders:"draft-7",legacyHeaders:false});
 const integrationTestLimiter=rateLimit({windowMs:3600000,limit:5,standardHeaders:"draft-7",legacyHeaders:false});
 const revenueWebhookLimiter=rateLimit({windowMs:60000,limit:30,standardHeaders:"draft-7",legacyHeaders:false});
-const publicChatLimiter=rateLimit({windowMs:300000,limit:10,skip:q=>process.env.NODE_ENV==="test"&&q.get("X-Veyra-Test-Bypass-Rate-Limit")==="true",standardHeaders:"draft-7",legacyHeaders:false});
+const publicChatLimiter=rateLimit({windowMs:300000,limit:10,keyGenerator:tenantChatRateLimitKey,skip:q=>process.env.NODE_ENV==="test"&&q.get("X-Veyra-Test-Bypass-Rate-Limit")==="true",standardHeaders:"draft-7",legacyHeaders:false});
 const publicPollLimiter=rateLimit({windowMs:60000,limit:30,standardHeaders:"draft-7",legacyHeaders:false});
 const invitationAcceptLimiter=rateLimit({windowMs:3600000,limit:5,standardHeaders:"draft-7",legacyHeaders:false});
 app.use("/api/invitations/accept",invitationAcceptLimiter);

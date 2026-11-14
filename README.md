@@ -28,7 +28,7 @@ The web service and database are currently on Render's free plans. The database 
 - Workspace member management: owner/admin can deactivate staff accounts; deactivation revokes all active sessions. Admins cannot change owner or administrator access.
 - Tenant-scoped security activity viewer for workspace owners and admins.
 - Hotel workspace profile and pre-pilot readiness checklist for website origin, approved knowledge, AI configuration, staff notification and privacy/storage gate. Each hotel's saved HTTPS website origin is dynamically allowed by CORS without adding every hotel to a global allowlist.
-- Per-hotel AI model verification and signed staff-dispatcher test events. Successful checks are recorded against the specific hotel workspace and appear in its onboarding checklist. The shared staff dispatcher receives each hotel's organization ID and slug so it can route to the correct hotel team.
+- Per-hotel AI model verification and signed staff-dispatcher test events. Each hotel saves its own HTTPS destination and signing secret in the dashboard; the secret is encrypted at rest and never returned to the browser. Verification is recorded against that hotel workspace and appears in its onboarding checklist.
 - Knowledge source references and review dates, with overdue documents automatically excluded from guest-answer context until reviewed.
 - Owner dashboard for conversations, knowledge approval and escalation status.
 - Embeddable guest chat widget with multi-turn conversation continuity, bounded history and a per-conversation access token stored only as a hash server-side.
@@ -53,7 +53,7 @@ Each hotel owner then signs in to its own workspace, saves the hotel's HTTPS web
 
 ## Runtime configuration
 
-The Render service currently starts with PostgreSQL connected. Live AI responses require a server-side `OPENAI_API_KEY`; staff notifications require a verified `STAFF_WEBHOOK_URL` and matching `STAFF_WEBHOOK_SECRET`.
+The Render service currently starts with PostgreSQL connected. Live AI responses require a server-side `OPENAI_API_KEY`; staff notifications are configured separately by each hotel in its dashboard. Set `STORAGE_TOKEN_ENCRYPTION_KEY` so Veyra can encrypt each hotel's signing secret at rest.
 
 Important environment variables:
 - `DATABASE_URL`: Render Postgres internal connection string.
@@ -65,7 +65,7 @@ Important environment variables:
 - `ALLOWED_ORIGINS`: exact platform/admin origins permitted to call the API. A hotel's own saved HTTPS origin is also dynamically allowed for its own embeddable guest widget.
 - `GUEST_DATA_STORAGE_ENABLED`: defaults to false. Do not enable until hotel privacy, data-processing and retention arrangements are approved and durable storage is in place.
 - `STORAGE_OAUTH_REDIRECT_BASE`: public HTTPS origin of this Veyra deployment, for example `https://veyra-ai-prototype.onrender.com`.
-- `STORAGE_TOKEN_ENCRYPTION_KEY`: base64-encoded 32-byte random key used for AES-256-GCM encryption of per-hotel OAuth tokens. Keep only in hosting secrets; never commit it.
+- `STORAGE_TOKEN_ENCRYPTION_KEY`: high-entropy base64-encoded 32-byte random key used for AES-256-GCM encryption of per-hotel OAuth tokens and staff webhook secrets. Keep only in hosting secrets; never commit it.
 - `GOOGLE_OAUTH_CLIENT_ID` and `GOOGLE_OAUTH_CLIENT_SECRET`: Google OAuth web application credentials. Register callback `https://<veyra-origin>/api/admin/storage/oauth/callback` and enable the Google Drive API.
 - `MICROSOFT_OAUTH_CLIENT_ID` and `MICROSOFT_OAUTH_CLIENT_SECRET`: Microsoft Entra application credentials. Register the same callback as a Web redirect URI and grant admin-approved delegated permissions `Files.Read.All`, `Sites.Read.All`, `User.Read`, and `offline_access`.
 - `STAFF_WEBHOOK_URL` and `STAFF_WEBHOOK_SECRET`: signed central staff-dispatcher receiver. It must route using the event's `organizationId` and `organizationSlug`; each hotel owner can send a labelled integration test from their workspace. Escalation events include a stable `idempotencyKey` (also sent as the `Idempotency-Key` header) equal to the escalation ID. The receiver should persist and deduplicate this key before creating alerts; Veyra cannot guarantee exactly-once delivery if the receiver ignores it.\n- `DURABLE_BACKUPS_VERIFIED=true`: set only after a durable backup and restore test is documented.\n- `TENANT_ISOLATION_TESTS_PASSED=true`: set only after automated tests prove cross-hotel data isolation.\n- `PROVIDER_OAUTH_TESTED=true`: set only after Google/Microsoft OAuth and document access are tested with separate test tenants.\n- `HOTEL_PRIVACY_APPROVED=true`: set only after the pilot hotel has approved its privacy and retention arrangements in writing.\n- `STAFF_HANDOFF_TESTED=true`: set only after a real staff notification and manual fallback have both been tested.\n- `PILOT_RELEASE_APPROVED=true`: final release approval after all evidence above is reviewed. Never set these flags just to make the dashboard green.

@@ -71,6 +71,18 @@ test("chat does not pretend to be live when the provider key is missing", async 
   assert.equal(body.handoffConfigured, false);
 });
 
+test("staff handoff queue links each escalation to its tenant-scoped guest conversation", () => {
+  const server = fs.readFileSync("server.js", "utf8");
+  const dashboard = fs.readFileSync("dashboard.html", "utf8");
+  assert.match(server, /SELECT e\.id,e\.reason,e\.status,e\.created_at,e\.resolved_at,e\.conversation_id,e\.notification_status/);
+  assert.match(server, /WHERE e\.organization_id=\$1 ORDER BY e\.created_at DESC LIMIT 100/);
+  assert.match(dashboard, /data-action="view-escalation-conversation"/);
+  assert.match(dashboard, /api\("\/api\/admin\/conversations\/"+encodeURIComponent\(view\.dataset\.id\)\)/);
+  assert.match(dashboard, /id="escalationConversationDetail"/);
+  assert.match(dashboard, /id="escalationReplyForm"/);
+  assert.ok(dashboard.includes('api("/api/admin/conversations/"+encodeURIComponent(id)+"/reply"'));
+});
+
 test("dashboard and guest widget JavaScript parse cleanly", () => {
   const html = fs.readFileSync("dashboard.html", "utf8");
   const start = html.indexOf("<script>");
@@ -333,13 +345,28 @@ test("onboarding readiness requires verified storage authorization, a successful
   assert.match(server, /No current hotel owner\/admin privacy acknowledgement/);
 });
 
+test("staff notification destinations and verification are stored per hotel", () => {
+  const server = fs.readFileSync("server.js", "utf8");
+  const dashboard = fs.readFileSync("dashboard.html", "utf8");
+  assert.match(server, /CREATE TABLE IF NOT EXISTS organization_staff_webhooks/);
+  assert.match(server, /WHERE organization_id=\$1/);
+  assert.match(server, /encryptSecret\(supplied,key\)/);
+  assert.match(server, /decryptSecret\(configured\.rows\[0\]\.encrypted_secret,key\)/);
+  assert.match(server, /app\.put\("\/api\/admin\/staff-webhook"/);
+  assert.match(server, /app\.delete\("\/api\/admin\/staff-webhook"/);
+  assert.match(server, /app\.post\("\/api\/admin\/integrations\/test-staff-webhook"/);
+  assert.match(server, /handoffConfigured=Boolean\(staffWebhook\.rowCount\)/);
+  assert.match(dashboard, /id="staffWebhookForm"/);
+  assert.match(dashboard, /api\("\/api\/admin\/staff-webhook"/);
+});
+
 test("AI and staff integrations require live verification before onboarding marks them complete", () => {
   const server = fs.readFileSync("server.js", "utf8");
   assert.match(server, /organization_integration_checks/);
   assert.match(server, /ai\.models\.retrieve\(MODEL/);
   assert.match(server, /veyra\.integration\.test/);
   assert.match(server, /verified_at,verified_by/);
-  assert.match(server, /handoffVerified=Boolean\(handoffConfigured&&verified\.staff_webhook\)/);
+  assert.match(server, /handoffVerified=Boolean\(handoffConfigured&&verified\.staff_webhook\)/);\n  assert.match(server, /FROM organization_staff_webhooks WHERE organization_id=\$1/);
 });
 
 

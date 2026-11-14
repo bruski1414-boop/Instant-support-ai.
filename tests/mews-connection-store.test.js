@@ -70,3 +70,87 @@ test("scopes status and connection resolution to the requested organization", as
   assert.equal(calls[1].values[2], true);
   assert.equal(Object.hasOwn(connection, "clientToken"), false);
 });
+
+
+async function verifyWithMewsService(service) {
+  const originalFetch = global.fetch;
+  global.fetch = async (url, options) => {
+    const path = new URL(url).pathname;
+    const request = JSON.parse(options.body);
+    if (path.endsWith("/configuration/get") && request.EnterpriseId !== "property-123") {
+      throw new Error("Configuration request was not scoped to the selected hotel.");
+    }
+    if (path.endsWith("/services/getAll") &&
+        (!Array.isArray(request.EnterpriseIds) || request.EnterpriseIds[0] !== "property-123")) {
+      throw new Error("Service lookup was not scoped to the selected hotel.");
+    }
+    const payload = path.endsWith("/configuration/get")
+      ? { Enterprise: { Id: "property-123", Name: "Demo Hotel", TimeZoneIdentifier: "Europe/Helsinki" } }
+      : path.endsWith("/services/getAll")
+        ? { Services: [service], Cursor: null }
+        : {};
+    return new Response(JSON.stringify(payload), {
+      status: 200,
+      headers: { "content-type": "application/json" }
+    });
+  };
+  const encrypted = require("../storage-security").createTokenCipher(key).encrypt({
+    clientToken: "client-secret",
+    accessToken: "access-secret"
+  });
+  const db = {
+    async query(sql, values) {
+      if (sql.startsWith("SELECT organization_id,encrypted_credentials")) {
+        return {
+          rowCount: 1,
+          rows: [{
+            organization_id: values[0],
+            encrypted_credentials: encrypted,
+            service_id: "service-123",
+            property_reference: "property-123",
+            timezone: "Europe/Helsinki"
+          }]
+        };
+      }
+      if (sql.startsWith("UPDATE mews_connections")) return { rowCount: 1, rows: [] };
+      throw new Error("Unexpected query: " + sql);
+    }
+  };
+  try {
+    const store = createMewsConnectionStore({ db, encryptionKey: key });
+    return await store.verify("hotel-a");
+  } finally {
+    global.fetch = originalFetch;
+  }
+}
+
+function mewsService(overrides = {}) {
+  return {
+    Id: "service-123",
+    EnterpriseId: "property-123",
+    IsActive: true,
+    Data: { Discriminator: "Bookable", Value: { TimeUnitPeriod: "Day" } },
+    ...overrides
+  };
+}
+
+test("Mews verification rejects a daily bookable service belonging to a different enterprise", async () => {
+  await assert.rejects(
+    verifyWithMewsService(mewsService({ EnterpriseId: "another-property" })),
+    /belonging to the configured Mews property/
+  );
+});
+
+test("Mews verification rejects a daily service that is not Bookable", async () => {
+  await assert.rejects(
+    verifyWithMewsService(mewsService({ Data: { Discriminator: "Additional", Value: {} } })),
+    /belonging to the configured Mews property/
+  );
+});
+
+test("Mews verification accepts an active daily Bookable service for the configured enterprise", async () => {
+  const result = await verifyWithMewsService(mewsService());
+  assert.equal(result.verified, true);
+  assert.equal(result.serviceTimeUnit, "Day");
+  assert.equal(result.propertyTimeZone, "Europe/Helsinki");
+});

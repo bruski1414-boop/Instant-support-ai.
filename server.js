@@ -14,6 +14,7 @@ const {DEMO_METRICS,respondToDemoMessage}=require("./demo-mode");
 const {requiresStaffEscalation,requiresLiveAvailabilityCheck,buildGuestSupportSystemPrompt}=require("./guest-support-policy");
 const {buildPilotReadiness}=require("./pilot-readiness");
 const {buildRelevantKnowledge}=require("./hotel-knowledge");
+const {validateAnswerGrounding}=require("./answer-grounding");
 const {isValidDateOnly,isOptionalBoolean}=require("./knowledge-validation");
 const {normalizeRevenueEvent,normalizeRevenueAdjustment}=require("./revenue-attribution");
 const {normalizeGuestConversationAccess,normalizeStaffReply,canReplyToConversation}=require("./guest-messaging");
@@ -401,6 +402,7 @@ app.post("/api/public/:slug/chat",async(q,r,n)=>{
   try{answer=JSON.parse(completion.choices[0]?.message?.content||"");}catch{answer={reply:"I cannot prepare a reliable answer. Please contact hotel staff.",needsHuman:true,handoffReason:"Response validation failed."};}
  }
  if(availabilityCheck&&!liveAvailability?.verified){answer.reply="I can’t verify availability for your full stay yet. Please contact the hotel team so they can check the booking system and confirm it with you.";answer.needsHuman=true;answer.handoffReason="Guest requested live room availability but no complete verified full-stay result was available.";}
+ if(retrieval.matched){const grounding=validateAnswerGrounding(answer.reply,knowledge+(liveAvailability?.verified?"\\n"+liveAvailability.context:""),msg);if(!grounding.supported){answer.reply="I can’t confidently verify every detail in that answer from the hotel’s approved information. I’ll ask the hotel team to confirm it for you.";answer.needsHuman=true;answer.handoffReason="Generated answer contained unsupported numeric details ("+grounding.unsupportedNumbers.join(", ")+").";}}
  const reply=typeof answer.reply==="string"?answer.reply.slice(0,4000):"Please contact hotel staff.";const flagHuman=Boolean(flag||answer.needsHuman);
  const c=await db.connect();let cid=conversationId,eid,createdEscalation=false,existingNotificationStatus="not_configured";try{await c.query("BEGIN");if(!cid){const x=await c.query("INSERT INTO conversations(organization_id,channel,status,guest_token_hash) VALUES($1,'website',$2,$3) RETURNING id",[org.id,flagHuman?"escalated":"open",hash(guestToken)]);cid=x.rows[0].id;}else{const locked=await c.query("SELECT id FROM conversations WHERE id=$1 AND organization_id=$2 AND guest_token_hash=$3 FOR UPDATE",[cid,org.id,hash(guestToken)]);if(!locked.rowCount){await c.query("ROLLBACK");return r.status(404).json({error:"Conversation not found."});}}
  await c.query("INSERT INTO messages(conversation_id,role,content) VALUES($1,'guest',$2),($1,'assistant',$3)",[cid,msg.trim(),reply]);await c.query("UPDATE conversations SET last_message_at=now(),status=CASE WHEN $2 THEN 'escalated' WHEN status='resolved' THEN 'open' ELSE status END WHERE id=$1 AND organization_id=$3",[cid,flagHuman,org.id]);

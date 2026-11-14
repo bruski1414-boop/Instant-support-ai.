@@ -386,7 +386,7 @@ app.post("/api/public/:slug/chat",async(q,r,n)=>{
   }
  }
  const guestToken=requestedConversation?requestedToken:crypto.randomBytes(32).toString("base64url");
- const systemPrompt=buildGuestSupportSystemPrompt(org.name,knowledge)+(availabilityCheck?"\\n\\nLIVE AVAILABILITY RULES: "+(liveAvailability?.verified?"A verified Mews connection returned this full-stay inventory. Report only these dates and counts. Never claim a booking is held or confirmed; staff must complete any booking.":"No complete verified live inventory result is available. Do not claim availability; ask hotel staff to confirm.")+"\\n"+(liveAvailability?.verified?liveAvailability.context:""):"");
+ const systemPrompt=buildGuestSupportSystemPrompt(org.name,knowledge)+(availabilityCheck?"\n\nLIVE AVAILABILITY RULES: "+(liveAvailability?.verified?"A verified Mews connection returned this full-stay inventory. Report only these dates and counts. Never claim a booking is held or confirmed; staff must complete any booking.":"No complete verified live inventory result is available. Do not claim availability; ask hotel staff to confirm.")+"\n"+(liveAvailability?.verified?liveAvailability.context:""):"");
  const completion=await ai.chat.completions.create({model:MODEL,temperature:0.1,max_tokens:500,response_format:{type:"json_object"},messages:[
  {role:"system",content:systemPrompt},
  ...history,

@@ -47,10 +47,10 @@ function buildRelevantKnowledge(question, documents, options = {}) {
     .map((doc, index) => ({ doc, index, score: scoreDocument(questionTerms, doc) }))
     .sort((a, b) => b.score - a.score || a.index - b.index);
 
-  // If wording does not overlap at all, retain a small recent-document fallback
-  // so the model can still identify a relevant answer phrased differently.
+  // Never place unrelated hotel documents in the model context. A no-match
+  // result must lead to a safe "cannot verify" response, not a guess.
   const selected = ranked.filter(item => item.score > 0).slice(0, maxDocuments);
-  const chosen = selected.length ? selected : ranked.slice(0, Math.min(5, maxDocuments));
+  const chosen = selected;
   const sections = [];
   let used = 0;
   const separator = "\n\n---\n\n";
@@ -76,7 +76,8 @@ function buildRelevantKnowledge(question, documents, options = {}) {
     context: sections.join(separator),
     selectedCount: sections.length,
     matched: selected.length > 0,
-    fallbackUsed: selected.length === 0
+    fallbackUsed: false,
+    noRelevantKnowledge: selected.length === 0
   };
 }
 

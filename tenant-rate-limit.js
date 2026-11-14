@@ -21,7 +21,8 @@ function normalizeClientIp(value) {
 }
 
 function tenantChatRateLimitKey(req) {
-  const path = typeof req.path === "string" ? req.path : "";
+  const requestUrl = typeof req.originalUrl === "string" ? req.originalUrl : (typeof req.path === "string" ? req.path : "");
+  const path = requestUrl.split("?")[0];
   const match = path.match(/^\/api\/public\/([a-z0-9-]{1,48})\/chat(?:\/|$)/i);
   const tenant = match ? match[1].toLowerCase() : "unknown";
   const ip = normalizeClientIp(req.ip);

@@ -1,6 +1,7 @@
 "use strict";
 
 const crypto = require("node:crypto");
+const { isIP } = require("node:net");
 
 function encryptionKey(value) {
   if (!value || String(value).length < 32) throw new Error("STORAGE_TOKEN_ENCRYPTION_KEY must contain at least 32 characters.");
@@ -24,8 +25,9 @@ function validateWebhookUrl(value) {
   let url;
   try { url = new URL(String(value || "").trim()); } catch { throw new Error("Enter a valid HTTPS notification URL."); }
   const host = url.hostname.toLowerCase();
+  const literalHost = host.replace(/^\\[|\\]$/g, "");
   if (url.protocol !== "https:" || url.username || url.password || (url.port && url.port !== "443") ||
-      host === "localhost" || host.endsWith(".localhost") || host.endsWith(".local") ||
+      isIP(literalHost) !== 0 || host === "localhost" || host.endsWith(".localhost") || host.endsWith(".local") || host.endsWith(".internal") || host.endsWith(".test") || host.endsWith(".invalid") || host.endsWith(".example") ||
       /^127\./.test(host) || /^10\./.test(host) || /^192\.168\./.test(host) ||
       /^169\.254\./.test(host) || /^172\.(1[6-9]|2[0-9]|3[01])\./.test(host) ||
       host === "::1" || host.startsWith("[fc") || host.startsWith("[fd") || host.startsWith("[fe80")) {

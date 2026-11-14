@@ -401,3 +401,17 @@ test("unsupported numeric AI claims are replaced with a staff-confirmation hando
   assert.match(server, /I can’t confidently verify every detail in that answer/);
   assert.match(server, /answer\.needsHuman=true/);
 });
+
+
+test("conversation evidence is tenant-scoped and exposes approved source provenance to managers", () => {
+  const server = fs.readFileSync("server.js", "utf8");
+  const dashboard = fs.readFileSync("dashboard.html", "utf8");
+  assert.match(server, /ALTER TABLE messages ADD COLUMN IF NOT EXISTS evidence JSONB/);
+  assert.match(server, /UPDATE messages SET evidence=\$1::jsonb WHERE id=\$2 AND role='assistant'/);
+  assert.match(server, /SELECT m\.id,m\.role,m\.content,m\.evidence,m\.created_at FROM messages m JOIN conversations c/);
+  assert.match(server, /c\.organization_id=\$2/);
+  assert.match(dashboard, /function renderConversationMessage\(m\)/);
+  assert.match(dashboard, /Approved knowledge sources/);
+  assert.match(dashboard, /Last reviewed:/);
+  assert.match(dashboard, /Staff handoff:/);
+});

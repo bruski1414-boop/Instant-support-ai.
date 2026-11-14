@@ -53,6 +53,7 @@ function buildRelevantKnowledge(question, documents, options = {}) {
   const chosen = selected.length ? selected : ranked.slice(0, Math.min(5, maxDocuments));
   const sections = [];
   let used = 0;
+  const separator = "\n\n---\n\n";
   for (const { doc, score } of chosen) {
     const reviewed = doc.reviewed_at ? new Date(doc.reviewed_at).toISOString().slice(0, 10) : "not recorded";
     const reviewDue = doc.review_due_at ? String(doc.review_due_at).slice(0, 10) : "no scheduled review";
@@ -63,13 +64,16 @@ function buildRelevantKnowledge(question, documents, options = {}) {
       "\nLast manager review: " + reviewed +
       "\nReview due: " + reviewDue +
       "\nApproved content:\n" + doc.content;
-    const remaining = maxCharacters - used;
+    const separatorLength = sections.length ? separator.length : 0;
+    const remaining = maxCharacters - used - separatorLength;
     if (remaining <= 0) break;
-    sections.push(section.slice(0, remaining));
-    used += Math.min(section.length, remaining) + 8;
+    const clipped = section.slice(0, remaining);
+    sections.push(clipped);
+    used += separatorLength + clipped.length;
+    if (clipped.length < section.length) break;
   }
   return {
-    context: sections.join("\n\n---\n\n"),
+    context: sections.join(separator),
     selectedCount: sections.length,
     matched: selected.length > 0,
     fallbackUsed: selected.length === 0

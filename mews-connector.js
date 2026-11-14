@@ -94,7 +94,7 @@ function createMewsConnectorClient({
     }
   }
 
-  return Object.freeze({
+  const client = {
     async getConfiguration() {
       const result = await post("/api/connector/v1/configuration/get");
       return {
@@ -108,7 +108,7 @@ function createMewsConnectorClient({
     },
 
     async getServices({ enterpriseIds, serviceIds, cursor, count = 100 } = {}) {
-      if (!Number.isInteger(count) || count < 1 || count > 1000) throw new Error("count must be between 1 and 100.");
+      if (!Number.isInteger(count) || count < 1 || count > 1000) throw new Error("count must be between 1 and 1000.");
       const fields = { Limitation: { Count: count } };
       if (Array.isArray(enterpriseIds) && enterpriseIds.length) fields.EnterpriseIds = enterpriseIds.map((v) => nonEmpty(v, "enterpriseId"));
       if (Array.isArray(serviceIds) && serviceIds.length) fields.ServiceIds = serviceIds.map((v) => nonEmpty(v, "serviceId"));
@@ -137,7 +137,7 @@ function createMewsConnectorClient({
       let cursor = filters.cursor;
       let pages = 0;
       while (pages < maxPages) {
-        const page = await this.getServices({ ...filters, cursor, count: filters.count || 100 });
+        const page = await client.getServices({ ...filters, cursor, count: filters.count || 100 });
         all.push(...page.services);
         pages += 1;
         if (!page.cursor || page.services.length < (filters.count || 100)) {
@@ -153,7 +153,7 @@ function createMewsConnectorClient({
     },
 
     async getReservations({ enterpriseIds, reservationIds, serviceIds, updatedUtc, states, cursor, count = 100 } = {}) {
-      if (!Number.isInteger(count) || count < 1 || count > 100) throw new Error("count must be between 1 and 100.");
+      if (!Number.isInteger(count) || count < 1 || count > 1000) throw new Error("count must be between 1 and 1000.");
       const fields = { Limitation: { Count: count } };
       const addIds = (key, values, fieldName) => {
         if (values == null) return;
@@ -211,7 +211,7 @@ function createMewsConnectorClient({
       let cursor = filters.cursor;
       let pages = 0;
       while (pages < maxPages) {
-        const page = await this.getReservations({ ...filters, cursor, count: filters.count || 100 });
+        const page = await client.getReservations({ ...filters, cursor, count: filters.count || 100 });
         all.push(...page.reservations);
         pages += 1;
         if (!page.cursor || page.reservations.length < (filters.count || 100)) {
@@ -248,7 +248,8 @@ function createMewsConnectorClient({
         }))
       };
     }
-  });
+  };
+  return Object.freeze(client);
 }
 
 module.exports = { DEMO_BASE_URL, createMewsConnectorClient };

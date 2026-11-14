@@ -305,6 +305,17 @@ test("public guest chat requires fresh tenant-specific AI, staff and storage ver
   assert.match(server, /This hotel must connect and authorize its own storage provider/);
 });
 
+test("onboarding readiness requires verified storage authorization, a successful sync and separate hotel privacy approval", () => {
+  const server = fs.readFileSync("server.js", "utf8");
+  assert.match(server, /last_sync_status,last_sync_error FROM organization_storage_connections/);
+  assert.match(server, /Boolean\\(storage\\.rows\\[0\\]\\.connected_at\\)/);
+  assert.match(server, /Boolean\\(storage\\.rows\\[0\\]\\.last_sync_at\\)/);
+  assert.match(server, /storage\\.rows\\[0\\]\\.last_sync_status==="success"/);
+  assert.match(server, /Hotel privacy and retention approval/);
+  assert.match(server, /no recorded hotel privacy approval/);
+  assert.match(server, /done:false,detail:process\\.env\\.GUEST_DATA_STORAGE_ENABLED/);
+});
+
 test("AI and staff integrations require live verification before onboarding marks them complete", () => {
   const server = fs.readFileSync("server.js", "utf8");
   assert.match(server, /organization_integration_checks/);

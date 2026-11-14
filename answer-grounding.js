@@ -7,8 +7,8 @@ function numericFacts(value) {
 
 function contactFacts(value) {
   const text = String(value || "").toLowerCase();
-  const emails = text.match(/\\b[a-z0-9._%+-]+@[a-z0-9.-]+\\.[a-z]{2,}\\b/g) || [];
-  const urls = text.match(/\\b(?:https?:\\/\\/|www\\.)[^\\s<>"']+/g) || [];
+  const emails = text.match(/\b[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}\b/g) || [];
+  const urls = text.match(/\b(?:https?:\/\/|www\.)[^\s<>"']+/g) || [];
   return [...new Set([...emails, ...urls].map(item => item.replace(/[),.;!?]+$/, "")))];
 }
 
@@ -20,8 +20,8 @@ function validateAnswerGrounding(reply, approvedContext, guestQuestion = "") {
     return { supported: false, reason: "no_approved_context", unsupportedNumbers: numericFacts(reply) };
   }
 
-  // Numbers may be repeated from the guest's own question (for example,
-  // requested dates). New numeric claims must appear in approved hotel text.
+  // Numbers and contact details may be repeated from the guest's own question.
+  // New numeric claims, emails and URLs must appear in approved hotel text.
   const allowedNumbers = new Set([
     ...numericFacts(approvedContext),
     ...numericFacts(guestQuestion)
@@ -33,9 +33,9 @@ function validateAnswerGrounding(reply, approvedContext, guestQuestion = "") {
   if (unsupportedNumbers.length || unsupportedContacts.length) {
     return {
       supported: false,
-      reason: "unsupported_numeric_claim",
+      reason: unsupportedNumbers.length ? "unsupported_numeric_claim" : "unsupported_contact_detail",
       unsupportedNumbers,
-      unsupportedContacts
+      ...(unsupportedContacts.length ? { unsupportedContacts } : {})
     };
   }
   return { supported: true, reason: "", unsupportedNumbers: [] };

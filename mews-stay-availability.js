@@ -30,6 +30,10 @@ function localMidnightToUtc(date, timeZone) {
     guess += correction;
     if (correction === 0) break;
   }
+  const finalParts = Object.fromEntries(formatter.formatToParts(new Date(guess)).map(p => [p.type, p.value]));
+  if (finalParts.year + "-" + finalParts.month + "-" + finalParts.day !== date || finalParts.hour !== "00" || finalParts.minute !== "00" || finalParts.second !== "00") {
+    throw new Error("Property-local midnight is not representable for this date.");
+  }
   return new Date(guess).toISOString();
 }
 
@@ -42,6 +46,13 @@ function buildMewsStayAvailabilityContext({
     }
     if (!validDate(arrivalDate) || !validDate(departureDate) || departureDate <= arrivalDate) {
       return { verified: false, reason: "invalid_dates", context: "The guest's stay dates are missing or invalid. Ask for arrival and departure dates; do not guess." };
+    }
+    const todayParts = Object.fromEntries(new Intl.DateTimeFormat("en-CA", {
+      timeZone: connection.timeZone, year: "numeric", month: "2-digit", day: "2-digit"
+    }).formatToParts(new Date(nowUtc)).map(p => [p.type, p.value]));
+    const today = todayParts.year + "-" + todayParts.month + "-" + todayParts.day;
+    if (arrivalDate < today) {
+      return { verified: false, reason: "past_dates", context: "The requested arrival date is in the past. Ask the guest for future stay dates; do not check or describe past inventory." };
     }
     const nights = Math.round((Date.parse(departureDate + "T00:00:00Z") - Date.parse(arrivalDate + "T00:00:00Z")) / 86400000);
     if (nights > 30) {

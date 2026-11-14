@@ -286,6 +286,41 @@ app.get("/api/admin/overview",requireDb,auth,async(q,r,n)=>{try{const org=q.acto
  db.query("SELECT count(*)::int AS open_escalations FROM escalations WHERE organization_id=$1 AND status<>'resolved'",[org]),
  db.query("SELECT c.id,c.status,c.channel,c.started_at,c.last_message_at,(SELECT left(content,180) FROM messages m WHERE m.conversation_id=c.id ORDER BY created_at DESC LIMIT 1) AS latest_message FROM conversations c WHERE c.organization_id=$1 ORDER BY c.last_message_at DESC LIMIT 20",[org])]);
  r.json({metrics:{...m.rows[0],...e.rows[0]},conversations:c.rows});}catch(e){n(e);}});
+app.get("/api/admin/performance",requireDb,auth,async(q,r,n)=>{
+ try{
+  const result=await db.query(`
+   WITH recent AS (
+    SELECT id FROM conversations
+    WHERE organization_id=$1 AND started_at>=now()-interval '30 days'
+   ),
+   per_conversation AS (
+    SELECT c.id,
+      count(m.id) FILTER(WHERE m.role='assistant')::int AS ai_replies,
+      count(m.id) FILTER(WHERE m.role='staff')::int AS staff_replies,
+      min(m.created_at) FILTER(WHERE m.role='guest') AS first_guest_at,
+      min(m.created_at) FILTER(WHERE m.role='assistant') AS first_ai_at
+    FROM recent c
+    LEFT JOIN messages m ON m.conversation_id=c.id
+    GROUP BY c.id
+   ),
+   handoffs AS (
+    SELECT count(DISTINCT e.conversation_id)::int AS handoff_conversations
+    FROM escalations e JOIN recent c ON c.id=e.conversation_id
+   )
+   SELECT count(*)::int AS total_conversations,
+     count(*) FILTER(WHERE ai_replies>0 AND staff_replies=0)::int AS ai_only_so_far,
+     count(*) FILTER(WHERE staff_replies>0)::int AS staff_replied_conversations,
+     COALESCE(sum(ai_replies),0)::int AS ai_replies,
+     COALESCE(sum(staff_replies),0)::int AS staff_replies,
+     COALESCE((SELECT handoff_conversations FROM handoffs),0)::int AS handoff_conversations,
+     CASE WHEN count(*)=0 THEN 0 ELSE round(100.0*COALESCE((SELECT handoff_conversations FROM handoffs),0)/count(*),1) END AS handoff_rate_percent,
+     percentile_cont(0.5) WITHIN GROUP(ORDER BY extract(epoch FROM (first_ai_at-first_guest_at)))
+       FILTER(WHERE first_guest_at IS NOT NULL AND first_ai_at>=first_guest_at) AS median_first_ai_response_seconds
+   FROM per_conversation
+  `,[q.actor.organization_id]);
+  r.json({windowDays:30,...result.rows[0],note:"AI-only so far means no staff reply is recorded; it is not proof that the guest's request was resolved. No staff-time savings or revenue causation is inferred."});
+ }catch(e){n(e);}
+});
 app.get("/api/admin/knowledge",requireDb,auth,async(q,r,n)=>{try{const x=await db.query("SELECT id,title,category,content,approved,source_reference,review_due_at,reviewed_at,updated_at FROM knowledge_documents WHERE organization_id=$1 ORDER BY updated_at DESC",[q.actor.organization_id]);r.json({documents:x.rows});}catch(e){n(e);}});
 app.post("/api/admin/knowledge",requireDb,auth,role("owner","admin"),async(q,r,n)=>{try{const b=q.body||{};if(typeof b.title!=="string"||b.title.trim().length<2||b.title.length>160||typeof b.content!=="string"||b.content.trim().length<5||b.content.length>12000)return r.status(400).json({error:"Valid title and content required."});const source=typeof b.source_reference==="string"?b.source_reference.trim():"";const due=b.review_due_at||null;if(source.length>500||due!==null&&(typeof due!=="string"||!/^\d{4}-\d{2}-\d{2}$/.test(due)||Number.isNaN(Date.parse(due))))return r.status(400).json({error:"Check the source reference and review date."});const approved=Boolean(b.approved);const x=await db.query("INSERT INTO knowledge_documents(organization_id,title,category,content,approved,source_reference,review_due_at,reviewed_at,updated_by) VALUES($1,$2,$3,$4,$5,$6,$7,CASE WHEN $5 THEN now() ELSE NULL END,$8) RETURNING id,title,category,content,approved,source_reference,review_due_at,reviewed_at,updated_at",[q.actor.organization_id,b.title.trim(),String(b.category||"general").slice(0,60),b.content.trim(),approved,source,due,q.actor.user_id]);const d=x.rows[0];await db.query("INSERT INTO knowledge_document_versions(organization_id,document_id,title,category,content,approved,source_reference,review_due_at,reviewed_at,changed_by,change_type) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'created')",[q.actor.organization_id,d.id,d.title,d.category,d.content,d.approved,d.source_reference,d.review_due_at,d.reviewed_at,q.actor.user_id]);await audit(q.actor,"knowledge.created","knowledge_document",d.id);r.status(201).json({document:d});}catch(e){n(e);}});app.patch("/api/admin/knowledge/:id",requireDb,auth,role("owner","admin"),async(q,r,n)=>{try{const body=q.body||{},keys=Object.keys(body);if(!keys.length||keys.some(k=>!["title","category","content","approved","source_reference","review_due_at"].includes(k)))return r.status(400).json({error:"Unsupported fields."});
  if(body.title!==undefined&&(typeof body.title!=="string"||body.title.trim().length<2||body.title.length>160))return r.status(400).json({error:"Title must be 2–160 characters."});

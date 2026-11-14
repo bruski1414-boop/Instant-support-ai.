@@ -80,6 +80,8 @@ test("returns source metadata only for knowledge actually included in context", 
   assert.equal(result.sources[0].reviewedAt, "2026-10-01T00:00:00.000Z");
   assert.equal(result.sources[0].reviewDueAt, "2027-01-01");
   assert.ok(result.sources[0].termCoverage >= 0.5);
+  assert.match(result.groundingText, /06:30 until 10:30/);
+  assert.doesNotMatch(result.groundingText, /2027-01-01/);
 });
 
 test("rejects a weak single-keyword match for a multi-part guest question", () => {

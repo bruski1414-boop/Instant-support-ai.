@@ -89,4 +89,31 @@ function mapMewsAbsoluteAvailability({
   return Object.freeze(snapshots);
 }
 
-module.exports = { mapMewsAbsoluteAvailability };
+async function getMewsRoomNightSnapshots({
+  client,
+  service,
+  propertyReference,
+  timeZone,
+  firstTimeUnitStartUtc,
+  lastTimeUnitStartUtc,
+  nowUtc = new Date().toISOString()
+} = {}) {
+  if (!client || typeof client.getServiceAvailabilityAbsolute !== "function") {
+    throw new Error("A read-only Mews client is required.");
+  }
+  if (typeof nowUtc !== "string" || !Number.isFinite(Date.parse(nowUtc))) {
+    throw new Error("nowUtc must be a valid timestamp.");
+  }
+  const observedAt = new Date(nowUtc).toISOString();
+  const validUntil = new Date(Date.parse(observedAt) + 10 * 60 * 1000).toISOString();
+  const availability = await client.getServiceAvailabilityAbsolute({
+    serviceId: service && service.id,
+    firstTimeUnitStartUtc,
+    lastTimeUnitStartUtc
+  });
+  return mapMewsAbsoluteAvailability({
+    availability, service, propertyReference, timeZone, observedAt, validUntil
+  });
+}
+
+module.exports = { mapMewsAbsoluteAvailability, getMewsRoomNightSnapshots };

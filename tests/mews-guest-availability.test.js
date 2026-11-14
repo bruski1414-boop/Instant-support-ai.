@@ -31,7 +31,8 @@ test("loads availability only from the connection resolved for the current organ
     resolveConnection: async (id) => connection(id, 2),
     ...range
   });
-  assert.equal(result.available, true);
+  assert.equal(result.connected, true);
+  assert.equal(result.hasAvailableRooms, true);
   assert.equal(result.availabilityCount, 1);
   assert.match(result.context, /2 room\(s\) reported available/);
   assert.equal(result.snapshots[0].arrivalDate, "2026-12-02");
@@ -43,7 +44,7 @@ test("fails closed when no tenant connection exists", async () => {
     resolveConnection: async () => null,
     ...range
   });
-  assert.equal(result.available, false);
+  assert.equal(result.connected, false);
   assert.equal(result.reason, "not_configured");
   assert.match(result.context, /Do not state or imply that rooms are available/);
 });
@@ -95,6 +96,7 @@ test("does not claim availability when the provider reports zero rooms", async (
     ...range
   });
   assert.equal(result.available, false);
-  assert.equal(result.reason, "no_current_inventory");
-  assert.match(result.context, /No verified, currently valid availability snapshot/);
+  assert.equal(result.connected, true);
+  assert.equal(result.hasAvailableRooms, false);
+  assert.match(result.context, /0 room\(s\) reported available/);
 });

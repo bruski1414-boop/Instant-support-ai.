@@ -8,7 +8,7 @@ test("demo metrics are clearly synthetic and separate reported from linked reven
   assert.equal(DEMO_METRICS.demoOnly, true);
   assert.equal(DEMO_METRICS.conversations, 126);
   assert.equal(DEMO_METRICS.resolvedWithoutStaff + DEMO_METRICS.staffHandoffs, 126);
-  assert.equal(DEMO_METRICS.veyraLinkedRevenueMinor, 0);
+  assert.equal(DEMO_METRICS.veyraLinkedRevenueMinor, 0);\n  assert.equal(DEMO_METRICS.medianFirstResponseSeconds, 8);
   assert.match(DEMO_METRICS.note, /not attributed to Veyra/);
 });
 

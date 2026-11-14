@@ -10,7 +10,7 @@ Veyra now has a read-only Mews Connector API client in `mews-connector.js`.
 - `getAllReservations()` and `getAllServices()`: safely follow Mews cursors up to a configurable page cap and report whether retrieval is complete.
 - `services/getAvailability/2024-01-22`: reads service availability metrics for a bounded UTC interval.
 
-The client uses the official Mews demo host only: `https://api.mews-demo.com`. It sends the required `ClientToken`, `AccessToken`, and `Client` fields in each JSON POST body. It does not expose a production host, mutate reservations, charge cards, change rates, or write to hotel operations.
+The client uses the official Mews demo host only: `https://api.mews-demo.com`. Mews documents a maximum page size of 1,000 records; the client supports that limit and can fetch multiple cursor pages. The availability endpoint is documented as a restricted beta operation, and its timestamps must align with the bookable service's time-unit boundaries in the property's timezone. Veyra must derive those boundaries from the property's configured timezone and service metadata before relying on availability results. It sends the required `ClientToken`, `AccessToken`, and `Client` fields in each JSON POST body. It does not expose a production host, mutate reservations, charge cards, change rates, or write to hotel operations.
 
 ## Local demo setup
 

@@ -22,7 +22,22 @@ function validUtc(value, name) {
   if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?Z$/.test(value) || !Number.isFinite(Date.parse(value))) {
     throw new Error(name + " must be a valid ISO-8601 UTC timestamp.");
   }
-  return new Date(value).toISOString();
+  const parsed = new Date(value);
+  const canonical = parsed.toISOString();
+  const supplied = value.includes(".") ? value : value.replace("Z", ".000Z");
+  if (canonical !== supplied) throw new Error(name + " must be a real UTC calendar timestamp.");
+  return canonical;
+}
+
+function withinThreeCalendarMonths(startUtc, endUtc) {
+  const start = new Date(startUtc);
+  const limit = new Date(startUtc);
+  const originalDay = limit.getUTCDate();
+  limit.setUTCDate(1);
+  limit.setUTCMonth(limit.getUTCMonth() + 3);
+  const lastDay = new Date(Date.UTC(limit.getUTCFullYear(), limit.getUTCMonth() + 1, 0)).getUTCDate();
+  limit.setUTCDate(Math.min(originalDay, lastDay));
+  return new Date(endUtc).getTime() <= limit.getTime();
 }
 
 function createMewsConnectorClient({
@@ -113,6 +128,30 @@ function createMewsConnectorClient({
       };
     },
 
+    async getAllServices({ maxPages = 20, ...filters } = {}) {
+      if (!Number.isInteger(maxPages) || maxPages < 1 || maxPages > 100) {
+        throw new Error("maxPages must be between 1 and 100.");
+      }
+      const all = [];
+      const seenCursors = new Set();
+      let cursor = filters.cursor;
+      let pages = 0;
+      while (pages < maxPages) {
+        const page = await this.getServices({ ...filters, cursor, count: filters.count || 100 });
+        all.push(...page.services);
+        pages += 1;
+        if (!page.cursor || page.services.length < (filters.count || 100)) {
+          return { services: all, pages, complete: true, cursor: null };
+        }
+        if (seenCursors.has(page.cursor) || page.cursor === cursor) {
+          throw new Error("Mews service pagination returned a repeated cursor.");
+        }
+        seenCursors.add(page.cursor);
+        cursor = page.cursor;
+      }
+      return { services: all, pages, complete: false, cursor };
+    },
+
     async getReservations({ enterpriseIds, reservationIds, serviceIds, updatedUtc, states, cursor, count = 100 } = {}) {
       if (!Number.isInteger(count) || count < 1 || count > 100) throw new Error("count must be between 1 and 100.");
       const fields = { Limitation: { Count: count } };
@@ -131,8 +170,8 @@ function createMewsConnectorClient({
         const start = validUtc(updatedUtc.startUtc, "updatedUtc.startUtc");
         const end = validUtc(updatedUtc.endUtc, "updatedUtc.endUtc");
         if (Date.parse(end) <= Date.parse(start)) throw new Error("updatedUtc.endUtc must be later than startUtc.");
-        if (Date.parse(end) - Date.parse(start) > 93 * 24 * 60 * 60 * 1000) {
-          throw new Error("Mews UpdatedUtc filters are limited to a maximum three-month interval.");
+        if (!withinThreeCalendarMonths(start, end)) {
+          throw new Error("Mews UpdatedUtc filters are limited to a maximum three-calendar-month interval.");
         }
         fields.UpdatedUtc = { StartUtc: start, EndUtc: end };
       }
@@ -161,6 +200,30 @@ function createMewsConnectorClient({
         })),
         cursor: result.Cursor || null
       };
+    },
+
+    async getAllReservations({ maxPages = 20, ...filters } = {}) {
+      if (!Number.isInteger(maxPages) || maxPages < 1 || maxPages > 100) {
+        throw new Error("maxPages must be between 1 and 100.");
+      }
+      const all = [];
+      const seenCursors = new Set();
+      let cursor = filters.cursor;
+      let pages = 0;
+      while (pages < maxPages) {
+        const page = await this.getReservations({ ...filters, cursor, count: filters.count || 100 });
+        all.push(...page.reservations);
+        pages += 1;
+        if (!page.cursor || page.reservations.length < (filters.count || 100)) {
+          return { reservations: all, pages, complete: true, cursor: null };
+        }
+        if (seenCursors.has(page.cursor) || page.cursor === cursor) {
+          throw new Error("Mews reservation pagination returned a repeated cursor.");
+        }
+        seenCursors.add(page.cursor);
+        cursor = page.cursor;
+      }
+      return { reservations: all, pages, complete: false, cursor };
     },
 
     async getServiceAvailability({ serviceId, firstTimeUnitStartUtc, lastTimeUnitStartUtc, metrics = DEFAULT_METRICS } = {}) {

@@ -237,6 +237,17 @@ test("knowledge documents retain tenant-scoped version history", () => {
   assert.match(dashboard, /knowledgeHistory/);
 });
 
+test("knowledge approval cannot use an expired review date and overdue documents require a new review date", () => {
+  const server = fs.readFileSync("server.js", "utf8");
+  const dashboard = fs.readFileSync("dashboard.html", "utf8");
+  assert.match(server, /SELECT \$1::date < CURRENT_DATE AS past/);
+  assert.match(server, /An approved document needs a review date today or later/);
+  assert.match(dashboard, /review due soon/);
+  assert.match(dashboard, /Last reviewed/);
+  assert.match(dashboard, /Enter its next review date/);
+  assert.match(dashboard, /payload\.review_due_at=nextReview/);
+});
+
 test("guest conversation writes lock and revalidate the tenant-owned conversation before appending messages", () => {
   const server = fs.readFileSync("server.js", "utf8");
   assert.match(server, /SELECT id FROM conversations WHERE id=\$1 AND organization_id=\$2 AND guest_token_hash=\$3 FOR UPDATE/);

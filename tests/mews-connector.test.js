@@ -230,3 +230,21 @@ test("validates absolute availability time ranges before network access", async 
   }), /must not be before/);
   assert.equal(mock.calls.length, 0);
 });
+
+
+test("aborts stalled Mews requests and returns a credential-safe timeout error", async () => {
+  const mock = mockFetch((_url, options) => new Promise((_resolve, reject) => {
+    options.signal.addEventListener("abort", () => {
+      const error = new Error("aborted");
+      error.name = "AbortError";
+      reject(error);
+    }, { once: true });
+  }));
+  const client = createMewsConnectorClient({
+    ...credentials,
+    fetchImpl: mock.fetchImpl,
+    timeoutMs: 1000
+  });
+  await assert.rejects(() => client.getConfiguration(), /Mews request timed out/);
+  assert.equal(mock.calls.length, 1);
+});

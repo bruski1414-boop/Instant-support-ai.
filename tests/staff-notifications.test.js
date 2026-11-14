@@ -79,7 +79,7 @@ test("hotel webhook secrets are encrypted and authenticated on decrypt", () => {
 });
 
 test("hotel webhook URL validation requires public HTTPS destinations", () => {
-  assert.equal(validateWebhookUrl("https://hooks.hotel.example/events"), "https://hooks.hotel.example/events");
+  assert.equal(validateWebhookUrl("https://hooks.hotel.com/events"), "https://hooks.hotel.example/events");
   for (const url of [
     "http://hooks.hotel.example/events",
     "https://localhost/hook",
@@ -87,7 +87,9 @@ test("hotel webhook URL validation requires public HTTPS destinations", () => {
     "https://10.0.0.8/hook",
     "https://192.168.1.2/hook",
     "https://172.16.0.1/hook",
-    "https://user:pass@hooks.hotel.example/hook"
+    "https://user:pass@hooks.hotel.com/hook",
+    "https://[::1]/hook",
+    "https://0.0.0.0/hook"
   ]) assert.throws(() => validateWebhookUrl(url), undefined, url);
 });
 

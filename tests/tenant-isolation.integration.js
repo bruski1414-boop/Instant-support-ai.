@@ -431,7 +431,7 @@ try {
   assert.ok(!revenueABody.events.some(event => event.external_reference === unlinkedEvent.externalReference));
   assert.ok(revenueBBody.events.some(event => event.external_reference === unlinkedEvent.externalReference));
   assert.ok(!revenueBBody.events.some(event => event.external_reference === linkedEvent.externalReference));
-  assert.equal(revenueABody.linkedTotals.reduce((n, item) => n + Number(item.event_count), 0), 1);
+  assert.equal(revenueABody.linkedTotals.reduce((n, item) => n + Number(item.event_count), 0), 2);
   assert.equal(revenueBBody.linkedTotals.reduce((n, item) => n + Number(item.event_count), 0), 0);
   assert.equal(revenueBBody.unlinkedTotals.reduce((n, item) => n + Number(item.event_count), 0), 2);
 

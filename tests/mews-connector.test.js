@@ -43,6 +43,42 @@ test("maps service list to minimal Veyra service records", async () => {
   assert.equal(JSON.parse(mock.calls[0].options.body).Limitation.Count, 50);
 });
 
+test("maps only current reservation summary fields and uses the versioned getAll operation", async () => {
+  const mock = mockFetch(async () => jsonResponse({
+    Reservations: [{
+      Id: "res-1", ServiceId: "svc-1", State: "Confirmed",
+      RequestedResourceCategoryId: "room-deluxe",
+      ScheduledStartUtc: "2026-12-01T15:00:00Z",
+      ScheduledEndUtc: "2026-12-04T11:00:00Z",
+      ActualStartUtc: null, ActualEndUtc: null,
+      CreatedUtc: "2026-11-01T12:00:00Z", UpdatedUtc: "2026-11-02T12:00:00Z",
+      AccountId: "guest-account", QrCodeData: "private-qr", CreditCardId: "card-reference",
+      Customer: { Email: "private@example.invalid" }, Notes: ["private note"]
+    }],
+    Cursor: "res-1"
+  }));
+  const client = createMewsConnectorClient({ ...credentials, fetchImpl: mock.fetchImpl });
+  const result = await client.getReservations({ states: ["Confirmed"], count: 25 });
+  assert.match(mock.calls[0].url, /reservations\/getAll\/2023-06-06$/);
+  assert.equal(JSON.parse(mock.calls[0].options.body).States[0], "Confirmed");
+  assert.equal(result.reservations[0].id, "res-1");
+  assert.equal(result.reservations[0].scheduledStartUtc, "2026-12-01T15:00:00Z");
+  assert.equal("Customer" in result.reservations[0], false);
+  assert.equal("CreditCardId" in result.reservations[0], false);
+  assert.equal("QrCodeData" in result.reservations[0], false);
+  assert.equal(result.cursor, "res-1");
+});
+
+test("validates reservation filters and three-month incremental window before network access", async () => {
+  const mock = mockFetch(async () => jsonResponse({}));
+  const client = createMewsConnectorClient({ ...credentials, fetchImpl: mock.fetchImpl });
+  await assert.rejects(() => client.getReservations({ states: ["Unknown"] }), /supported Mews reservation states/);
+  await assert.rejects(() => client.getReservations({
+    updatedUtc: { startUtc: "2026-01-01T00:00:00Z", endUtc: "2026-05-01T00:00:00Z" }
+  }), /three-month/);
+  assert.equal(mock.calls.length, 0);
+});
+
 test("requests availability with the documented versioned endpoint and returns only availability fields", async () => {
   const mock = mockFetch(async () => jsonResponse({ TimeUnitStartsUtc: ["2026-12-01T00:00:00Z"], ResourceCategoryAvailabilities: [{ ResourceCategoryId: "room-deluxe", Metrics: { UsableResources: [8], ConfirmedReservations: [5] }, GuestEmail: "private@example.invalid" }] }));
   const client = createMewsConnectorClient({ ...credentials, fetchImpl: mock.fetchImpl });

@@ -13,6 +13,8 @@ The client uses the official Mews demo host only: `https://api.mews-demo.com`. I
 
 ## Local demo setup
 
+After setting the two required environment variables in a private local `.env` file, run `npm run mews:check`. The script performs a read-only configuration check and service-list request, then prints only the property summary and service count. It does not print credential values or request reservations.
+
 Set these server-side environment variables in a private local environment only:
 
 - `MEWS_CLIENT_TOKEN`

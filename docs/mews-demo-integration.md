@@ -6,7 +6,8 @@ Veyra now has a read-only Mews Connector API client in `mews-connector.js`.
 
 - `configuration/get`: verifies credentials and returns only the property's ID, name and timezone.
 - `services/getAll`: reads service metadata with pagination.
-- `reservations/getAll/2023-06-06`: reads minimal reservation status/date summaries with pagination and optional incremental `UpdatedUtc` filtering.
+- `reservations/getAll/2023-06-06`: reads minimal reservation status/date summaries with optional incremental `UpdatedUtc` filtering.
+- `getAllReservations()` and `getAllServices()`: safely follow Mews cursors up to a configurable page cap and report whether retrieval is complete.
 - `services/getAvailability/2024-01-22`: reads service availability metrics for a bounded UTC interval.
 
 The client uses the official Mews demo host only: `https://api.mews-demo.com`. It sends the required `ClientToken`, `AccessToken`, and `Client` fields in each JSON POST body. It does not expose a production host, mutate reservations, charge cards, change rates, or write to hotel operations.

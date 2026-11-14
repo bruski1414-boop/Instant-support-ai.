@@ -23,7 +23,7 @@ const app=express();
 const PORT=Number(process.env.PORT||3000);
 const MODEL=process.env.OPENAI_MODEL||"gpt-4.1-mini";
 const origins=(process.env.ALLOWED_ORIGINS||"http://localhost:3000,http://127.0.0.1:3000").split(",").map(x=>x.trim()).filter(Boolean);
-const ai=process.env.OPENAI_API_KEY?new OpenAI({apiKey:process.env.OPENAI_API_KEY}):null;
+const ai=process.env.OPENAI_API_KEY?new OpenAI({apiKey:process.env.OPENAI_API_KEY,baseURL:process.env.OPENAI_BASE_URL||undefined}):null;
 const db=process.env.DATABASE_URL?new Pool({connectionString:process.env.DATABASE_URL,ssl:process.env.DATABASE_SSL==="false"?false:{rejectUnauthorized:false},max:5,connectionTimeoutMillis:5000}):null;
 const scrypt=promisify(crypto.scrypt);
 const prod=process.env.NODE_ENV==="production";

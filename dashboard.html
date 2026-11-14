@@ -84,6 +84,21 @@ main{padding:28px clamp(16px,4vw,48px);max-width:1450px;width:100%;margin:auto}.
    </form>
    <div id="mewsConnectionHelp" class="muted" style="font-size:11px;margin-top:12px">Saving does not activate live availability. Verification must succeed first. Verification expires after 30 days and must be renewed.</div>
   </div>
+  <div class="sectionrow"><h2>Hotel privacy and retention approval</h2><span class="muted">Owner/admin controlled</span></div>
+  <div class="card" id="privacyApprovalCard">
+   <div id="privacyApprovalStatus" class="notice">Checking current hotel approval…</div>
+   <p class="muted">An authorised adult hotel owner or administrator must review the hotel's actual arrangements before recording approval. This records acknowledgement only; it is not legal advice, a compliance assessment or a security certification. Do not enable real guest data until the hotel has independently reviewed its obligations and arrangements.</p>
+   <div id="privacyApprovalControls">
+    <label class="field"><span><input type="checkbox" id="privacyPurpose"> I have reviewed and approve the specific purposes for which Veyra processes guest and conversation data.</span></label>
+    <label class="field"><span><input type="checkbox" id="privacyRetention"> I have reviewed and approved the hotel's retention periods and deletion process.</span></label>
+    <label class="field"><span><input type="checkbox" id="privacyBackups"> I have reviewed and approved backup, recovery and data-resilience arrangements.</span></label>
+    <label class="field"><span><input type="checkbox" id="privacyAccess"> I have reviewed and approved staff access controls and who can access guest information.</span></label>
+    <label class="field"><span><input type="checkbox" id="privacyDeletion"> I have reviewed and approved how guest data can be exported and deleted when required.</span></label>
+    <div class="actions"><button class="btn primary" id="recordPrivacyApproval" type="button">Record hotel approval</button><button class="btn danger" id="revokePrivacyApproval" type="button" hidden>Revoke approval</button></div>
+   </div>
+   <div class="muted" style="font-size:11px;margin-top:10px">Policy version: 2026-11-14-v1. A future policy version requires a fresh review and acknowledgement.</div>
+  </div>
+
   <div class="sectionrow"><h2>Guest conversation retention</h2><span class="muted">Owner/admin controlled</span></div>
   <div class="card">
    <p class="muted">Choose a retention period approved by the hotel. Only resolved conversations older than this period, with no open escalation, can be deleted. Knowledge documents are not affected.</p>
@@ -416,6 +431,7 @@ $("disconnectMewsConnection").addEventListener("click",async()=>{
 });
 async function loadSetup(){
  const [s,o]=await Promise.all([api("/api/admin/settings"),api("/api/admin/onboarding")]);
+ await loadPrivacyApproval();
  $("hotelWebsite").value=s.settings.website_url||"";
  $("supportEmail").value=s.settings.support_email||"";
  $("hotelTimezone").value=s.settings.timezone||"UTC";
@@ -427,6 +443,36 @@ async function loadSetup(){
  $("readinessSummary").className="tag "+(o.readyForPilot?"good":"warn");
  $("readinessList").innerHTML=o.checks.map(x=>'<article class="card" style="display:flex;align-items:flex-start;gap:12px"><span class="tag '+(x.done?"good":"warn")+'">'+(x.done?"Complete":"Action needed")+'</span><div><strong>'+safe(x.label)+'</strong><div class="muted" style="font-size:12px;margin-top:4px">'+safe(x.detail)+'</div></div></article>').join("");
 }
+async function loadPrivacyApproval(){
+ const card=$("privacyApprovalCard");
+ if(!["owner","admin"].includes(currentRole)){card.classList.add("hidden");return;}
+ card.classList.remove("hidden");
+ const d=await api("/api/admin/privacy-approval");
+ const approved=Boolean(d.approved);
+ const a=d.approval;
+ $("privacyApprovalStatus").textContent=approved
+  ? "Current approval recorded · "+(a.approved_at?date(a.approved_at):"date unavailable")+". "+(a.policy_version||"")
+  : "No current approval is recorded. Guest chat remains blocked until an authorised hotel owner/admin completes this review.";
+ $("privacyApprovalStatus").className="notice "+(approved?"good":"");
+ $("recordPrivacyApproval").disabled=approved;
+ $("revokePrivacyApproval").hidden=!approved;
+ ["privacyPurpose","privacyRetention","privacyBackups","privacyAccess","privacyDeletion"].forEach(id=>{$(id).checked=false;$(id).disabled=approved;});
+}
+$("recordPrivacyApproval").addEventListener("click",async()=>{
+ const ids=["privacyPurpose","privacyRetention","privacyBackups","privacyAccess","privacyDeletion"];
+ if(ids.some(id=>!$(id).checked)){notice("Review and acknowledge every item before recording approval.","error");return;}
+ if(!confirm("Confirm that an authorised hotel owner/admin has reviewed the hotel's real privacy, retention, backup, access and deletion arrangements?"))return;
+ const button=$("recordPrivacyApproval");button.disabled=true;
+ try{await api("/api/admin/privacy-approval",{method:"PUT",body:JSON.stringify({policyVersion:"2026-11-14-v1",purpose:true,retention:true,backups:true,access:true,deletion:true})});showToast("Hotel acknowledgement recorded. This is not a compliance certification.");await loadSetup();}
+ catch(err){notice(err.message,"error");}finally{button.disabled=false;}
+});
+$("revokePrivacyApproval").addEventListener("click",async()=>{
+ if(!confirm("Revoke this hotel's privacy approval? New guest-chat requests will be blocked immediately."))return;
+ const button=$("revokePrivacyApproval");button.disabled=true;
+ try{await api("/api/admin/privacy-approval",{method:"DELETE",body:"{}"});showToast("Hotel approval revoked. Guest chat is blocked.");await loadSetup();}
+ catch(err){notice(err.message,"error");}finally{button.disabled=false;}
+});
+
 $("settingsForm").addEventListener("submit",async e=>{e.preventDefault();try{await api("/api/admin/settings",{method:"PUT",body:JSON.stringify({website_url:$("hotelWebsite").value,support_email:$("supportEmail").value,timezone:$("hotelTimezone").value,language:$("hotelLanguage").value,fallback_instructions:$("fallbackInstructions").value})});showToast("Hotel profile saved.");await loadSetup();}catch(err){notice(err.message,"error");}});
 
 async function loadRevenueWebhook(){

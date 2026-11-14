@@ -6,9 +6,13 @@ on:
   pull_request:
     branches: [main, improve-booking-intent-handoffs]
 
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     services:
       postgres:
         image: postgres:16

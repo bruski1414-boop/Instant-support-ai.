@@ -25,9 +25,9 @@ function validateWebhookUrl(value) {
   let url;
   try { url = new URL(String(value || "").trim()); } catch { throw new Error("Enter a valid HTTPS notification URL."); }
   const host = url.hostname.toLowerCase();
-  const literalHost = host.replace(/^\\[|\\]$/g, "");
+  const literalHost = host;
   if (url.protocol !== "https:" || url.username || url.password || (url.port && url.port !== "443") ||
-      isIP(literalHost) !== 0 || host === "localhost" || host.endsWith(".localhost") || host.endsWith(".local") || host.endsWith(".internal") || host.endsWith(".test") || host.endsWith(".invalid") || host.endsWith(".example") ||
+      isIP(literalHost) !== 0 || host.startsWith("[") || host === "localhost" || host.endsWith(".localhost") || host.endsWith(".local") || host.endsWith(".internal") || host.endsWith(".test") || host.endsWith(".invalid") || host.endsWith(".example") ||
       /^127\./.test(host) || /^10\./.test(host) || /^192\.168\./.test(host) ||
       /^169\.254\./.test(host) || /^172\.(1[6-9]|2[0-9]|3[01])\./.test(host) ||
       host === "::1" || host.startsWith("[fc") || host.startsWith("[fd") || host.startsWith("[fe80")) {

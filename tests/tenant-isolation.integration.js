@@ -434,6 +434,7 @@ try {
   const revenueABody = await revenueA.json();
   const revenueBBody = await revenueB.json();
   assert.ok(revenueABody.events.some(event => event.external_reference === linkedEvent.externalReference));
+  assert.ok(revenueABody.events.some(event => event.external_reference === linkedAddonEvent.externalReference), "the second linked revenue event must appear in the audit history");
   assert.ok(!revenueABody.events.some(event => event.external_reference === unlinkedEvent.externalReference));
   assert.ok(revenueBBody.events.some(event => event.external_reference === unlinkedEvent.externalReference));
   assert.ok(!revenueBBody.events.some(event => event.external_reference === linkedEvent.externalReference));

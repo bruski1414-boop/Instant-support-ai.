@@ -69,8 +69,13 @@ function createMewsConnectionStore({ db, encryptionKey, clientName = "Veyra AI/0
     const connection = await resolveConnection(organizationId, ['configured', 'error', 'verified'], false);
     if (!connection) throw new Error("No Mews connection is configured for this hotel.");
     const [configuration, services] = await Promise.all([
-      connection.client.getConfiguration(),
-      connection.client.getAllServices({ serviceIds: [connection.service.id], maxPages: 2, count: 100 })
+      connection.client.getConfiguration({ enterpriseId: connection.propertyReference }),
+      connection.client.getAllServices({
+        enterpriseIds: [connection.propertyReference],
+        serviceIds: [connection.service.id],
+        maxPages: 2,
+        count: 100
+      })
     ]);
     if (!configuration.enterprise || configuration.enterprise.id !== connection.propertyReference) {
       throw new Error("The configured property reference does not match the authenticated Mews property.");

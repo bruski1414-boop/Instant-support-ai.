@@ -6,6 +6,7 @@
   "scripts": {
     "start": "node server.js",
     "provision:hotel": "node scripts/provision-hotel.js",
+    "mews:check": "node scripts/mews-demo-check.js",
     "dev": "node --watch server.js",
     "test": "node --check server.js && node --check storage-integrations.js && node --check storage-security.js && node --check guest-support-policy.js && node --check revenue-attribution.js && node --check guest-messaging.js && node --check pilot-readiness.js && node --check pms-integration.js && node --check mews-connector.js && node --test",
     "test:integration": "node tests/tenant-isolation.integration.js"

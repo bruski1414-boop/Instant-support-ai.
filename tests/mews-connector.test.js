@@ -28,6 +28,25 @@ test("uses the official Mews demo host and required authentication body", async 
   assert.equal(config.enterprise.name, "Demo Hotel");
 });
 
+test("scopes portfolio configuration requests to the selected enterprise", async () => {
+  const mock = mockFetch(async () => jsonResponse({
+    NowUtc: "2026-11-14T10:00:00Z",
+    Enterprise: { Id: "hotel-2", Name: "Second Demo Hotel", TimeZoneIdentifier: "Europe/Helsinki" }
+  }));
+  const client = createMewsConnectorClient({ ...credentials, fetchImpl: mock.fetchImpl });
+  const config = await client.getConfiguration({ enterpriseId: "hotel-2" });
+  const body = JSON.parse(mock.calls[0].options.body);
+  assert.equal(body.EnterpriseId, "hotel-2");
+  assert.equal(config.enterprise.id, "hotel-2");
+});
+
+test("rejects blank enterprise scope before network access", async () => {
+  const mock = mockFetch(async () => jsonResponse({}));
+  const client = createMewsConnectorClient({ ...credentials, fetchImpl: mock.fetchImpl });
+  await assert.rejects(() => client.getConfiguration({ enterpriseId: "  " }), /enterpriseId is required/);
+  assert.equal(mock.calls.length, 0);
+});
+
 test("refuses production or arbitrary API hosts", () => {
   assert.throws(() => createMewsConnectorClient({ ...credentials, baseUrl: "https://api.mews.com" }), /demo environment/);
   assert.throws(() => createMewsConnectorClient({ ...credentials, baseUrl: "https://attacker.invalid" }), /demo environment/);

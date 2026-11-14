@@ -111,6 +111,15 @@ main{padding:28px clamp(16px,4vw,48px);max-width:1450px;width:100%;margin:auto}.
    <div class="card"><div class="metriclabel">Resolved total</div><div class="metric" id="mResolved">—</div></div>
    <div class="card"><div class="metriclabel">Open staff handoffs</div><div class="metric" id="mOpen">—</div></div>
   </div>
+  <div class="sectionrow"><h2>Support performance</h2><span class="muted">Trailing 30 days · measured conversation activity</span></div>
+  <div class="grid" id="supportPerformance">
+   <div class="card"><div class="metriclabel">Conversations · 30 days</div><div class="metric" id="performanceConversations">—</div></div>
+   <div class="card"><div class="metriclabel">AI-only so far</div><div class="metric" id="performanceAiOnly">—</div><div class="muted">No staff reply recorded yet; not proof of resolution.</div></div>
+   <div class="card"><div class="metriclabel">Staff-replied conversations</div><div class="metric" id="performanceStaff">—</div></div>
+   <div class="card"><div class="metriclabel">Staff handoff rate</div><div class="metric" id="performanceHandoff">—</div></div>
+   <div class="card"><div class="metriclabel">Median first AI reply</div><div class="metric" id="performanceMedianReply">—</div></div>
+  </div>
+  <p class="muted">These are operational counts and response-time measurements, not claimed staff-time savings or revenue caused by Veyra.</p>
   <div id="revenueSection">
   <div class="sectionrow"><h2>Revenue evidence</h2><span class="muted" id="revenueWindowLabel">Loading exact reporting window…</span></div>
   <div class="grid" id="revenueSummary">
@@ -220,8 +229,14 @@ function switchPanel(name){
  loadPanel(name);
 }
 async function loadOverview(){
- const d=await api("/api/admin/overview");const m=d.metrics||{};
+ const [d,p]=await Promise.all([api("/api/admin/overview"),api("/api/admin/performance")]);const m=d.metrics||{};
  $("mToday").textContent=safe(m.conversations_today||0);$("mWeek").textContent=safe(m.conversations_7d||0);$("mResolved").textContent=safe(m.resolved_total||0);$("mOpen").textContent=safe(m.open_escalations||0);
+ $("performanceConversations").textContent=safe(p.total_conversations||0);
+ $("performanceAiOnly").textContent=safe(p.ai_only_so_far||0);
+ $("performanceStaff").textContent=safe(p.staff_replied_conversations||0);
+ $("performanceHandoff").textContent=(Number.isFinite(Number(p.handoff_rate_percent))?Number(p.handoff_rate_percent).toFixed(1)+"%":"—");
+ const firstReply=Number(p.median_first_ai_response_seconds);
+ $("performanceMedianReply").textContent=Number.isFinite(firstReply)?(firstReply<60?Math.round(firstReply)+" sec":(firstReply/60).toFixed(1)+" min"):"—";
  $("revenueConversation").innerHTML='<option value="">No Veyra conversation — hotel-reported only</option>'+(d.conversations||[]).map(c=>'<option value="'+safe(c.id)+'">'+safe(c.id).slice(0,8)+' · '+safe(c.status)+' · '+date(c.started_at)+'</option>').join("");
  const rows=(d.conversations||[]).map(c=>'<tr><td><strong>'+safe(c.id).slice(0,8)+'</strong></td><td>'+safe(c.latest_message||"No message preview")+'</td><td>'+statusTag(c.status)+'</td><td>'+date(c.started_at)+'</td></tr>').join("");
  if(["owner","admin"].includes(currentRole)){await loadRevenue();$("revenueSection").classList.remove("hidden");}else{$("revenueSection").classList.add("hidden");}

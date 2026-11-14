@@ -366,7 +366,7 @@ test("AI and staff integrations require live verification before onboarding mark
   assert.match(server, /ai\.models\.retrieve\(MODEL/);
   assert.match(server, /veyra\.integration\.test/);
   assert.match(server, /verified_at,verified_by/);
-  assert.match(server, /handoffVerified=Boolean\(handoffConfigured&&verified\.staff_webhook\)/);
+  assert.match(server, /handoffVerified=Boolean\(handoffConfigured&&verified\.staff_webhook\)/);\n  assert.match(server, /FROM organization_staff_webhooks WHERE organization_id=\$1/);
 });
 
 

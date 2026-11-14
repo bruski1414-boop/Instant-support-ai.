@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { randomUUID, randomBytes, scrypt as scryptCallback, createHash } from "node:crypto";
+import { createServer } from "node:http";
+import { randomUUID, randomBytes, scrypt as scryptCallback, createHash, createHmac } from "node:crypto";
 import { promisify } from "node:util";
 import pg from "pg";
 const { Pool } = pg;
@@ -25,6 +26,32 @@ const tenants = [
 let child;
 let childOutput = "";
 let serverReady = false;
+const webhookSecret = "ci-webhook-secret-" + tag;
+const webhookRequests = [];
+const mockAiServer = createServer(async (req, res) => {
+  let raw = "";
+  for await (const chunk of req) raw += chunk;
+  let request = {};
+  try { request = JSON.parse(raw); } catch {}
+  const question = String(request.messages?.find(message => message.role === "user")?.content || "");
+  const answer = /breakfast/i.test(question) ? { reply: "Breakfast is served daily from 6:30 AM to 10:30 AM.", needsHuman: false, handoffReason: "" } : { reply: "I will ask the hotel team to help you.", needsHuman: true, handoffReason: "Staff assistance requested in integration test." };
+  res.writeHead(200, { "content-type": "application/json" });
+  res.end(JSON.stringify({ id: "chatcmpl-ci", object: "chat.completion", created: 1, model: "mock-veyra-test", choices: [{ index: 0, message: { role: "assistant", content: JSON.stringify(answer) }, finish_reason: "stop" }] }));
+});
+const mockWebhookServer = createServer(async (req, res) => {
+  let raw = "";
+  for await (const chunk of req) raw += chunk;
+  webhookRequests.push({ body: raw, signature: req.headers["x-veyra-signature"] });
+  res.writeHead(200, { "content-type": "application/json" });
+  res.end(JSON.stringify({ accepted: true }));
+});
+async function listen(server) {
+  await new Promise((resolve, reject) => { server.once("error", reject); server.listen(0, "127.0.0.1", resolve); });
+  return server.address().port;
+}
+async function closeServer(server) {
+  if (server.listening) await new Promise(resolve => server.close(resolve));
+}
 
 async function waitForServer() {
   for (let attempt = 0; attempt < 100; attempt += 1) {

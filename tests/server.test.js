@@ -237,6 +237,16 @@ test("knowledge documents retain tenant-scoped version history", () => {
   assert.match(dashboard, /knowledgeHistory/);
 });
 
+test("hotel policy text import loads a limited browser-side unapproved draft", () => {
+  const dashboard = fs.readFileSync("dashboard.html", "utf8");
+  assert.match(dashboard, /id="kImportFile" type="file" accept="\.txt,\.md,text\/plain,text\/markdown"/);
+  assert.match(dashboard, /file\.size>12000/);
+  assert.match(dashboard, /content\.length>12000/);
+  assert.match(dashboard, /\$\("kApproved"\)\.checked=false/);
+  assert.match(dashboard, /Loaded as an unapproved draft/);
+  assert.match(dashboard, /Imported draft:/);
+});
+
 test("knowledge approval cannot use an expired review date and overdue documents require a new review date", () => {
   const server = fs.readFileSync("server.js", "utf8");
   const dashboard = fs.readFileSync("dashboard.html", "utf8");

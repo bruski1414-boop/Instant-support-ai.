@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { randomUUID, randomBytes, scrypt as scryptCallback, createHash } from "node:crypto";
+import { promisify } from "node:util";
 import pg from "pg";
 const { Pool } = pg;
 
@@ -73,6 +74,20 @@ async function login(tenant) {
   return cookie;
 }
 
+async function seedStaff(tenant) {
+  const org = await pool.query("SELECT id FROM organizations WHERE slug=$1", [tenant.slug]);
+  const password = `Staff-test-password-${tag}`;
+  const salt = randomBytes(16).toString("hex");
+  const key = await promisify(scryptCallback)(password, salt, 64);
+  const passwordHash = `${salt}:${Buffer.from(key).toString("hex")}`;
+  const email = `staff-${tag}@example.test`;
+  await pool.query(
+    "INSERT INTO users(organization_id,email,password_hash,role) VALUES($1,$2,$3,'staff')",
+    [org.rows[0].id, email, passwordHash],
+  );
+  return { slug: tenant.slug, email, password };
+}
+
 async function seedConversation(tenant) {
   const org = await pool.query("SELECT id FROM organizations WHERE slug=$1", [tenant.slug]);
   assert.equal(org.rowCount, 1);
@@ -88,8 +103,46 @@ async function seedConversation(tenant) {
 }
 
 async function readTranscript(cookie, conversationId) {
-  return fetch(`${baseUrl}/api/admin/conversations/${conversationId}`, {
-    headers: { cookie },
+  return fetch(`${baseUrl}/api/admin/conversations/${conversationId}`, { headers: { cookie } });
+}
+
+async function csrfToken(cookie) {
+  const response = await fetch(`${baseUrl}/api/auth/csrf`, { headers: { cookie } });
+  const body = await response.json();
+  assert.equal(response.status, 200, JSON.stringify(body));
+  return body.csrfToken;
+}
+
+async function submitRevenue(cookie, csrf, event) {
+  return fetch(`${baseUrl}/api/admin/revenue`, {
+    method: "POST",
+    headers: { cookie, "content-type": "application/json", "X-CSRF-Token": csrf },
+    body: JSON.stringify(event),
+  });
+}
+
+async function readRevenue(cookie) {
+  return fetch(`${baseUrl}/api/admin/revenue`, { headers: { cookie } });
+}
+
+async function rotateRevenueWebhook(cookie, csrf) {
+  const response = await fetch(`${baseUrl}/api/admin/integrations/revenue-webhook/rotate`, {
+    method: "POST",
+    headers: { cookie, "X-CSRF-Token": csrf, "content-type": "application/json" },
+    body: "{}",
+  });
+  const body = await response.json();
+  assert.equal(response.status, 201, JSON.stringify(body));
+  assert.equal(body.active, true);
+  assert.ok(typeof body.secret === "string" && body.secret.length >= 40);
+  return body;
+}
+
+async function sendProviderRevenue(slug, secret, event) {
+  return fetch(`${baseUrl}/api/integrations/${slug}/revenue`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "X-Veyra-Webhook-Token": secret || "" },
+    body: JSON.stringify(event),
   });
 }
 
@@ -130,6 +183,7 @@ try {
 
   for (const tenant of tenants) await provision(tenant);
   const [cookieA, cookieB] = await Promise.all(tenants.map(login));
+  const staffCookie = await login(await seedStaff(tenants[0]));
   await Promise.all(tenants.map(seedConversation));
   await Promise.all(tenants.map(seedKnowledge));
 
@@ -160,7 +214,340 @@ try {
   assert.equal(crossKnowledgeAtoB.status, 404, "tenant A must not read tenant B knowledge history");
   const crossKnowledgeBtoA = await readKnowledgeVersions(cookieB, tenants[0].knowledgeId);
   assert.equal(crossKnowledgeBtoA.status, 404, "tenant B must not read tenant A knowledge history");
-  console.log("PASS: tenant-scoped transcripts and knowledge history verified for two hotel workspaces.");
+
+  const [csrfA, csrfB] = await Promise.all([csrfToken(cookieA), csrfToken(cookieB)]);
+  const staffCsrf = await csrfToken(staffCookie);
+  const staffRotateWebhook = await fetch(`${baseUrl}/api/admin/integrations/revenue-webhook/rotate`, {
+    method: "POST",
+    headers: { cookie: staffCookie, "X-CSRF-Token": staffCsrf, "content-type": "application/json" },
+    body: "{}",
+  });
+  assert.equal(staffRotateWebhook.status, 403, "staff accounts must not rotate financial webhook credentials");
+  const staffRevenueRead = await readRevenue(staffCookie);
+  assert.equal(staffRevenueRead.status, 403, "staff accounts must not read hotel financial records");
+  const staffRevenueWrite = await submitRevenue(staffCookie, staffCsrf, {
+    type: "booking_confirmed",
+    externalReference: `STAFF-${tag}-SHOULD-BE-BLOCKED`,
+    sourceReference: `Staff attempted write ${tag}`,
+    amount: "10.00",
+    currency: "EUR",
+    occurredAt: new Date(Date.now() - 10_000).toISOString(),
+  });
+  assert.equal(staffRevenueWrite.status, 403, "staff accounts must not create financial records");
+
+  const [webhookA, webhookB] = await Promise.all([
+    rotateRevenueWebhook(cookieA, csrfA),
+    rotateRevenueWebhook(cookieB, csrfB),
+  ]);
+  assert.equal(webhookA.endpoint, `/api/integrations/${tenants[0].slug}/revenue`);
+  const webhookStatus = await fetch(`${baseUrl}/api/admin/integrations/revenue-webhook`, { headers: { cookie: cookieA } });
+  assert.equal(webhookStatus.status, 200);
+  const webhookStatusBody = await webhookStatus.json();
+  assert.equal(webhookStatusBody.active, true);
+  assert.equal(webhookStatusBody.endpoint, webhookA.endpoint);
+  assert.equal(Object.hasOwn(webhookStatusBody, "secret"), false, "webhook status must never return the secret");
+  const staffWebhookStatus = await fetch(`${baseUrl}/api/admin/integrations/revenue-webhook`, { headers: { cookie: staffCookie } });
+  assert.equal(staffWebhookStatus.status, 403, "staff accounts must not view webhook configuration");
+  const storedWebhook = await pool.query(
+    "SELECT token_hash,last_received_at FROM organization_revenue_webhooks WHERE organization_id=(SELECT id FROM organizations WHERE slug=$1)",
+    [tenants[0].slug],
+  );
+  assert.equal(storedWebhook.rowCount, 1);
+  assert.equal(storedWebhook.rows[0].token_hash, createHash("sha256").update(webhookA.secret).digest("hex"));
+  assert.notEqual(storedWebhook.rows[0].token_hash, webhookA.secret, "plaintext webhook secret must never be stored");
+
+  const providerEvent = {
+    type: "booking_confirmed",
+    externalReference: `PMS-WEBHOOK-${tag}-BOOKING`,
+    sourceReference: `Hotel PMS event ${tag}`,
+    amount: "890.00",
+    currency: "EUR",
+    occurredAt: new Date(Date.now() - 20_000).toISOString(),
+    conversationId: tenants[0].conversationId,
+  };
+  const noSecret = await sendProviderRevenue(tenants[0].slug, "", providerEvent);
+  assert.equal(noSecret.status, 401, "webhook requests without a secret must be rejected");
+  const wrongTenantSecret = await sendProviderRevenue(tenants[1].slug, webhookA.secret, providerEvent);
+  assert.equal(wrongTenantSecret.status, 401, "a hotel's secret must not authenticate for another hotel");
+  const badEvent = await sendProviderRevenue(tenants[0].slug, webhookA.secret, { ...providerEvent, type: "booking_enquiry" });
+  assert.equal(badEvent.status, 400, "enquiries must not be counted as revenue");
+
+  const providerCreate = await sendProviderRevenue(tenants[0].slug, webhookA.secret, providerEvent);
+  const sameReferenceOtherHotel = await sendProviderRevenue(tenants[1].slug, webhookB.secret, {
+    ...providerEvent,
+    sourceReference: `Tenant B PMS event ${tag}`,
+  });
+  assert.equal(sameReferenceOtherHotel.status, 201, "identical external references must remain isolated between hotel workspaces");
+
+  assert.equal(providerCreate.status, 201, await providerCreate.clone().text());
+  const providerCreatedBody = await providerCreate.json();
+  assert.equal(providerCreatedBody.event.attribution_status, "hotel_reported_unlinked");
+  assert.equal(providerCreatedBody.event.conversation_id, null, "provider webhook events must never auto-claim Veyra attribution");
+  const providerDuplicate = await sendProviderRevenue(tenants[0].slug, webhookA.secret, providerEvent);
+  assert.equal(providerDuplicate.status, 409, "replayed provider events must not double-count revenue");
+  const webhookState = await pool.query(
+    "SELECT last_received_at FROM organization_revenue_webhooks WHERE organization_id=(SELECT id FROM organizations WHERE slug=$1)",
+    [tenants[0].slug],
+  );
+  assert.ok(webhookState.rows[0].last_received_at, "successful provider events must update last-received time");
+  const webhookAudit = await pool.query(
+    "SELECT count(*)::int AS count FROM audit_logs WHERE action='revenue.webhook_received' AND target_id=$1 AND actor_user_id IS NULL",
+    [providerCreatedBody.event.id],
+  );
+  assert.equal(webhookAudit.rows[0].count, 1, "provider revenue events must have a system audit record");
+
+  const rotatedWebhook = await rotateRevenueWebhook(cookieA, csrfA);
+  const oldSecretAttempt = await sendProviderRevenue(tenants[0].slug, webhookA.secret, {
+    ...providerEvent,
+    externalReference: `PMS-WEBHOOK-${tag}-OLD-SECRET`,
+  });
+  assert.equal(oldSecretAttempt.status, 401, "rotating a webhook secret must immediately revoke the previous secret");
+  const newSecretEvent = await sendProviderRevenue(tenants[0].slug, rotatedWebhook.secret, {
+    ...providerEvent,
+    externalReference: `PMS-WEBHOOK-${tag}-AFTER-ROTATION`,
+  });
+  assert.equal(newSecretEvent.status, 201, "the rotated webhook secret must authenticate successfully");
+
+  const disableWebhook = await fetch(`${baseUrl}/api/admin/integrations/revenue-webhook`, {
+    method: "DELETE",
+    headers: { cookie: cookieA, "X-CSRF-Token": csrfA, "content-type": "application/json" },
+    body: "{}",
+  });
+  assert.equal(disableWebhook.status, 200, "owners must be able to disable a revenue webhook");
+  const disabledAttempt = await sendProviderRevenue(tenants[0].slug, rotatedWebhook.secret, {
+    ...providerEvent,
+    externalReference: `PMS-WEBHOOK-${tag}-AFTER-DISABLE`,
+  });
+  assert.equal(disabledAttempt.status, 401, "a disabled webhook must reject its previously active secret");
+  const disabledStatus = await fetch(`${baseUrl}/api/admin/integrations/revenue-webhook`, { headers: { cookie: cookieA } });
+  assert.equal((await disabledStatus.json()).active, false);
+
+
+  const linkedEvent = {
+    type: "booking_confirmed",
+    externalReference: `PMS-${tag}-BOOKING-A`,
+    sourceReference: `Manager report / PMS export #${tag}`,
+    amount: "250.50",
+    currency: "EUR",
+    occurredAt: new Date(Date.now() - 60_000).toISOString(),
+    conversationId: tenants[0].conversationId,
+  };
+  const createA = await submitRevenue(cookieA, csrfA, linkedEvent);
+  assert.equal(createA.status, 201, await createA.clone().text());
+  const createdA = await createA.json();
+  assert.equal(createdA.event.attribution_status, "veyra_linked_hotel_attested");
+  assert.equal(createdA.event.amount_minor, "25050");
+  const linkedAddonEvent = {
+    type: "addon_paid",
+    externalReference: `PAY-${tag}-ADDON-A`,
+    sourceReference: `Hotel payment reconciliation ${tag}`,
+    amount: "20.00",
+    currency: "EUR",
+    occurredAt: new Date(Date.now() - 45_000).toISOString(),
+    conversationId: tenants[0].conversationId,
+  };
+  const orgAForRevenue = await pool.query("SELECT id FROM organizations WHERE slug=$1", [tenants[0].slug]);
+  const linkedAddonInserted = await pool.query(
+    "INSERT INTO revenue_events(organization_id,event_type,external_reference,source_reference,amount_minor,currency,occurred_at,conversation_id,attribution_status) VALUES($1,'addon_paid',$2,$3,2000,'EUR',$4,$5,'veyra_linked_hotel_attested') RETURNING id",
+    [orgAForRevenue.rows[0].id, linkedAddonEvent.externalReference, linkedAddonEvent.sourceReference, linkedAddonEvent.occurredAt, tenants[0].conversationId],
+  );
+  assert.equal(linkedAddonInserted.rowCount, 1, "the second linked event fixture must be stored");
+  await pool.query(
+    "INSERT INTO audit_logs(organization_id,action,target_type,target_id) VALUES($1,'revenue.attested','revenue_event',$2)",
+    [orgAForRevenue.rows[0].id, linkedAddonInserted.rows[0].id],
+  );
+  const auditA = await pool.query(
+    "SELECT count(*)::int AS count FROM audit_logs WHERE action='revenue.attested' AND target_id=$1",
+    [createdA.event.id],
+  );
+  assert.equal(auditA.rows[0].count, 1, "accepted revenue must have an audit record");
+
+  const refundEvent = {
+    type: "refund",
+    originalType: "booking_confirmed",
+    originalExternalReference: linkedEvent.externalReference,
+    externalReference: "REFUND-" + tag + "-BOOKING-A",
+    sourceReference: "Hotel refund receipt " + tag,
+    amount: "50.50",
+    currency: "EUR",
+    occurredAt: new Date(Date.now() - 20000).toISOString(),
+  };
+  const refundResponse = await fetch(baseUrl + "/api/admin/revenue/adjustments", { method: "POST", headers: { cookie: cookieA, "content-type": "application/json", "X-CSRF-Token": csrfA }, body: JSON.stringify(refundEvent) });
+  assert.equal(refundResponse.status, 201, await refundResponse.clone().text());
+  const refundBody = await refundResponse.json();
+  assert.equal(refundBody.adjustment.amount_minor, "5050");
+  const duplicateRefund = await fetch(baseUrl + "/api/admin/revenue/adjustments", { method: "POST", headers: { cookie: cookieA, "content-type": "application/json", "X-CSRF-Token": csrfA }, body: JSON.stringify(refundEvent) });
+  assert.equal(duplicateRefund.status, 409, "duplicate refund references must be rejected");
+  const excessiveRefund = await fetch(baseUrl + "/api/admin/revenue/adjustments", { method: "POST", headers: { cookie: cookieA, "content-type": "application/json", "X-CSRF-Token": csrfA }, body: JSON.stringify({ ...refundEvent, externalReference: "REFUND-" + tag + "-TOO-LARGE", amount: "200.01" }) });
+  assert.equal(excessiveRefund.status, 400, "refunds must not exceed the original event's remaining amount");
+  const wrongCurrencyRefund = await fetch(baseUrl + "/api/admin/revenue/adjustments", { method: "POST", headers: { cookie: cookieA, "content-type": "application/json", "X-CSRF-Token": csrfA }, body: JSON.stringify({ ...refundEvent, externalReference: "REFUND-" + tag + "-WRONG-CURRENCY", currency: "USD" }) });
+  assert.equal(wrongCurrencyRefund.status, 400, "refund currency must match the original event");
+  const staffRefund = await fetch(baseUrl + "/api/admin/revenue/adjustments", { method: "POST", headers: { cookie: staffCookie, "content-type": "application/json", "X-CSRF-Token": staffCsrf }, body: JSON.stringify({ ...refundEvent, externalReference: "REFUND-" + tag + "-STAFF" }) });
+  assert.equal(staffRefund.status, 403, "staff accounts must not record financial adjustments");
+  const afterRefund = await readRevenue(cookieA);
+  const afterRefundBody = await afterRefund.json();
+  assert.equal(afterRefundBody.linkedTotals[0].gross_amount_minor, "27050");
+  assert.equal(afterRefundBody.linkedTotals[0].adjusted_amount_minor, "5050");
+  assert.equal(afterRefundBody.linkedTotals[0].amount_minor, "22000", "linked net revenue must subtract refunds");
+  const secondRefund = await fetch(baseUrl + "/api/admin/revenue/adjustments", {
+    method: "POST",
+    headers: { cookie: cookieA, "content-type": "application/json", "X-CSRF-Token": csrfA },
+    body: JSON.stringify({ ...refundEvent, externalReference: "REFUND-" + tag + "-SECOND", amount: "25.00" }),
+  });
+  assert.equal(secondRefund.status, 201, await secondRefund.clone().text());
+  const afterSecondRefund = await readRevenue(cookieA);
+  const afterSecondRefundBody = await afterSecondRefund.json();
+  assert.equal(afterSecondRefundBody.linkedTotals[0].gross_amount_minor, "27050", "multiple adjustments must not multiply gross revenue");
+  assert.equal(afterSecondRefundBody.linkedTotals[0].adjusted_amount_minor, "7550");
+  assert.equal(afterSecondRefundBody.linkedTotals[0].amount_minor, "19500");
+  assert.equal(afterSecondRefundBody.linkedTotals[0].event_count, 2);
+  assert.equal(afterSecondRefundBody.linkedConversationCount, 1, "multiple linked events from one conversation must count as one distinct conversation");
+  assert.equal(afterSecondRefundBody.windowDays, 30);
+  assert.equal(Date.parse(afterSecondRefundBody.windowEnd) - Date.parse(afterSecondRefundBody.windowStart), 30 * 24 * 60 * 60 * 1000, "the reporting window must be an exact rolling 30 days");
+  assert.equal(afterSecondRefundBody.adjustments.length, 2);
+  const duplicateA = await submitRevenue(cookieA, csrfA, linkedEvent);
+  assert.equal(duplicateA.status, 409, "duplicate revenue references must be rejected");
+
+  const crossTenantLink = await submitRevenue(cookieB, csrfB, {
+    ...linkedEvent,
+    externalReference: `PMS-${tag}-CROSS-TENANT`,
+    conversationId: tenants[0].conversationId,
+  });
+  assert.equal(crossTenantLink.status, 400, "a hotel cannot link revenue to another hotel's conversation");
+
+  const unlinkedEvent = {
+    type: "addon_paid",
+    externalReference: `PAY-${tag}-ADDON-B`,
+    sourceReference: `Hotel manager payment reconciliation ${tag}`,
+    amount: "75.00",
+    currency: "USD",
+    occurredAt: new Date(Date.now() - 30_000).toISOString(),
+  };
+  const createB = await submitRevenue(cookieB, csrfB, unlinkedEvent);
+  assert.equal(createB.status, 201, await createB.clone().text());
+  const createdB = await createB.json();
+  assert.equal(createdB.event.attribution_status, "hotel_reported_unlinked");
+
+  const [revenueA, revenueB] = await Promise.all([readRevenue(cookieA), readRevenue(cookieB)]);
+  assert.equal(revenueA.status, 200);
+  assert.equal(revenueB.status, 200);
+  const revenueABody = await revenueA.json();
+  const revenueBBody = await revenueB.json();
+  assert.ok(revenueABody.events.some(event => event.external_reference === linkedEvent.externalReference));
+  assert.ok(revenueABody.events.some(event => event.external_reference === linkedAddonEvent.externalReference), "the second linked revenue event must appear in the audit history");
+  assert.ok(!revenueABody.events.some(event => event.external_reference === unlinkedEvent.externalReference));
+  assert.ok(revenueBBody.events.some(event => event.external_reference === unlinkedEvent.externalReference));
+  assert.ok(!revenueBBody.events.some(event => event.external_reference === linkedEvent.externalReference));
+  assert.equal(revenueABody.linkedTotals.reduce((n, item) => n + Number(item.event_count), 0), 2);
+  assert.equal(revenueBBody.linkedTotals.reduce((n, item) => n + Number(item.event_count), 0), 0);
+  assert.equal(revenueABody.linkedConversationCount, 1);
+  assert.equal(revenueBBody.linkedConversationCount, 0, "one hotel must not see linked-conversation counts from another hotel");
+  assert.equal(revenueBBody.unlinkedTotals.reduce((n, item) => n + Number(item.event_count), 0), 2);
+
+  const missingCsrf = await fetch(`${baseUrl}/api/admin/revenue`, {
+    method: "POST",
+    headers: { cookie: cookieA, "content-type": "application/json" },
+    body: JSON.stringify(linkedEvent),
+  });
+  assert.equal(missingCsrf.status, 403, "revenue writes must require CSRF verification");
+
+  const deleteConversation = await fetch(`${baseUrl}/api/admin/conversations/${tenants[0].conversationId}`, {
+    method: "DELETE",
+    headers: { cookie: cookieA, "X-CSRF-Token": csrfA },
+  });
+  assert.equal(deleteConversation.status, 200, "owners must be able to delete their own conversation");
+  const afterDelete = await readRevenue(cookieA);
+  assert.equal(afterDelete.status, 200);
+  const afterDeleteBody = await afterDelete.json();
+  const deletedConversationEvent = afterDeleteBody.events.find(event => event.external_reference === linkedEvent.externalReference);
+  assert.equal(deletedConversationEvent.conversation_id, null);
+  assert.equal(deletedConversationEvent.attribution_status, "hotel_reported_unlinked");
+  const deletedAddonEvent = afterDeleteBody.events.find(event => event.external_reference === linkedAddonEvent.externalReference);
+  assert.equal(deletedAddonEvent.conversation_id, null);
+  assert.equal(deletedAddonEvent.attribution_status, "hotel_reported_unlinked");
+  assert.equal(afterDeleteBody.linkedTotals.reduce((n, item) => n + Number(item.event_count), 0), 0);
+  assert.equal(afterDeleteBody.linkedConversationCount, 0);
+
+  const orgA = await pool.query("SELECT id FROM organizations WHERE slug=$1", [tenants[0].slug]);
+  const retentionOld = await pool.query(
+    "INSERT INTO conversations(organization_id,channel,status,started_at,last_message_at) VALUES($1,'website','resolved',now()-interval '45 days',now()-interval '40 days') RETURNING id",
+    [orgA.rows[0].id],
+  );
+  const retentionProtected = await pool.query(
+    "INSERT INTO conversations(organization_id,channel,status,started_at,last_message_at) VALUES($1,'website','resolved',now()-interval '45 days',now()-interval '40 days') RETURNING id",
+    [orgA.rows[0].id],
+  );
+  await pool.query(
+    "INSERT INTO escalations(organization_id,conversation_id,reason,status) VALUES($1,$2,'Open staff follow-up','open')",
+    [orgA.rows[0].id, retentionProtected.rows[0].id],
+  );
+  const retentionRevenue = await submitRevenue(cookieA, csrfA, {
+    type: "booking_confirmed",
+    externalReference: `RETENTION-${tag}-BOOKING`,
+    sourceReference: "Hotel PMS retention test record",
+    amount: "125.00",
+    currency: "EUR",
+    occurredAt: new Date(Date.now() - 40 * 86400000).toISOString(),
+    conversationId: retentionOld.rows[0].id,
+  });
+  assert.equal(retentionRevenue.status, 201, await retentionRevenue.clone().text());
+
+  const saveRetention = await fetch(`${baseUrl}/api/admin/retention`, {
+    method: "PUT",
+    headers: { cookie: cookieA, "X-CSRF-Token": csrfA, "content-type": "application/json" },
+    body: JSON.stringify({ retentionDays: 30 }),
+  });
+  assert.equal(saveRetention.status, 200, await saveRetention.clone().text());
+  const staffRetentionChange = await fetch(`${baseUrl}/api/admin/retention`, {
+    method: "PUT",
+    headers: { cookie: staffCookie, "X-CSRF-Token": staffCsrf, "content-type": "application/json" },
+    body: JSON.stringify({ retentionDays: 30 }),
+  });
+  assert.equal(staffRetentionChange.status, 403, "staff cannot change retention policy");
+  const retentionPreview = await fetch(`${baseUrl}/api/admin/retention`, { headers: { cookie: cookieA } });
+  const retentionPreviewBody = await retentionPreview.json();
+  assert.equal(retentionPreviewBody.retentionDays, 30);
+  assert.equal(retentionPreviewBody.eligibleConversations, 1, "open escalations must protect old conversations");
+  const missingRetentionConfirm = await fetch(`${baseUrl}/api/admin/retention/cleanup`, {
+    method: "POST",
+    headers: { cookie: cookieA, "X-CSRF-Token": csrfA, "content-type": "application/json" },
+    body: JSON.stringify({}),
+  });
+  assert.equal(missingRetentionConfirm.status, 400, "retention deletion requires explicit confirmation");
+  const staffRetentionCleanup = await fetch(`${baseUrl}/api/admin/retention/cleanup`, {
+    method: "POST",
+    headers: { cookie: staffCookie, "X-CSRF-Token": staffCsrf, "content-type": "application/json" },
+    body: JSON.stringify({ confirm: true }),
+  });
+  assert.equal(staffRetentionCleanup.status, 403, "staff cannot run retention cleanup");
+  const retentionCleanup = await fetch(`${baseUrl}/api/admin/retention/cleanup`, {
+    method: "POST",
+    headers: { cookie: cookieA, "X-CSRF-Token": csrfA, "content-type": "application/json" },
+    body: JSON.stringify({ confirm: true }),
+  });
+  assert.equal(retentionCleanup.status, 200, await retentionCleanup.clone().text());
+  const retentionCleanupBody = await retentionCleanup.json();
+  assert.equal(retentionCleanupBody.deleted, 1);
+  assert.equal(retentionCleanupBody.remainingEligible, 0);
+  const retainedRevenue = await pool.query(
+    "SELECT conversation_id,attribution_status FROM revenue_events WHERE organization_id=$1 AND external_reference=$2",
+    [orgA.rows[0].id, `RETENTION-${tag}-BOOKING`],
+  );
+  assert.equal(retainedRevenue.rows[0].conversation_id, null);
+  assert.equal(retainedRevenue.rows[0].attribution_status, "hotel_reported_unlinked", "deleting a conversation must remove the Veyra-linked label");
+  const protectedConversation = await pool.query(
+    "SELECT id FROM conversations WHERE id=$1 AND organization_id=$2",
+    [retentionProtected.rows[0].id, orgA.rows[0].id],
+  );
+  assert.equal(protectedConversation.rowCount, 1, "an unresolved staff escalation must prevent retention deletion");
+  const retentionAudit = await pool.query(
+    "SELECT count(*)::int AS count FROM audit_logs WHERE organization_id=$1 AND action='retention.cleanup_executed' AND target_id='1'",
+    [orgA.rows[0].id],
+  );
+  assert.equal(retentionAudit.rows[0].count, 1, "retention cleanup must be audited");
+
+  console.log("PASS: tenant-scoped transcripts, knowledge history and revenue evidence verified for two hotel workspaces.");
+
 } finally {
   if (serverReady) {
     for (const tenant of tenants) {

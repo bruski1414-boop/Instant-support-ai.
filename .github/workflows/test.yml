@@ -4,11 +4,19 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
+    branches: [main, improve-booking-intent-handoffs]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: veyra-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     services:
       postgres:
         image: postgres:16
@@ -30,6 +38,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - run: npm install
+      - run: npm install --no-audit --no-fund
       - run: npm test
       - run: DATABASE_URL=postgres://postgres:postgres@localhost:5432/veyra_test DATABASE_SSL=false VEYRA_TENANT_TEST_DATABASE=true npm run test:integration

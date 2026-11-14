@@ -80,7 +80,7 @@ test("staff handoff queue links each escalation to its tenant-scoped guest conve
   assert.match(dashboard, /api\("\/api\/admin\/conversations\/"+encodeURIComponent\(view\.dataset\.id\)\)/);
   assert.match(dashboard, /id="escalationConversationDetail"/);
   assert.match(dashboard, /id="escalationReplyForm"/);
-  assert.match(dashboard, /\/api\/admin\/conversations\/"+encodeURIComponent\(id\)+"\/reply/);
+  assert.ok(dashboard.includes('api("/api/admin/conversations/"+encodeURIComponent(id)+"/reply"'));
 });
 
 test("dashboard and guest widget JavaScript parse cleanly", () => {

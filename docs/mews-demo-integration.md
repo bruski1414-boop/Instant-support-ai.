@@ -63,7 +63,7 @@ The admin API now supports one Mews demo connection per hotel workspace:
 
 The existing `STORAGE_TOKEN_ENCRYPTION_KEY` must be configured as a base64-encoded 32-byte key in the hosting secret manager. Never send Mews credentials in chat, commit them, place them in a browser bundle, or use credentials belonging to a different hotel. A hotel owner/operator should complete setup with an authorised adult platform operator supporting hosting configuration.
 
-Only the official Mews demo endpoint is enabled. The connection setup and verification do not yet enable guest-facing live availability; that requires a further review of the date-boundary calculation and wiring into the guest-response route. Failed verification remains retryable and never makes the connection eligible for guest availability.
+Only the official Mews demo endpoint is enabled. The hotel dashboard now provides a guided Mews setup flow: credential entry, encrypted save, read-only verification, connection status and owner-only disconnect. Saved credentials are never returned to the browser. Failed or expired verification remains retryable and never makes the connection eligible for guest availability.
 
 
 ## Guest chat full-stay availability
@@ -82,4 +82,17 @@ The public guest chat route can now accept an optional structured stay object al
 
 The widget reveals arrival and departure date fields when the guest asks about rooms or availability and sends them as `stay`. The server resolves only a connection whose status is `verified`, converts each property's local midnight to UTC, and requests all nightly inventory for the requested range. It reports the minimum inventory per room category across every night, never a single-night count as if it covered the whole stay. Requests over 30 nights, past dates, missing dates, incomplete provider responses, or API failures are not answered as available and are handed to staff.
 
-This is an availability lookup only. It does not create a reservation, hold inventory, quote a rate, or confirm a booking. The actual widget flow and API still require a connected, verified hotel Mews demo account to exercise end to end.
+This is an availability lookup only. It does not create a reservation, hold inventory, quote a rate, or confirm a booking. The actual widget flow and API still require an authorised hotel operator to connect and verify a Mews demo account before end-to-end testing. The dashboard does not accept production credentials; a verified demo account is required.
+
+
+## Dashboard connection workflow
+
+In the authenticated Hotel Setup panel, workspace owners and admins can:
+- View whether a Mews demo connection is absent, awaiting verification, or verified.
+- Enter the client token, access token, property/enterprise ID, daily accommodation service ID and property IANA time zone.
+- Save credentials encrypted server-side. Token values are cleared from the form and are never returned by the status API.
+- Run read-only verification of the authenticated property, configured timezone and active daily service.
+- Re-verify an expired connection. Guest-facing use requires verification less than 30 days old.
+- Disconnect the integration. Only the workspace owner can perform this action.
+
+The dashboard hides raw provider error details and only displays a safe verification status. Credential setup requires server-side `STORAGE_TOKEN_ENCRYPTION_KEY`. A hotel owner/operator and authorised adult platform administrator should handle the real demo-account credentials and hosting configuration; never paste credentials into chat or commit them.

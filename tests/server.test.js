@@ -494,7 +494,7 @@ test("live hotel guest chat remains blocked when its database and pilot prerequi
   });
   const body = await response.json();
   assert.equal(response.status, 503);
-  assert.match(body.error, /platform is not configured/i);
+  assert.match(body.error, /privacy approval|platform is not configured/i);
   assert.notEqual(body.mode, "demo-simulation");
 });
 

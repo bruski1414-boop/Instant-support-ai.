@@ -6,6 +6,7 @@ const { buildMewsStayAvailabilityContext, localMidnightToUtc } = require("../mew
 
 test("converts property-local midnight to UTC across the winter timezone offset", () => {
   assert.equal(localMidnightToUtc("2026-12-02", "Europe/Helsinki"), "2026-12-01T22:00:00.000Z");
+  assert.equal(localMidnightToUtc("2026-06-02", "Europe/Helsinki"), "2026-06-01T21:00:00.000Z");
 });
 
 test("reports the minimum inventory across every night, never a single-night maximum", async () => {
@@ -77,4 +78,6 @@ test("rejects missing, reversed and excessively long stays", async () => {
   assert.equal(missing.reason, "invalid_dates");
   assert.equal(reversed.reason, "invalid_dates");
   assert.equal(long.reason, "stay_too_long");
+  const past = await buildMewsStayAvailabilityContext({ connection, arrivalDate: "2026-11-13", departureDate: "2026-11-15", nowUtc: "2026-11-14T10:00:00.000Z" });
+  assert.equal(past.reason, "past_dates");
 });

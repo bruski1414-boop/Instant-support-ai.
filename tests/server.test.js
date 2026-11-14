@@ -243,6 +243,7 @@ test("hotel policy text import loads a limited browser-side unapproved draft", (
   assert.match(dashboard, /file\.size>12000/);
   assert.match(dashboard, /content\.length>12000/);
   assert.match(dashboard, /\$\("kApproved"\)\.checked=false/);
+  assert.match(dashboard, /\$\("kCategory"\)\.value="general"/);
   assert.match(dashboard, /Loaded as an unapproved draft/);
   assert.match(dashboard, /Imported draft:/);
 });

@@ -190,6 +190,8 @@ async function readKnowledgeVersions(cookie, documentId) {
 }
 
 try {
+  const mockAiPort = await listen(mockAiServer);
+  const mockWebhookPort = await listen(mockWebhookServer);
   child = spawn(process.execPath, ["server.js"], {
     cwd: process.cwd(),
     env: {
@@ -199,10 +201,17 @@ try {
       DATABASE_SSL: "false",
       BOOTSTRAP_TOKEN: `bootstrap-${tag}`,
       PLATFORM_PROVISIONING_TOKEN: token,
-      OPENAI_API_KEY: "",
-      STAFF_WEBHOOK_URL: "",
-      STAFF_WEBHOOK_SECRET: "",
-      GUEST_DATA_STORAGE_ENABLED: "false",
+      OPENAI_API_KEY: "ci-mock-api-key",
+      OPENAI_BASE_URL: "http://127.0.0.1:" + mockAiPort + "/v1",
+      STAFF_WEBHOOK_URL: "http://127.0.0.1:" + mockWebhookPort + "/notify",
+      STAFF_WEBHOOK_SECRET: webhookSecret,
+      GUEST_DATA_STORAGE_ENABLED: "true",
+      DURABLE_BACKUPS_VERIFIED: "true",
+      TENANT_ISOLATION_TESTS_PASSED: "true",
+      PROVIDER_OAUTH_TESTED: "true",
+      HOTEL_PRIVACY_APPROVED: "true",
+      STAFF_HANDOFF_TESTED: "true",
+      PILOT_RELEASE_APPROVED: "true",
     },
     stdio: ["ignore", "ignore", "pipe"],
   });

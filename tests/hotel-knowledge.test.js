@@ -46,11 +46,13 @@ test("uses category and body matches when the title differs", () => {
   assert.match(result.context, /Pool rules/);
 });
 
-test("falls back to a small approved-document sample when wording does not match", () => {
+test("returns no unrelated documents when wording does not match", () => {
   const result = buildRelevantKnowledge("Do you have a quiet place for reading?", docs);
   assert.equal(result.matched, false);
-  assert.equal(result.fallbackUsed, true);
-  assert.ok(result.selectedCount <= 3);
+  assert.equal(result.fallbackUsed, false);
+  assert.equal(result.noRelevantKnowledge, true);
+  assert.equal(result.selectedCount, 0);
+  assert.equal(result.context, "");
 });
 
 test("respects document and character limits", () => {

@@ -312,7 +312,7 @@ test("onboarding readiness requires verified storage authorization, a successful
   assert.match(server, /Boolean\(storage\.rows\[0\]\.last_sync_at\)/);
   assert.match(server, /storage\.rows\[0\]\.last_sync_status==="success"/);
   assert.match(server, /Hotel privacy and retention approval/);
-  assert.match(server, /no recorded hotel privacy approval/);
+  assert.match(server, /No current hotel owner\/admin privacy acknowledgement is recorded/);
   assert.match(server, /CREATE TABLE IF NOT EXISTS organization_privacy_approvals/);
   assert.match(server, /app\.put\("\/api\/admin\/privacy-approval",requireDb,auth,role\("owner","admin"\)/);
   assert.match(server, /app\.delete\("\/api\/admin\/privacy-approval",requireDb,auth,role\("owner","admin"\)/);

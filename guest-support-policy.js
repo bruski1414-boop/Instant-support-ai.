@@ -20,13 +20,14 @@ function requiresStaffEscalation(message) {
   const bookingChange =
     /\b(cancel|cancell?ation|change|modify|amend|move|reschedule|extend|shorten)\b.{0,55}\b(booking|reservation|stay|dates?|room)\b/i.test(text) ||
     /\b(booking|reservation|stay|dates?|room)\b.{0,55}\b(cancel|cancell?ation|change|modify|amend|move|reschedule|extend|shorten)\b/i.test(text);
+  const newReservation = /\b(?:please book|book me|reserve me|make me a reservation|i want to book|i would like to book|i want to reserve|i would like to reserve)\b/i.test(text);
   const financialOrAccountIssue =
     /\b(refund|chargeback|charged twice|double charged|incorrect charge|payment failed|payment problem|billing dispute|card was declined|fraudulent charge)\b/i.test(text);
   const specialServiceRequest =
     /\b(early check[- ]?in|late check[- ]?out)\b.{0,35}\b(request|please|need|want|arrange)\b/i.test(text) ||
     /\b(request|please arrange|can you arrange|i need)\b.{0,35}\b(early check[- ]?in|late check[- ]?out)\b/i.test(text);
 
-  return bookingChange || financialOrAccountIssue || specialServiceRequest;
+  return bookingChange || newReservation || financialOrAccountIssue || specialServiceRequest;
 }
 
 function requiresLiveAvailabilityCheck(message) {

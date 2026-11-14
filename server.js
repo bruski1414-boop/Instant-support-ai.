@@ -3,6 +3,7 @@ const express=require("express");
 const cors=require("cors");
 const rateLimit=require("express-rate-limit");
 const {tenantChatRateLimitKey}=require("./tenant-rate-limit");
+const {configureRenderProxyTrust}=require("./render-proxy");
 const OpenAI=require("openai");
 const crypto=require("node:crypto");
 const path=require("node:path");
@@ -28,8 +29,8 @@ const ai=process.env.OPENAI_API_KEY?new OpenAI({apiKey:process.env.OPENAI_API_KE
 const db=process.env.DATABASE_URL?new Pool({connectionString:process.env.DATABASE_URL,ssl:process.env.DATABASE_SSL==="false"?false:{rejectUnauthorized:false},max:5,connectionTimeoutMillis:5000}):null;
 const scrypt=promisify(crypto.scrypt);
 const prod=process.env.NODE_ENV==="production";
-// Render terminates TLS at one trusted proxy hop; use the forwarded client IP for rate limits.
-if (prod && process.env.RENDER_EXTERNAL_URL) app.set("trust proxy", 1);
+// Trust only Render's single proxy hop so client-IP rate limits use the real visitor IP.
+configureRenderProxyTrust(app);
 const cookie=prod?"__Host-veyra_session":"veyra_session";
 app.disable("x-powered-by");
 app.use((_q,r,n)=>{r.setHeader("X-Content-Type-Options","nosniff");r.setHeader("X-Frame-Options","DENY");r.setHeader("Referrer-Policy","strict-origin-when-cross-origin");r.setHeader("Permissions-Policy","camera=(),microphone=(),geolocation=()");n();});

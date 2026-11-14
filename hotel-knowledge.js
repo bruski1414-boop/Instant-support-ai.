@@ -10,7 +10,7 @@ function terms(value) {
   return String(value || "")
     .toLowerCase()
     .normalize("NFKD")
-    .replace(/[\\u0300-\\u036f]/g, "")
+    .replace(/[\u0300-\u036f]/g, "")
     .match(/[a-z0-9]{2,}/g) || [];
 }
 
@@ -64,17 +64,17 @@ function buildRelevantKnowledge(question, documents, options = {}) {
   const sections = [];
   const sources = [];
   let used = 0;
-  const separator = "\\n\\n---\\n\\n";
+  const separator = "\n\n---\n\n";
   for (const { doc, score, coverage } of selected) {
     const reviewed = doc.reviewed_at ? new Date(doc.reviewed_at).toISOString().slice(0, 10) : "not recorded";
     const reviewDue = doc.review_due_at ? String(doc.review_due_at).slice(0, 10) : "no scheduled review";
     const source = doc.source_reference ? String(doc.source_reference).slice(0, 500) : "not recorded";
     const section = "[" + String(doc.category || "general") + "] " + doc.title +
-      "\\nRelevance score: " + score +
-      "\\nSource reference: " + source +
-      "\\nLast manager review: " + reviewed +
-      "\\nReview due: " + reviewDue +
-      "\\nApproved content:\\n" + doc.content;
+      "\nRelevance score: " + score +
+      "\nSource reference: " + source +
+      "\nLast manager review: " + reviewed +
+      "\nReview due: " + reviewDue +
+      "\nApproved content:\n" + doc.content;
     const separatorLength = sections.length ? separator.length : 0;
     const remaining = maxCharacters - used - separatorLength;
     if (remaining <= 0) break;

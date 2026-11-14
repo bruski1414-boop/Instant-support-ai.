@@ -71,3 +71,20 @@ test("rejects invalid questions, input lists and unsafe limits", () => {
   assert.throws(() => buildRelevantKnowledge("breakfast", {}), /must be a list/);
   assert.throws(() => buildRelevantKnowledge("breakfast", docs, { maxDocuments: 100 }), /outside the permitted range/);
 });
+
+test("returns source metadata only for knowledge actually included in context", () => {
+  const result = buildRelevantKnowledge("What time is breakfast?", docs);
+  assert.equal(result.sources.length, 1);
+  assert.equal(result.sources[0].title, "Breakfast service");
+  assert.equal(result.sources[0].sourceReference, "Hotel handbook, dining section");
+  assert.equal(result.sources[0].reviewedAt, "2026-10-01T00:00:00.000Z");
+  assert.equal(result.sources[0].reviewDueAt, "2027-01-01");
+  assert.ok(result.sources[0].termCoverage >= 0.5);
+});
+
+test("rejects a weak single-keyword match for a multi-part guest question", () => {
+  const result = buildRelevantKnowledge("pool airport transfer schedule", docs);
+  assert.equal(result.matched, false);
+  assert.deepEqual(result.sources, []);
+  assert.equal(result.context, "");
+});

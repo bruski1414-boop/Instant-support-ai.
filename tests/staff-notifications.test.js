@@ -9,6 +9,7 @@ const input = {
   organization: { id: "org-1", slug: "aster-house", name: "Aster House" },
   conversationId: "conversation-1",
   reason: "Guest requested staff assistance.",
+  idempotencyKey: "escalation-123",
   webhookUrl: "https://hotel.example.test/veyra",
   webhookSecret: "test-only-secret"
 };
@@ -30,10 +31,12 @@ test("staff escalation sends a signed event and reports successful delivery", as
   assert.equal(request.method, "POST");
   const expected = crypto.createHmac("sha256", input.webhookSecret).update(request.body).digest("hex");
   assert.equal(request.headers["x-veyra-signature"], expected);
+  assert.equal(request.headers["idempotency-key"], input.idempotencyKey);
   const payload = JSON.parse(request.body);
   assert.equal(payload.event, "veyra.escalation.created");
   assert.equal(payload.conversationId, input.conversationId);
   assert.equal(payload.reason, input.reason);
+  assert.equal(payload.idempotencyKey, input.idempotencyKey);
 });
 
 test("non-success webhook responses are reported as failed delivery", async () => {

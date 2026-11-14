@@ -14,7 +14,7 @@ function terms(value) {
     .match(/[a-z0-9]{2,}/g) || [];
 }
 
-function scoreDocument(questionTerms, document) {
+function scoreDocumentDetails(questionTerms, document) {
   const titleTerms = new Set(terms(document.title));
   const categoryTerms = new Set(terms(document.category));
   const bodyTerms = new Set(terms(document.content));
@@ -34,6 +34,10 @@ function scoreDocument(questionTerms, document) {
   return { score, coverage, matchedTerms };
 }
 
+function scoreDocument(questionTerms, document) {
+  return scoreDocumentDetails(questionTerms, document).score;
+}
+
 function buildRelevantKnowledge(question, documents, options = {}) {
   if (typeof question !== "string" || !question.trim()) {
     throw new Error("A guest question is required for knowledge retrieval.");
@@ -48,7 +52,7 @@ function buildRelevantKnowledge(question, documents, options = {}) {
   const questionTerms = [...new Set(terms(question).filter(term => !STOP_WORDS.has(term)))];
   const ranked = documents
     .filter(doc => doc && typeof doc.title === "string" && typeof doc.content === "string")
-    .map((doc, index) => ({ doc, index, ...scoreDocument(questionTerms, doc) }))
+    .map((doc, index) => ({ doc, index, ...scoreDocumentDetails(questionTerms, doc) }))
     .sort((a, b) => b.score - a.score || b.coverage - a.coverage || a.index - b.index);
 
   // Keep a conservative relevance threshold: one weak keyword match is not

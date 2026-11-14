@@ -26,6 +26,9 @@ for (const id of [
   "revenueWebhookSecret",
   "copyRevenueWebhookEndpoint",
   "copyRevenueWebhook",
+  "staffReplyForm",
+  "staffReplyMessage",
+  "staffReplyStatus",
 ]) {
   assert.match(html, new RegExp(`id=["']${id}["']`), `dashboard must include #${id}`);
 }

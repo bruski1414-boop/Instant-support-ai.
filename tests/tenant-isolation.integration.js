@@ -497,6 +497,7 @@ try {
     body: JSON.stringify({
       message: "I still need a staff member, please.",
       conversationId: failedDeliveryBody.conversationId,
+      conversationToken: failedDeliveryBody.conversationToken,
     }),
   });
   assert.equal(retriedDelivery.status, 200, await retriedDelivery.clone().text());

@@ -705,7 +705,7 @@ try {
   );
   assert.equal(retentionAudit.rows[0].count, 1, "retention cleanup must be audited");
 
-  console.log("PASS: tenant-scoped transcripts, knowledge history and revenue evidence verified for two hotel workspaces.");
+  console.log("PASS: tenant isolation, grounded guest answer, PostgreSQL persistence, signed staff handoff and revenue evidence verified.");
 
 } finally {
   if (serverReady) {
@@ -723,4 +723,5 @@ try {
     });
   }
   await pool.end();
+  await Promise.all([closeServer(mockAiServer), closeServer(mockWebhookServer)]);
 }

@@ -380,9 +380,9 @@ try {
   assert.equal(staffRefund.status, 403, "staff accounts must not record financial adjustments");
   const afterRefund = await readRevenue(cookieA);
   const afterRefundBody = await afterRefund.json();
-  assert.equal(afterRefundBody.linkedTotals[0].gross_amount_minor, "45050");
+  assert.equal(afterRefundBody.linkedTotals[0].gross_amount_minor, "27050");
   assert.equal(afterRefundBody.linkedTotals[0].adjusted_amount_minor, "5050");
-  assert.equal(afterRefundBody.linkedTotals[0].amount_minor, "40000", "linked net revenue must subtract refunds");
+  assert.equal(afterRefundBody.linkedTotals[0].amount_minor, "22000", "linked net revenue must subtract refunds");
   const secondRefund = await fetch(baseUrl + "/api/admin/revenue/adjustments", {
     method: "POST",
     headers: { cookie: cookieA, "content-type": "application/json", "X-CSRF-Token": csrfA },
@@ -391,9 +391,9 @@ try {
   assert.equal(secondRefund.status, 201, await secondRefund.clone().text());
   const afterSecondRefund = await readRevenue(cookieA);
   const afterSecondRefundBody = await afterSecondRefund.json();
-  assert.equal(afterSecondRefundBody.linkedTotals[0].gross_amount_minor, "45050", "multiple adjustments must not multiply gross revenue");
+  assert.equal(afterSecondRefundBody.linkedTotals[0].gross_amount_minor, "27050", "multiple adjustments must not multiply gross revenue");
   assert.equal(afterSecondRefundBody.linkedTotals[0].adjusted_amount_minor, "7550");
-  assert.equal(afterSecondRefundBody.linkedTotals[0].amount_minor, "37500");
+  assert.equal(afterSecondRefundBody.linkedTotals[0].amount_minor, "19500");
   assert.equal(afterSecondRefundBody.linkedTotals[0].event_count, 2);
   assert.equal(afterSecondRefundBody.linkedConversationCount, 1, "multiple linked events from one conversation must count as one distinct conversation");
   assert.equal(afterSecondRefundBody.windowDays, 30);

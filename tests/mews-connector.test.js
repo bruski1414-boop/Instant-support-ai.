@@ -201,3 +201,32 @@ test("accepts Mews' documented 1000-record page limit and rejects values above i
   await assert.rejects(() => client.getReservations({ count: 1001 }), /between 1 and 1000/);
   assert.equal(mock.calls.length, 2);
 });
+
+test("requests absolute daily availability from the read-only Mews endpoint", async () => {
+  const mock = mockFetch(async () => jsonResponse({
+    TimeUnitStartsUtc: ["2026-12-01T00:00:00Z"],
+    CategoryAvailabilities: [{ CategoryId: "room-deluxe", Availabilities: [4], Adjustments: [0] }],
+    GuestEmail: "private@example.invalid"
+  }));
+  const client = createMewsConnectorClient({ ...credentials, fetchImpl: mock.fetchImpl });
+  const result = await client.getServiceAvailabilityAbsolute({
+    serviceId: "svc-1",
+    firstTimeUnitStartUtc: "2026-12-01T00:00:00Z",
+    lastTimeUnitStartUtc: "2026-12-01T00:00:00Z"
+  });
+  assert.match(mock.calls[0].url, /services\\/getAvailability$/);
+  assert.equal(result.categoryAvailabilities[0].categoryId, "room-deluxe");
+  assert.deepEqual(result.categoryAvailabilities[0].availabilities, [4]);
+  assert.equal("GuestEmail" in result, false);
+});
+
+test("validates absolute availability time ranges before network access", async () => {
+  const mock = mockFetch(async () => jsonResponse({}));
+  const client = createMewsConnectorClient({ ...credentials, fetchImpl: mock.fetchImpl });
+  await assert.rejects(() => client.getServiceAvailabilityAbsolute({
+    serviceId: "svc-1",
+    firstTimeUnitStartUtc: "2026-12-02T00:00:00Z",
+    lastTimeUnitStartUtc: "2026-12-01T00:00:00Z"
+  }), /must not be before/);
+  assert.equal(mock.calls.length, 0);
+});

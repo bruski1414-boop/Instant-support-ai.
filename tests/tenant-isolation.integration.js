@@ -448,6 +448,24 @@ try {
   const betaEscalationInAlpha = await pool.query("SELECT count(*)::int AS count FROM escalations WHERE id=$1 AND organization_id=$2", [guestEscalationBBody.escalationId, orgAForPilot.rows[0].id]);
   assert.equal(betaEscalationInAlpha.rows[0].count, 0, "Beta escalation must never be visible in Alpha's organization");
 
+  // The staff escalation inbox is tenant-scoped, and staff cannot mutate another hotel's handoff.
+  const staffEscalationsA = await fetch(baseUrl + "/api/admin/escalations", { headers: { cookie: staffCookie } });
+  const staffEscalationsB = await fetch(baseUrl + "/api/admin/escalations", { headers: { cookie: cookieB } });
+  assert.equal(staffEscalationsA.status, 200);
+  assert.equal(staffEscalationsB.status, 200);
+  const staffEscalationsABody = await staffEscalationsA.json();
+  const staffEscalationsBBody = await staffEscalationsB.json();
+  assert.ok(staffEscalationsABody.escalations.some(item => item.id === guestEscalationBody.escalationId), "Alpha staff must see Alpha's escalation");
+  assert.ok(!staffEscalationsABody.escalations.some(item => item.id === guestEscalationBBody.escalationId), "Alpha staff must not see Beta's escalation");
+  assert.ok(staffEscalationsBBody.escalations.some(item => item.id === guestEscalationBBody.escalationId), "Beta owner must see Beta's escalation");
+  assert.ok(!staffEscalationsBBody.escalations.some(item => item.id === guestEscalationBody.escalationId), "Beta must not see Alpha's escalation");
+  const crossTenantEscalationUpdate = await fetch(baseUrl + "/api/admin/escalations/" + guestEscalationBBody.escalationId, {
+    method: "PATCH",
+    headers: { cookie: staffCookie, "content-type": "application/json", "X-CSRF-Token": staffCsrf },
+    body: JSON.stringify({ status: "claimed" }),
+  });
+  assert.equal(crossTenantEscalationUpdate.status, 404, "Alpha staff must not claim Beta's escalation");
+
   const guestStaffPoll = await fetch(baseUrl + "/api/public/" + tenants[0].slug + "/chat?conversationId=" + guestChatBody.conversationId, { headers: { "X-Veyra-Conversation-Token": guestChatBody.conversationToken } });
   assert.equal(guestStaffPoll.status, 200);
   assert.deepEqual((await guestStaffPoll.json()).messages, []);

@@ -47,7 +47,7 @@ test("staff escalation sends a signed event through a pinned public address", as
   assert.equal(options.hostname, "hooks.hotel.com");
   assert.equal(options.servername, "hooks.hotel.com");
   assert.equal(options.rejectUnauthorized, true);
-  assert.equal(options.lookup(null, {}, (_error, address, family) => {
+  assert.equal(options.lookup("hooks.hotel.com", {}, (_error, address, family) => {
     assert.equal(address, "93.184.216.34");
     assert.equal(family, 4);
   }), undefined);
@@ -106,7 +106,7 @@ test("hotel webhook secrets are encrypted and authenticated on decrypt", () => {
 });
 
 test("webhook URLs require public HTTPS hostnames", () => {
-  assert.equal(validateWebhookUrl("https://hooks.hotel.com/events").href, "https://hooks.hotel.com/events");
+  assert.equal(validateWebhookUrl("https://hooks.hotel.com/events"), "https://hooks.hotel.com/events");
   for (const url of [
     "http://hooks.hotel.com/events", "https://localhost/hook", "https://127.0.0.1/hook",
     "https://10.0.0.8/hook", "https://192.168.1.2/hook", "https://172.16.0.1/hook",

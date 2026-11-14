@@ -96,6 +96,9 @@ async function seedConversation(tenant) {
     [org.rows[0].id],
   );
   tenant.conversationId = conversation.rows[0].id;
+  tenant.guestToken = randomBytes(32).toString("base64url");
+  const guestTokenHash = createHash("sha256").update(tenant.guestToken).digest("hex");
+  await pool.query("UPDATE conversations SET guest_token_hash=$1 WHERE id=$2", [guestTokenHash, tenant.conversationId]);
   await pool.query(
     "INSERT INTO messages(conversation_id,role,content) VALUES($1,'guest',$2)",
     [tenant.conversationId, tenant.message],
@@ -217,6 +220,43 @@ try {
 
   const [csrfA, csrfB] = await Promise.all([csrfToken(cookieA), csrfToken(cookieB)]);
   const staffCsrf = await csrfToken(staffCookie);
+
+  const staffReply = await fetch(`${baseUrl}/api/admin/conversations/${tenants[0].conversationId}/reply`, {
+    method: "POST",
+    headers: { cookie: staffCookie, "X-CSRF-Token": staffCsrf, "content-type": "application/json" },
+    body: JSON.stringify({ message: "A member of our hotel team can help with that." }),
+  });
+  assert.equal(staffReply.status, 201, await staffReply.clone().text());
+  const staffReplyBody = await staffReply.json();
+  assert.equal(staffReplyBody.message.role, "staff");
+  assert.equal(staffReplyBody.message.content, "A member of our hotel team can help with that.");
+
+  const guestPoll = await fetch(`${baseUrl}/api/public/${tenants[0].slug}/chat?conversationId=${tenants[0].conversationId}`, {
+    headers: { "X-Veyra-Conversation-Token": tenants[0].guestToken },
+  });
+  assert.equal(guestPoll.status, 200, await guestPoll.clone().text());
+  const guestPollBody = await guestPoll.json();
+  assert.ok(guestPollBody.messages.some(message => message.id === staffReplyBody.message.id));
+
+  const wrongGuestToken = await fetch(`${baseUrl}/api/public/${tenants[0].slug}/chat?conversationId=${tenants[0].conversationId}`, {
+    headers: { "X-Veyra-Conversation-Token": tenants[1].guestToken },
+  });
+  assert.equal(wrongGuestToken.status, 404, "another guest token must not read this conversation's staff replies");
+
+  const crossTenantStaffReply = await fetch(`${baseUrl}/api/admin/conversations/${tenants[1].conversationId}/reply`, {
+    method: "POST",
+    headers: { cookie: staffCookie, "X-CSRF-Token": staffCsrf, "content-type": "application/json" },
+    body: JSON.stringify({ message: "This cross-hotel reply must be blocked." }),
+  });
+  assert.equal(crossTenantStaffReply.status, 404, "staff must not reply to another hotel's conversation");
+
+  const staffReplyWithoutCsrf = await fetch(`${baseUrl}/api/admin/conversations/${tenants[0].conversationId}/reply`, {
+    method: "POST",
+    headers: { cookie: staffCookie, "content-type": "application/json" },
+    body: JSON.stringify({ message: "This reply must be blocked." }),
+  });
+  assert.equal(staffReplyWithoutCsrf.status, 403, "staff replies must require CSRF verification");
+
   const staffRotateWebhook = await fetch(`${baseUrl}/api/admin/integrations/revenue-webhook/rotate`, {
     method: "POST",
     headers: { cookie: staffCookie, "X-CSRF-Token": staffCsrf, "content-type": "application/json" },

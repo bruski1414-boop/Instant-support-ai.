@@ -49,4 +49,4 @@ for (const id of [
 }
 
 assert.match(html, /\/api\/admin\/privacy-approval/, "dashboard must use the tenant-scoped privacy approval API");
-assert.match(html, /This is not a compliance certification/, "dashboard must not present acknowledgement as legal certification");
+assert.match(html, /not legal advice, a compliance assessment or a security certification/, "dashboard must not present acknowledgement as legal certification");

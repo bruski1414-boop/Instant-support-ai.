@@ -214,7 +214,7 @@ test("requests absolute daily availability from the read-only Mews endpoint", as
     firstTimeUnitStartUtc: "2026-12-01T00:00:00Z",
     lastTimeUnitStartUtc: "2026-12-01T00:00:00Z"
   });
-  assert.match(mock.calls[0].url, /services\\/getAvailability$/);
+  assert.match(mock.calls[0].url, /services\/getAvailability$/);
   assert.equal(result.categoryAvailabilities[0].categoryId, "room-deluxe");
   assert.deepEqual(result.categoryAvailabilities[0].availabilities, [4]);
   assert.equal("GuestEmail" in result, false);

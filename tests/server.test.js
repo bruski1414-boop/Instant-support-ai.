@@ -317,7 +317,7 @@ test("onboarding readiness requires verified storage authorization, a successful
   assert.match(server, /app\.put\("\/api\/admin\/privacy-approval",requireDb,auth,role\("owner","admin"\)/);
   assert.match(server, /app\.delete\("\/api\/admin\/privacy-approval",requireDb,auth,role\("owner","admin"\)/);
   assert.match(server, /Current owner\/admin acknowledgement recorded/);
-  assert.match(server, /current owner\/admin privacy approval/);
+  assert.match(server, /No current hotel owner\/admin privacy acknowledgement/);
 });
 
 test("AI and staff integrations require live verification before onboarding marks them complete", () => {

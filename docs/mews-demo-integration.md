@@ -9,6 +9,8 @@ Veyra now has a read-only Mews Connector API client in `mews-connector.js`.
 - `reservations/getAll/2023-06-06`: reads minimal reservation status/date summaries with optional incremental `UpdatedUtc` filtering.
 - `getAllReservations()` and `getAllServices()`: safely follow Mews cursors up to a configurable page cap and report whether retrieval is complete.
 - `services/getAvailability/2024-01-22`: reads service availability metrics for a bounded UTC interval.
+- `services/getAvailability`: reads absolute availability counts for each resource category and time unit.
+- `mews-live-context.js`: maps daily absolute availability into property-local, one-night canonical snapshots with a 10-minute freshness window. It refuses hourly/monthly services and mismatched category/time arrays.
 
 The client uses the official Mews demo host only: `https://api.mews-demo.com`. Mews documents a maximum page size of 1,000 records; the client supports that limit and can fetch multiple cursor pages. The availability endpoint is documented as a restricted beta operation, and its timestamps must align with the bookable service's time-unit boundaries in the property's timezone. Veyra must derive those boundaries from the property's configured timezone and service metadata before relying on availability results. It sends the required `ClientToken`, `AccessToken`, and `Client` fields in each JSON POST body. It does not expose a production host, mutate reservations, charge cards, change rates, or write to hotel operations.
 
@@ -36,11 +38,12 @@ No API call has been made from this repository because no credentials have been 
 
 1. Obtain Mews demo credentials through the official Mews documentation and configure them as private server environment variables.
 2. Run the configuration check against the demo property.
-3. Map the demo property's bookable service and resource categories.
-4. Run a bounded reservation-summary query using a demo date window; reconcile statuses and stay dates against Mews Operations.
-5. Add signed/registered event ingestion and idempotent incremental synchronization only after reviewing Mews event registration requirements.
-6. Complete Mews partner onboarding and certification before any production connection.
-7. Obtain the hotel's written authorization, least-privilege credentials, privacy review and operational sign-off before using production data.
+3. Map the demo property's bookable accommodation service and resource categories.
+4. Use `getMewsRoomNightSnapshots()` with service metadata, enterprise timezone, property reference and a bounded daily interval. Confirm returned local dates against the demo property. Each count is for one night only; it does not prove room availability for an entire multi-night stay.
+5. Run a bounded reservation-summary query using a demo date window; reconcile statuses and stay dates against Mews Operations.
+6. Add signed/registered event ingestion and idempotent incremental synchronization only after reviewing Mews event registration requirements.
+7. Complete Mews partner onboarding and certification before any production connection.
+8. Obtain the hotel's written authorization, least-privilege credentials, privacy review and operational sign-off before using production data.
 
 Official documentation:
 - Getting started: https://docs.mews.com/connector-api/getting-started

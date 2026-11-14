@@ -37,7 +37,7 @@ const invitationAcceptLimiter=rateLimit({windowMs:3600000,limit:5,standardHeader
 app.use("/api/invitations/accept",invitationAcceptLimiter);
 app.use("/api/setup/organization",setupLimiter);
 app.use("/api/platform/organizations",platformProvisionLimiter);
-app.post("/api/public/",publicChatLimiter);
+app.use("/api/public/",(q,r,n)=>q.method==="GET"?publicPollLimiter(q,r,n):publicChatLimiter(q,r,n));
 const schema=[
 "CREATE EXTENSION IF NOT EXISTS pgcrypto",
 "CREATE TABLE IF NOT EXISTS organizations(id UUID PRIMARY KEY DEFAULT gen_random_uuid(),name TEXT NOT NULL,slug TEXT NOT NULL UNIQUE,status TEXT NOT NULL DEFAULT 'trial' CHECK(status IN ('trial','active','suspended')),created_at TIMESTAMPTZ NOT NULL DEFAULT now())",
@@ -305,7 +305,7 @@ app.post("/api/admin/escalations/:id/notify",requireDb,auth,role("owner","admin"
 app.patch("/api/admin/escalations/:id",requireDb,auth,role("owner","admin","staff"),async(q,r,n)=>{try{const s=q.body?.status;if(!["open","claimed","resolved"].includes(s))return r.status(400).json({error:"Invalid status."});
  const x=await db.query("UPDATE escalations SET status=$1,assigned_to=CASE WHEN $1='claimed' THEN $2 WHEN $1='open' THEN NULL ELSE assigned_to END,resolved_at=CASE WHEN $1='resolved' THEN now() ELSE NULL END WHERE id=$3 AND organization_id=$4 RETURNING id,status,assigned_to,resolved_at",[s,q.actor.user_id,q.params.id,q.actor.organization_id]);if(!x.rowCount)return r.status(404).json({error:"Escalation not found."});
  await db.query("UPDATE conversations SET status=$1 WHERE organization_id=$3 AND id=(SELECT conversation_id FROM escalations WHERE id=$2 AND organization_id=$3)",[s==="resolved"?"resolved":"escalated",q.params.id,q.actor.organization_id]);await audit(q.actor,"escalation."+s,"escalation",q.params.id);r.json({escalation:x.rows[0]});}catch(e){n(e);}});
-app.get("/api/public/:slug/chat",publicPollLimiter,async(q,r,n)=>{
+app.get("/api/public/:slug/chat",async(q,r,n)=>{
  try{
   if(!db)return r.status(503).json({error:"Hotel platform is not configured."});
   const org=await db.query("SELECT id,status FROM organizations WHERE slug=$1",[q.params.slug]);

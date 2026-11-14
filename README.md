@@ -6,7 +6,7 @@ Veyra AI is a hotel customer-support platform prototype. It is designed to answe
 
 - Public demo site: https://veyra-ai-prototype.onrender.com
 - Owner dashboard: https://veyra-ai-prototype.onrender.com/dashboard.html
-- Interactive hotel demo route (available after the demo branch is merged and deployed): https://veyra-ai-prototype.onrender.com/demo
+- Synthetic interactive hotel demo (separate pinned Render deployment; not the current feature-branch head): https://veyra-demo-6y5a.onrender.com/demo
 - First workspace setup: https://veyra-ai-prototype.onrender.com/setup.html
 - Source code: https://github.com/bruski1414-boop/Instant-support-ai.
 
@@ -39,7 +39,7 @@ The web service and database are currently on Render's free plans. The database 
 - Hotel owners/admins can browse plain-text documents and Google Docs, choose individual files, and import them into that hotel's knowledge base. Imports are unapproved by default and must be manager-verified before guest use. SharePoint site discovery and site-root text-file browsing are included.
 - AI answer generation constrained to each hotel's approved knowledge, with conservative escalation for uncertain or sensitive requests.
 - Optional signed staff webhook with persisted delivery status, attempt count and a dashboard retry action for failed notifications.
-- Separate rate limits for public guest chat and first-owner bootstrap.
+- Per-hotel plus client-IP rate limits for public guest chat, plus separate first-owner bootstrap, authentication, invitation and provisioning limits. The default limiter store is in-memory per process and is not distributed across multiple instances.
 - Guest conversation storage is disabled by default until privacy and retention arrangements are approved.
 - GitHub Actions CI runs syntax checks and Node's test suite against PostgreSQL 16. The two-hotel integration test provisions separate workspaces, signs in as both owners, checks tenant separation across knowledge, settings, staff, audit events, storage connections, conversations and escalations, attempts cross-tenant reads/edits/deletes, verifies distinct website CORS origins, tests signed staff-dispatcher events for both hotels and sends concurrent dashboard requests. The AI connection test correctly reports unconfigured when no provider key is present. Live Google/Microsoft OAuth, real provider credentials, production notification routing, backup/restore and sustained load testing remain outstanding.
 

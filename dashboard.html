@@ -369,7 +369,7 @@ async function loadRetention(){
  const x=await api("/api/admin/retention");
  $("retentionDays").value=String(x.retentionDays||0);
  $("retentionCount").textContent=x.enabled?String(x.eligibleConversations)+" eligible conversation(s)":"Disabled";
- $("runRetention").disabled=!x.enabled||x.eligibleConversations===0;
+ $("runRetention").disabled=!x.enabled||!x.privacyApprovalCurrent||x.eligibleConversations===0;
  $("retentionNotice").classList.remove("hidden");$("retentionNotice").className="notice";$("retentionNotice").textContent=x.note;
 }
 $("saveRetention").addEventListener("click",async()=>{try{await api("/api/admin/retention",{method:"PUT",body:JSON.stringify({retentionDays:Number($("retentionDays").value)})});showToast("Retention policy saved.");await loadRetention();}catch(err){notice(err.message,"error");}});

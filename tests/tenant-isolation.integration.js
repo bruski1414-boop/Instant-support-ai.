@@ -247,8 +247,16 @@ try {
   assert.equal(noPrematureConversation.rows[0].count, 0, "a blocked guest request must not create a conversation");
 
   await pool.query("INSERT INTO organization_integration_checks(organization_id,integration,verified_at) VALUES($1,$2,now()),($1,$3,now())", [orgAForPilot.rows[0].id, "ai_provider", "staff_webhook"]);
-  await pool.query("INSERT INTO organization_storage_connections(organization_id,provider,workspace_reference,root_folder_reference,status,connected_at,last_sync_at,last_sync_status,last_sync_error) VALUES($1,$2,$3,$4,$5,now(),now(),'success','')", [orgAForPilot.rows[0].id, "google_drive", "ci-workspace", "ci-folder", "connected"]);
-  await pool.query("INSERT INTO knowledge_documents(organization_id,title,category,content,approved,source_reference,reviewed_at) VALUES($1,$2,$3,$4,true,$5,now())", [orgAForPilot.rows[0].id, "Breakfast hours", "services", "Breakfast is served daily from 6:30 AM to 10:30 AM.", "ci-approved-hotel-handbook"]);
+  await pool.query("INSERT INTO organization_storage_connections(organization_id,provider,workspace_reference,root_folder_reference,status,connected_at,last_sync_at,last_sync_status,last_sync_error) VALUES($1,$2,$3,$4,$5,now(),now(),'success','')", [orgAForPilot.rows[0].id, "google_drive", "ci-workspace-a", "ci-folder-a", "connected"]);
+  await pool.query("INSERT INTO knowledge_documents(organization_id,title,category,content,approved,source_reference,reviewed_at) VALUES($1,$2,$3,$4,true,$5,now())", [orgAForPilot.rows[0].id, "Breakfast hours Alpha", "services", "Breakfast is served daily from 6:30 AM to 10:30 AM.", "ci-approved-hotel-alpha-handbook"]);
+
+  // Configure Beta independently: its own privacy approval, integration checks,
+  // storage connection and approved knowledge must be required for its guest chat.
+  const orgBForPilot = await pool.query("SELECT id FROM organizations WHERE slug=$1", [tenants[1].slug]);
+  await pool.query("INSERT INTO organization_privacy_approvals(organization_id,policy_version,purpose_acknowledged,retention_acknowledged,backup_acknowledged,access_acknowledged,deletion_acknowledged,approved_by) SELECT $1,'2026-11-14-v1',true,true,true,true,true,id FROM users WHERE organization_id=$1 AND role='owner'", [orgBForPilot.rows[0].id]);
+  await pool.query("INSERT INTO organization_integration_checks(organization_id,integration,verified_at) VALUES($1,$2,now()),($1,$3,now())", [orgBForPilot.rows[0].id, "ai_provider", "staff_webhook"]);
+  await pool.query("INSERT INTO organization_storage_connections(organization_id,provider,workspace_reference,root_folder_reference,status,connected_at,last_sync_at,last_sync_status,last_sync_error) VALUES($1,$2,$3,$4,$5,now(),now(),'success','')", [orgBForPilot.rows[0].id, "google_drive", "ci-workspace-b", "ci-folder-b", "connected"]);
+  await pool.query("INSERT INTO knowledge_documents(organization_id,title,category,content,approved,source_reference,reviewed_at) VALUES($1,$2,$3,$4,true,$5,now())", [orgBForPilot.rows[0].id, "Breakfast hours Beta", "services", "Breakfast is served daily from 6:30 AM to 10:30 AM.", "ci-approved-hotel-beta-handbook"]);
   const [cookieA, cookieB] = await Promise.all(tenants.map(login));
   const staffCookie = await login(await seedStaff(tenants[0]));
   await Promise.all(tenants.map(seedConversation));
@@ -357,7 +365,39 @@ try {
   assert.equal(persistedJourney.rows[1].role, "assistant");
   assert.equal(persistedJourney.rows[1].content, guestChatBody.reply);
   assert.equal(persistedJourney.rows[1].evidence.status, "supported");
-  assert.ok(persistedJourney.rows[1].evidence.sources.some(source => source.title === "Breakfast hours"));
+  assert.ok(persistedJourney.rows[1].evidence.sources.some(source => source.title === "Breakfast hours Alpha"));
+
+  // Beta independently answers from its own approved knowledge and persists
+  // the guest journey under Beta's organization, without Alpha's source evidence.
+  const guestChatB = await fetch(baseUrl + "/api/public/" + tenants[1].slug + "/chat", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ message: "What time is breakfast?" }),
+  });
+  assert.equal(guestChatB.status, 200, await guestChatB.clone().text());
+  const guestChatBBody = await guestChatB.json();
+  assert.equal(guestChatBBody.reply, "Breakfast is served daily from 6:30 AM to 10:30 AM.");
+  assert.equal(guestChatBBody.needsHuman, false);
+  assert.ok(guestChatBBody.conversationId);
+  assert.ok(guestChatBBody.knowledgeSources.some(source => source.title === "Breakfast hours Beta"));
+  assert.ok(!guestChatBBody.knowledgeSources.some(source => source.title === "Breakfast hours Alpha"), "Beta must not receive Alpha's approved knowledge sources");
+  const persistedJourneyB = await pool.query("SELECT c.organization_id,m.role,m.content,m.evidence FROM conversations c JOIN messages m ON m.conversation_id=c.id WHERE c.id=$1 ORDER BY m.created_at", [guestChatBBody.conversationId]);
+  assert.equal(persistedJourneyB.rowCount, 2);
+  assert.equal(String(persistedJourneyB.rows[0].organization_id), String(orgBForPilot.rows[0].id));
+  assert.equal(persistedJourneyB.rows[0].role, "guest");
+  assert.equal(persistedJourneyB.rows[1].role, "assistant");
+  assert.equal(persistedJourneyB.rows[1].content, guestChatBBody.reply);
+  assert.ok(persistedJourneyB.rows[1].evidence.sources.some(source => source.title === "Breakfast hours Beta"));
+  assert.ok(!persistedJourneyB.rows[1].evidence.sources.some(source => source.title === "Breakfast hours Alpha"));
+
+  // Guest conversation IDs and tokens must not cross workspace boundaries.
+  const betaTokenAgainstAlpha = await fetch(baseUrl + "/api/public/" + tenants[0].slug + "/chat?conversationId=" + guestChatBBody.conversationId, {
+    headers: { "X-Veyra-Conversation-Token": guestChatBBody.conversationToken },
+  });
+  assert.equal(betaTokenAgainstAlpha.status, 404, "Beta guest tokens must not work against Alpha's workspace");
+  const alphaTokenAgainstBeta = await fetch(baseUrl + "/api/public/" + tenants[1].slug + "/chat?conversationId=" + guestChatBody.conversationId, {
+    headers: { "X-Veyra-Conversation-Token": guestChatBody.conversationToken },
+  });
+  assert.equal(alphaTokenAgainstBeta.status, 404, "Alpha guest tokens must not work against Beta's workspace");
 
   const guestEscalation = await fetch(baseUrl + "/api/public/" + tenants[0].slug + "/chat", {
     method: "POST", headers: { "content-type": "application/json" },

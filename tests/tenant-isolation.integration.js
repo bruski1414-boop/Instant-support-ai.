@@ -222,6 +222,9 @@ try {
 
   for (const tenant of tenants) await provision(tenant);
 
+  const orgAForPilot = await pool.query("SELECT id FROM organizations WHERE slug=$1", [tenants[0].slug]);
+  await pool.query("INSERT INTO organization_privacy_approvals(organization_id,policy_version,purpose_acknowledged,retention_acknowledged,backup_acknowledged,access_acknowledged,deletion_acknowledged,approved_by) SELECT $1,'2026-11-14-v1',true,true,true,true,true,id FROM users WHERE organization_id=$1 AND role='owner'", [orgAForPilot.rows[0].id]);
+
   // The real guest-chat route must remain closed until every pilot release gate is verified.
   const gatedChat = await fetch(`${baseUrl}/api/public/${tenants[0].slug}/chat`, {
     method: "POST",
@@ -237,8 +240,6 @@ try {
   );
   assert.equal(noPrematureConversation.rows[0].count, 0, "a blocked guest request must not create a conversation");
 
-  const orgAForPilot = await pool.query("SELECT id FROM organizations WHERE slug=$1", [tenants[0].slug]);
-  await pool.query("INSERT INTO organization_privacy_approvals(organization_id,policy_version,purpose_acknowledged,retention_acknowledged,backup_acknowledged,access_acknowledged,deletion_acknowledged,approved_by) SELECT $1,'2026-11-14-v1',true,true,true,true,true,id FROM users WHERE organization_id=$1 AND role='owner'", [orgAForPilot.rows[0].id]);
   await pool.query("INSERT INTO organization_integration_checks(organization_id,integration,verified_at) VALUES($1,$2,now()),($1,$3,now())", [orgAForPilot.rows[0].id, "ai_provider", "staff_webhook"]);
   await pool.query("INSERT INTO organization_storage_connections(organization_id,provider,workspace_reference,root_folder_reference,status,connected_at,last_sync_at,last_sync_status,last_sync_error) VALUES($1,$2,$3,$4,$5,now(),now(),'success','')", [orgAForPilot.rows[0].id, "google_drive", "ci-workspace", "ci-folder", "connected"]);
   await pool.query("INSERT INTO knowledge_documents(organization_id,title,category,content,approved,source_reference,reviewed_at) VALUES($1,$2,$3,$4,true,$5,now())", [orgAForPilot.rows[0].id, "Breakfast hours", "services", "Breakfast is served daily from 6:30 AM to 10:30 AM.", "ci-approved-hotel-handbook"]);

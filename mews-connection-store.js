@@ -61,11 +61,30 @@ function createMewsConnectionStore({ db, encryptionKey, clientName = "Veyra AI/0
     };
   }
 
+  async function verify(organizationId) {
+    const connection = await resolve(organizationId);
+    if (!connection) throw new Error("No Mews connection is configured for this hotel.");
+    const [configuration, services] = await Promise.all([
+      connection.client.getConfiguration(),
+      connection.client.getAllServices({ serviceIds: [connection.service.id], maxPages: 2, count: 100 })
+    ]);
+    if (!configuration.enterprise || configuration.enterprise.id !== connection.propertyReference) {
+      throw new Error("The configured property reference does not match the authenticated Mews property.");
+    }
+    if (configuration.enterprise.timeZoneIdentifier !== connection.timeZone) {
+      throw new Error("The configured time zone does not match the authenticated Mews property's time zone.");
+    }
+    const service = services.services.find((item) => item.id === connection.service.id && item.active);
+    if (!service || service.timeUnitPeriod !== "Day") throw new Error("Choose an active daily accommodation service in Mews.");
+    await db.query("UPDATE mews_connections SET status='verified',last_verified_at=now(),last_error=NULL,updated_at=now() WHERE organization_id=$1", [organizationId]);
+    return { verified: true, propertyTimeZone: configuration.enterprise.timeZoneIdentifier, serviceTimeUnit: service.timeUnitPeriod };
+  }
+
   async function remove(organizationId) {
     await db.query("DELETE FROM mews_connections WHERE organization_id=$1", [organizationId]);
   }
 
-  return Object.freeze({ save, getStatus, resolve, remove, encryptionConfigured: cipher.configured });
+  return Object.freeze({ save, getStatus, resolve, verify, remove, encryptionConfigured: cipher.configured });
 }
 
 module.exports = { createMewsConnectionStore };

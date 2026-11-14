@@ -74,8 +74,16 @@ test("scopes status and connection resolution to the requested organization", as
 
 async function verifyWithMewsService(service) {
   const originalFetch = global.fetch;
-  global.fetch = async (url) => {
+  global.fetch = async (url, options) => {
     const path = new URL(url).pathname;
+    const request = JSON.parse(options.body);
+    if (path.endsWith("/configuration/get") && request.EnterpriseId !== "property-123") {
+      throw new Error("Configuration request was not scoped to the selected hotel.");
+    }
+    if (path.endsWith("/services/getAll") &&
+        (!Array.isArray(request.EnterpriseIds) || request.EnterpriseIds[0] !== "property-123")) {
+      throw new Error("Service lookup was not scoped to the selected hotel.");
+    }
     const payload = path.endsWith("/configuration/get")
       ? { Enterprise: { Id: "property-123", Name: "Demo Hotel", TimeZoneIdentifier: "Europe/Helsinki" } }
       : path.endsWith("/services/getAll")

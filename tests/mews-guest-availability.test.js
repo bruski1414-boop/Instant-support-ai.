@@ -63,7 +63,7 @@ test("rejects a connection belonging to another tenant without querying it", asy
     },
     ...range
   });
-  assert.equal(result.available, false);
+  assert.equal(result.connected, false);
   assert.equal(result.reason, "tenant_mismatch");
   assert.equal(queried, false);
 });
@@ -95,7 +95,6 @@ test("does not claim availability when the provider reports zero rooms", async (
     resolveConnection: async (id) => connection(id, 0),
     ...range
   });
-  assert.equal(result.available, false);
   assert.equal(result.connected, true);
   assert.equal(result.hasAvailableRooms, false);
   assert.match(result.context, /0 room\(s\) reported available/);

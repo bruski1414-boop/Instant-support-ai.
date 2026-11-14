@@ -105,8 +105,59 @@ function createMewsConnectorClient({
           enterpriseId: service.EnterpriseId,
           active: Boolean(service.IsActive),
           names: service.Names || null,
-          data: service.Data || null,
+          serviceType: service.Data && service.Data.Discriminator || null,
+          timeUnitPeriod: service.Data && service.Data.Value && service.Data.Value.TimeUnitPeriod || null,
           externalIdentifier: service.ExternalIdentifier || null
+        })),
+        cursor: result.Cursor || null
+      };
+    },
+
+    async getReservations({ enterpriseIds, reservationIds, serviceIds, updatedUtc, states, cursor, count = 100 } = {}) {
+      if (!Number.isInteger(count) || count < 1 || count > 100) throw new Error("count must be between 1 and 100.");
+      const fields = { Limitation: { Count: count } };
+      const addIds = (key, values, fieldName) => {
+        if (values == null) return;
+        if (!Array.isArray(values) || values.length < 1 || values.length > 1000) {
+          throw new Error(fieldName + " must contain between 1 and 1000 identifiers.");
+        }
+        fields[key] = values.map((value) => nonEmpty(value, fieldName));
+      };
+      addIds("EnterpriseIds", enterpriseIds, "enterpriseId");
+      addIds("ReservationIds", reservationIds, "reservationId");
+      addIds("ServiceIds", serviceIds, "serviceId");
+      if (updatedUtc != null) {
+        if (!updatedUtc || typeof updatedUtc !== "object" || Array.isArray(updatedUtc)) throw new Error("updatedUtc must be a time interval.");
+        const start = validUtc(updatedUtc.startUtc, "updatedUtc.startUtc");
+        const end = validUtc(updatedUtc.endUtc, "updatedUtc.endUtc");
+        if (Date.parse(end) <= Date.parse(start)) throw new Error("updatedUtc.endUtc must be later than startUtc.");
+        if (Date.parse(end) - Date.parse(start) > 93 * 24 * 60 * 60 * 1000) {
+          throw new Error("Mews UpdatedUtc filters are limited to a maximum three-month interval.");
+        }
+        fields.UpdatedUtc = { StartUtc: start, EndUtc: end };
+      }
+      const allowedStates = new Set(["Inquired", "Confirmed", "Started", "Processed", "Canceled", "Optional", "Requested"]);
+      if (states != null) {
+        if (!Array.isArray(states) || !states.length || states.some((state) => !allowedStates.has(state))) {
+          throw new Error("states must contain supported Mews reservation states.");
+        }
+        fields.States = states;
+      }
+      if (cursor != null) fields.Limitation.Cursor = nonEmpty(cursor, "cursor");
+      const result = await post("/api/connector/v1/reservations/getAll/2023-06-06", fields);
+      return {
+        reservations: (result.Reservations || []).map((reservation) => ({
+          id: reservation.Id,
+          serviceId: reservation.ServiceId,
+          state: reservation.State,
+          requestedResourceCategoryId: reservation.RequestedResourceCategoryId || null,
+          scheduledStartUtc: reservation.ScheduledStartUtc,
+          scheduledEndUtc: reservation.ScheduledEndUtc,
+          actualStartUtc: reservation.ActualStartUtc || null,
+          actualEndUtc: reservation.ActualEndUtc || null,
+          createdUtc: reservation.CreatedUtc,
+          updatedUtc: reservation.UpdatedUtc,
+          cancelledUtc: reservation.CancelledUtc || null
         })),
         cursor: result.Cursor || null
       };

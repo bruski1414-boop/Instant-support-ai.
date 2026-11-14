@@ -392,3 +392,12 @@ test("unmatched approved knowledge triggers a staff escalation instead of an AI 
   assert.match(server, /No relevant approved hotel knowledge matched the guest question/);
   assert.match(server, /needsHuman:true/);
 });
+
+
+test("unsupported numeric AI claims are replaced with a staff-confirmation handoff", () => {
+  const server = fs.readFileSync("server.js", "utf8");
+  assert.match(server, /validateAnswerGrounding\(answer\.reply,retrieval\.groundingText/);
+  assert.match(server, /Generated answer contained unsupported numeric details/);
+  assert.match(server, /I can’t confidently verify every detail in that answer/);
+  assert.match(server, /answer\.needsHuman=true/);
+});

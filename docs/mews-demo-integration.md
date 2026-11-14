@@ -96,3 +96,16 @@ In the authenticated Hotel Setup panel, workspace owners and admins can:
 - Disconnect the integration. Only the workspace owner can perform this action.
 
 The dashboard hides raw provider error details and only displays a safe verification status. Credential setup requires server-side `STORAGE_TOKEN_ENCRYPTION_KEY`. A hotel owner/operator and authorised adult platform administrator should handle the real demo-account credentials and hosting configuration; never paste credentials into chat or commit them.
+
+
+## Isolated interactive hotel demo
+
+The standalone demo is served at `/demo` and uses `demo-mode.js` plus `demo.html`. It is intentionally separate from tenant guest chat:
+
+- It uses a fictional Aster House Hotel and a small hard-coded approved sample knowledge set.
+- The chat API is deterministic and does not call OpenAI, PostgreSQL, Mews, or a staff webhook.
+- The only availability example is 10–12 December 2026. It reports the minimum sample inventory for each room category across both nights. All other dates are handed off rather than guessed.
+- Booking changes, payment issues, sensitive requests, and unknown questions create an on-screen simulated handoff only. No employee is notified and no guest data is persisted.
+- The overview metrics are explicitly synthetic. Hotel-reported sample booking value is shown separately from Veyra-linked revenue evidence; the sample linked value is zero. No ROI or revenue-causation claim is made.
+
+The page is linked from the landing page. It is a product walkthrough, not a production hotel environment or an end-to-end Mews test. After PR #8 is reviewed and merged, the route can be deployed and tested on the public service. Do not merge or deploy without the required owner approval.

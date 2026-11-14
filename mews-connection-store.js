@@ -66,7 +66,7 @@ function createMewsConnectionStore({ db, encryptionKey, clientName = "Veyra AI/0
   }
 
   async function verify(organizationId) {
-    const connection = await resolveConnection(organizationId, ['configured', 'error']);
+    const connection = await resolveConnection(organizationId, ['configured', 'error', 'verified']);
     if (!connection) throw new Error("No Mews connection is configured for this hotel.");
     const [configuration, services] = await Promise.all([
       connection.client.getConfiguration(),

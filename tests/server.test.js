@@ -430,3 +430,56 @@ test("conversation evidence is tenant-scoped and exposes approved source provena
   assert.match(dashboard, /Last reviewed:/);
   assert.match(dashboard, /Staff handoff:/);
 });
+
+test("HTTP demo guest journey returns approved sample information and labels it as simulated", async () => {
+  const response = await fetch(`${baseUrl}/api/demo/chat`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ message: "What time is breakfast?" })
+  });
+  const body = await response.json();
+  assert.equal(response.status, 200);
+  assert.match(body.reply, /6:30 AM to 10:30 AM/);
+  assert.equal(body.needsHuman, false);
+  assert.equal(body.mode, "demo-simulation");
+  assert.equal(body.demoOnly, true);
+  assert.equal(body.handoffStatus, "not_required");
+});
+
+test("HTTP demo guest journey sends unsupported requests to the simulated staff queue without claiming real notification", async () => {
+  const response = await fetch(`${baseUrl}/api/demo/chat`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ message: "Can you arrange a helicopter transfer?" })
+  });
+  const body = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(body.needsHuman, true);
+  assert.equal(body.handoffStatus, "demo_queue_only");
+  assert.equal(body.mode, "demo-simulation");
+  assert.equal(body.demoOnly, true);
+  assert.match(body.reply, /none are booked in this demo|simulated/i);
+});
+
+test("HTTP demo metrics identify sample values and report zero Veyra-linked revenue", async () => {
+  const response = await fetch(`${baseUrl}/api/demo/metrics`);
+  const body = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(body.demoOnly, true);
+  assert.match(body.label, /Illustrative sample data/);
+  assert.equal(body.veyraLinkedRevenueMinor, 0);
+  assert.match(body.note, /not attributed to Veyra/);
+});
+
+test("live hotel guest chat remains blocked when its database and pilot prerequisites are absent", async () => {
+  const response = await fetch(`${baseUrl}/api/public/sample-hotel/chat`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ message: "What time is breakfast?" })
+  });
+  const body = await response.json();
+  assert.equal(response.status, 503);
+  assert.match(body.error, /platform is not configured/i);
+  assert.notEqual(body.mode, "demo-simulation");
+});
+

@@ -55,8 +55,15 @@ function validateWebhookUrl(value) {
   }
   return url.toString();
 }
-async function resolvePublicAddress(hostname, lookup = dns.lookup) {
-  const records = await lookup(hostname, { all: true, verbatim: true });
+async function resolvePublicAddress(hostname, lookup = dns.lookup, timeoutMs = 5000) {
+  let timer;
+  let records;
+  try {
+    records = await Promise.race([
+      lookup(hostname, { all: true, verbatim: true }),
+      new Promise((_, reject) => { timer = setTimeout(() => reject(new Error("Webhook DNS lookup timed out.")), timeoutMs); })
+    ]);
+  } finally { if (timer) clearTimeout(timer); }
   if (!Array.isArray(records) || records.length === 0 ||
       records.some(record => !record || !isPublicIPv4(record.address))) {
     throw new Error("Webhook hostname must resolve exclusively to public IPv4 addresses.");
@@ -88,7 +95,7 @@ async function deliverStaffEscalation({
   try {
     const safeUrl = validateWebhookUrl(webhookUrl);
     const url = new URL(safeUrl);
-    const address = await resolvePublicAddress(url.hostname, lookupImpl);
+    const address = await resolvePublicAddress(url.hostname, lookupImpl, timeoutMs);
     const body = JSON.stringify({
       event, test: Boolean(test), organizationId: organization.id,
       organizationSlug: organization.slug, organization: organization.name,

@@ -11,6 +11,7 @@ const {createStorageRouter}=require("./storage-integrations");
 const {requiresStaffEscalation,buildGuestSupportSystemPrompt}=require("./guest-support-policy");
 const {buildPilotReadiness}=require("./pilot-readiness");
 const {normalizeRevenueEvent,normalizeRevenueAdjustment}=require("./revenue-attribution");
+const {normalizeGuestConversationAccess,normalizeStaffReply,canReplyToConversation}=require("./guest-messaging");
 const app=express();
 const PORT=Number(process.env.PORT||3000);
 const MODEL=process.env.OPENAI_MODEL||"gpt-4.1-mini";
@@ -22,20 +23,21 @@ const prod=process.env.NODE_ENV==="production";
 const cookie=prod?"__Host-veyra_session":"veyra_session";
 app.disable("x-powered-by");
 app.use((_q,r,n)=>{r.setHeader("X-Content-Type-Options","nosniff");r.setHeader("X-Frame-Options","DENY");r.setHeader("Referrer-Policy","strict-origin-when-cross-origin");r.setHeader("Permissions-Policy","camera=(),microphone=(),geolocation=()");n();});
-app.use(cors((req,cb)=>{const o=req.get("Origin");const common={credentials:true,allowedHeaders:["Content-Type","X-CSRF-Token","X-Bootstrap-Token","X-Platform-Provisioning-Token","X-Veyra-Webhook-Token"],methods:["GET","POST","PATCH","DELETE","OPTIONS"]};if(!o||origins.includes(o))return cb(null,{...common,origin:true});const segments=req.path.split("/");if(segments.length!==5||segments[1]!=="api"||segments[2]!=="public"||segments[4]!=="chat"||!db)return cb(null,{...common,origin:false});let hotelSlug;try{hotelSlug=decodeURIComponent(segments[3]);}catch{return cb(null,{...common,origin:false});}db.query("SELECT 1 FROM organizations o JOIN organization_settings s ON s.organization_id=o.id WHERE o.slug=$1 AND s.website_url=$2 LIMIT 1",[hotelSlug,o]).then(x=>cb(null,{...common,origin:x.rowCount>0})).catch(()=>cb(null,{...common,origin:false}));}));
+app.use(cors((req,cb)=>{const o=req.get("Origin");const common={credentials:true,allowedHeaders:["Content-Type","X-CSRF-Token","X-Bootstrap-Token","X-Platform-Provisioning-Token","X-Veyra-Webhook-Token","X-Veyra-Conversation-Token"],methods:["GET","POST","PATCH","DELETE","OPTIONS"]};if(!o||origins.includes(o))return cb(null,{...common,origin:true});const segments=req.path.split("/");if(segments.length!==5||segments[1]!=="api"||segments[2]!=="public"||segments[4]!=="chat"||!db)return cb(null,{...common,origin:false});let hotelSlug;try{hotelSlug=decodeURIComponent(segments[3]);}catch{return cb(null,{...common,origin:false});}db.query("SELECT 1 FROM organizations o JOIN organization_settings s ON s.organization_id=o.id WHERE o.slug=$1 AND s.website_url=$2 LIMIT 1",[hotelSlug,o]).then(x=>cb(null,{...common,origin:x.rowCount>0})).catch(()=>cb(null,{...common,origin:false}));}));
 app.use(express.json({limit:"20kb"}));
-app.use("/api/",rateLimit({windowMs:60000,limit:60,standardHeaders:"draft-7",legacyHeaders:false}));
+app.use("/api/",rateLimit({windowMs:60000,limit:prod?60:300,standardHeaders:"draft-7",legacyHeaders:false}));
 app.use("/api/auth/",rateLimit({windowMs:900000,limit:10,standardHeaders:"draft-7",legacyHeaders:false}));
 const setupLimiter=rateLimit({windowMs:3600000,limit:5,standardHeaders:"draft-7",legacyHeaders:false});
 const platformProvisionLimiter=rateLimit({windowMs:3600000,limit:10,standardHeaders:"draft-7",legacyHeaders:false});
 const integrationTestLimiter=rateLimit({windowMs:3600000,limit:5,standardHeaders:"draft-7",legacyHeaders:false});
 const revenueWebhookLimiter=rateLimit({windowMs:60000,limit:30,standardHeaders:"draft-7",legacyHeaders:false});
 const publicChatLimiter=rateLimit({windowMs:300000,limit:10,standardHeaders:"draft-7",legacyHeaders:false});
+const publicPollLimiter=rateLimit({windowMs:60000,limit:30,standardHeaders:"draft-7",legacyHeaders:false});
 const invitationAcceptLimiter=rateLimit({windowMs:3600000,limit:5,standardHeaders:"draft-7",legacyHeaders:false});
 app.use("/api/invitations/accept",invitationAcceptLimiter);
 app.use("/api/setup/organization",setupLimiter);
 app.use("/api/platform/organizations",platformProvisionLimiter);
-app.use("/api/public/",publicChatLimiter);
+app.use("/api/public/",(q,r,n)=>q.method==="GET"?publicPollLimiter(q,r,n):publicChatLimiter(q,r,n));
 const schema=[
 "CREATE EXTENSION IF NOT EXISTS pgcrypto",
 "CREATE TABLE IF NOT EXISTS organizations(id UUID PRIMARY KEY DEFAULT gen_random_uuid(),name TEXT NOT NULL,slug TEXT NOT NULL UNIQUE,status TEXT NOT NULL DEFAULT 'trial' CHECK(status IN ('trial','active','suspended')),created_at TIMESTAMPTZ NOT NULL DEFAULT now())",
@@ -180,6 +182,24 @@ app.get("/api/admin/users",requireDb,auth,role("owner","admin"),async(q,r,n)=>{t
 app.patch("/api/admin/users/:id",requireDb,auth,role("owner","admin"),async(q,r,n)=>{try{if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(q.params.id))return r.status(400).json({error:"Invalid user reference."});if(typeof q.body?.active!=="boolean")return r.status(400).json({error:"Choose whether this account should be active."});if(q.params.id===q.actor.user_id)return r.status(400).json({error:"You cannot deactivate your own account."});const target=await db.query("SELECT id,role,active FROM users WHERE id=$1 AND organization_id=$2",[q.params.id,q.actor.organization_id]);if(!target.rowCount)return r.status(404).json({error:"Team member not found."});if(target.rows[0].role==="owner")return r.status(403).json({error:"The workspace owner account cannot be changed here."});if(q.actor.role!=="owner"&&target.rows[0].role!=="staff"&&target.rows[0].role!=="viewer")return r.status(403).json({error:"Only the workspace owner can change administrator access."});const c=await db.connect();try{await c.query("BEGIN");const x=await c.query("UPDATE users SET active=$1 WHERE id=$2 AND organization_id=$3 RETURNING id,email,role,active",[q.body.active,q.params.id,q.actor.organization_id]);if(!q.body.active)await c.query("DELETE FROM sessions WHERE user_id=$1",[q.params.id]);await c.query("INSERT INTO audit_logs(organization_id,actor_user_id,action,target_type,target_id) VALUES($1,$2,$3,'user',$4)",[q.actor.organization_id,q.actor.user_id,q.body.active?"user.activated":"user.deactivated",q.params.id]);await c.query("COMMIT");r.json({user:x.rows[0]});}catch(e){await c.query("ROLLBACK");throw e;}finally{c.release();}}catch(e){n(e);}});
 app.post("/api/invitations/accept",requireDb,async(q,r,n)=>{const b=q.body||{};try{if(typeof b.workspace!=="string"||!/^[a-z0-9-]{1,48}$/.test(b.workspace)||typeof b.token!=="string"||!/^[A-Za-z0-9_-]{40,64}$/.test(b.token)||typeof b.email!=="string"||typeof b.password!=="string"||b.password.length<12||b.password.length>200)return r.status(400).json({error:"Check the invitation details. Passwords must be at least 12 characters."});const email=b.email.trim().toLowerCase();if(!/^[-.+\w]+@[-.\w]+\.[A-Za-z]{2,}$/.test(email)||email.length>254)return r.status(400).json({error:"Enter the email address the invitation was sent to."});const c=await db.connect();try{await c.query("BEGIN");const found=await c.query("SELECT i.id,i.organization_id,i.email,i.role,i.expires_at,o.slug FROM user_invitations i JOIN organizations o ON o.id=i.organization_id WHERE i.token_hash=$1 AND o.slug=$2 AND i.email=$3 AND i.accepted_at IS NULL AND i.revoked_at IS NULL AND i.expires_at>now() AND o.status<>'suspended' FOR UPDATE OF i",[hash(b.token),b.workspace,email]);if(!found.rowCount){await c.query("ROLLBACK");return r.status(410).json({error:"This invitation is invalid, expired, already used or revoked."});}const i=found.rows[0];const exists=await c.query("SELECT id FROM users WHERE organization_id=$1 AND email=$2",[i.organization_id,email]);if(exists.rowCount){await c.query("ROLLBACK");return r.status(409).json({error:"An account already exists for this email. Ask the owner for help."});}const u=await c.query("INSERT INTO users(organization_id,email,password_hash,role) VALUES($1,$2,$3,$4) RETURNING id",[i.organization_id,email,await pwHash(b.password),i.role]);await c.query("UPDATE user_invitations SET accepted_at=now() WHERE id=$1",[i.id]);await c.query("INSERT INTO audit_logs(organization_id,actor_user_id,action,target_type,target_id) VALUES($1,$2,'invitation.accepted','user',$3)",[i.organization_id,u.rows[0].id,u.rows[0].id]);await c.query("COMMIT");r.status(201).json({ok:true,workspace:i.slug,email,role:i.role,message:"Account created. Sign in from the hotel workspace dashboard."});}catch(e){await c.query("ROLLBACK");throw e;}finally{c.release();}}catch(e){n(e);}});
 app.get("/api/admin/conversations/:id",requireDb,auth,async(q,r,n)=>{try{if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(q.params.id))return r.status(400).json({error:"Invalid conversation reference."});const x=await db.query("SELECT id,status,channel,started_at,last_message_at FROM conversations WHERE id=$1 AND organization_id=$2",[q.params.id,q.actor.organization_id]);if(!x.rowCount)return r.status(404).json({error:"Conversation not found."});const m=await db.query("SELECT m.id,m.role,m.content,m.created_at FROM messages m JOIN conversations c ON c.id=m.conversation_id WHERE m.conversation_id=$1 AND c.organization_id=$2 ORDER BY m.created_at DESC LIMIT 200",[q.params.id,q.actor.organization_id]);r.json({conversation:x.rows[0],messages:m.rows.reverse()});}catch(e){n(e);}});
+app.post("/api/admin/conversations/:id/reply",requireDb,auth,role("owner","admin","staff"),async(q,r,n)=>{
+ let client;
+ try{
+  if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(q.params.id))return r.status(400).json({error:"Invalid conversation reference."});
+  let message;
+  try{message=normalizeStaffReply(q.body?.message);}catch(e){return r.status(400).json({error:e.message});}
+  client=await db.connect();
+  await client.query("BEGIN");
+  const conversation=await client.query("SELECT id,status FROM conversations WHERE id=$1 AND organization_id=$2 FOR UPDATE",[q.params.id,q.actor.organization_id]);
+  if(!conversation.rowCount){await client.query("ROLLBACK");return r.status(404).json({error:"Conversation not found."});}
+  if(!canReplyToConversation(conversation.rows[0].status)){await client.query("ROLLBACK");return r.status(409).json({error:"This conversation is resolved. Reopen it before replying."});}
+  const inserted=await client.query("INSERT INTO messages(conversation_id,role,content) VALUES($1,'staff',$2) RETURNING id,role,content,created_at",[q.params.id,message]);
+  await client.query("UPDATE conversations SET last_message_at=now() WHERE id=$1 AND organization_id=$2",[q.params.id,q.actor.organization_id]);
+  await client.query("INSERT INTO audit_logs(organization_id,actor_user_id,action,target_type,target_id) VALUES($1,$2,'conversation.staff_replied','conversation',$3)",[q.actor.organization_id,q.actor.user_id,q.params.id]);
+  await client.query("COMMIT");
+  r.status(201).json({message:inserted.rows[0]});
+ }catch(e){if(client)try{await client.query("ROLLBACK");}catch{}n(e);}finally{client?.release();}
+});
 app.delete("/api/admin/conversations/:id",requireDb,auth,role("owner","admin"),async(q,r,n)=>{try{if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(q.params.id))return r.status(400).json({error:"Invalid conversation reference."});const c=await db.connect();try{await c.query("BEGIN");const found=await c.query("SELECT id FROM conversations WHERE id=$1 AND organization_id=$2 FOR UPDATE",[q.params.id,q.actor.organization_id]);if(!found.rowCount){await c.query("ROLLBACK");return r.status(404).json({error:"Conversation not found."});}await c.query("UPDATE revenue_events SET conversation_id=NULL,attribution_status='hotel_reported_unlinked' WHERE organization_id=$1 AND conversation_id=$2",[q.actor.organization_id,q.params.id]);await c.query("DELETE FROM conversations WHERE id=$1 AND organization_id=$2",[q.params.id,q.actor.organization_id]);await c.query("INSERT INTO audit_logs(organization_id,actor_user_id,action,target_type,target_id) VALUES($1,$2,'conversation.deleted','conversation',$3)",[q.actor.organization_id,q.actor.user_id,q.params.id]);await c.query("COMMIT");r.json({ok:true});}catch(e){await c.query("ROLLBACK");throw e;}finally{c.release();}}catch(e){n(e);}});
 app.get("/api/admin/revenue",requireDb,auth,role("owner","admin"),async(q,r,n)=>{try{
  const org=q.actor.organization_id;
@@ -266,6 +286,41 @@ app.get("/api/admin/overview",requireDb,auth,async(q,r,n)=>{try{const org=q.acto
  db.query("SELECT count(*)::int AS open_escalations FROM escalations WHERE organization_id=$1 AND status<>'resolved'",[org]),
  db.query("SELECT c.id,c.status,c.channel,c.started_at,c.last_message_at,(SELECT left(content,180) FROM messages m WHERE m.conversation_id=c.id ORDER BY created_at DESC LIMIT 1) AS latest_message FROM conversations c WHERE c.organization_id=$1 ORDER BY c.last_message_at DESC LIMIT 20",[org])]);
  r.json({metrics:{...m.rows[0],...e.rows[0]},conversations:c.rows});}catch(e){n(e);}});
+app.get("/api/admin/performance",requireDb,auth,async(q,r,n)=>{
+ try{
+  const result=await db.query(`
+   WITH recent AS (
+    SELECT id FROM conversations
+    WHERE organization_id=$1 AND started_at>=now()-interval '30 days'
+   ),
+   per_conversation AS (
+    SELECT c.id,
+      count(m.id) FILTER(WHERE m.role='assistant')::int AS ai_replies,
+      count(m.id) FILTER(WHERE m.role='staff')::int AS staff_replies,
+      min(m.created_at) FILTER(WHERE m.role='guest') AS first_guest_at,
+      min(m.created_at) FILTER(WHERE m.role='assistant') AS first_ai_at
+    FROM recent c
+    LEFT JOIN messages m ON m.conversation_id=c.id
+    GROUP BY c.id
+   ),
+   handoffs AS (
+    SELECT count(DISTINCT e.conversation_id)::int AS handoff_conversations
+    FROM escalations e JOIN recent c ON c.id=e.conversation_id
+   )
+   SELECT count(*)::int AS total_conversations,
+     count(*) FILTER(WHERE ai_replies>0 AND staff_replies=0)::int AS ai_only_so_far,
+     count(*) FILTER(WHERE staff_replies>0)::int AS staff_replied_conversations,
+     COALESCE(sum(ai_replies),0)::int AS ai_replies,
+     COALESCE(sum(staff_replies),0)::int AS staff_replies,
+     COALESCE((SELECT handoff_conversations FROM handoffs),0)::int AS handoff_conversations,
+     CASE WHEN count(*)=0 THEN 0 ELSE round(100.0*COALESCE((SELECT handoff_conversations FROM handoffs),0)/count(*),1) END AS handoff_rate_percent,
+     percentile_cont(0.5) WITHIN GROUP(ORDER BY extract(epoch FROM (first_ai_at-first_guest_at)))
+       FILTER(WHERE first_guest_at IS NOT NULL AND first_ai_at>=first_guest_at) AS median_first_ai_response_seconds
+   FROM per_conversation
+  `,[q.actor.organization_id]);
+  r.json({windowDays:30,...result.rows[0],note:"AI-only so far means no staff reply is recorded; it is not proof that the guest's request was resolved. No staff-time savings or revenue causation is inferred."});
+ }catch(e){n(e);}
+});
 app.get("/api/admin/knowledge",requireDb,auth,async(q,r,n)=>{try{const x=await db.query("SELECT id,title,category,content,approved,source_reference,review_due_at,reviewed_at,updated_at FROM knowledge_documents WHERE organization_id=$1 ORDER BY updated_at DESC",[q.actor.organization_id]);r.json({documents:x.rows});}catch(e){n(e);}});
 app.post("/api/admin/knowledge",requireDb,auth,role("owner","admin"),async(q,r,n)=>{try{const b=q.body||{};if(typeof b.title!=="string"||b.title.trim().length<2||b.title.length>160||typeof b.content!=="string"||b.content.trim().length<5||b.content.length>12000)return r.status(400).json({error:"Valid title and content required."});const source=typeof b.source_reference==="string"?b.source_reference.trim():"";const due=b.review_due_at||null;if(source.length>500||due!==null&&(typeof due!=="string"||!/^\d{4}-\d{2}-\d{2}$/.test(due)||Number.isNaN(Date.parse(due))))return r.status(400).json({error:"Check the source reference and review date."});const approved=Boolean(b.approved);const x=await db.query("INSERT INTO knowledge_documents(organization_id,title,category,content,approved,source_reference,review_due_at,reviewed_at,updated_by) VALUES($1,$2,$3,$4,$5,$6,$7,CASE WHEN $5 THEN now() ELSE NULL END,$8) RETURNING id,title,category,content,approved,source_reference,review_due_at,reviewed_at,updated_at",[q.actor.organization_id,b.title.trim(),String(b.category||"general").slice(0,60),b.content.trim(),approved,source,due,q.actor.user_id]);const d=x.rows[0];await db.query("INSERT INTO knowledge_document_versions(organization_id,document_id,title,category,content,approved,source_reference,review_due_at,reviewed_at,changed_by,change_type) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'created')",[q.actor.organization_id,d.id,d.title,d.category,d.content,d.approved,d.source_reference,d.review_due_at,d.reviewed_at,q.actor.user_id]);await audit(q.actor,"knowledge.created","knowledge_document",d.id);r.status(201).json({document:d});}catch(e){n(e);}});app.patch("/api/admin/knowledge/:id",requireDb,auth,role("owner","admin"),async(q,r,n)=>{try{const body=q.body||{},keys=Object.keys(body);if(!keys.length||keys.some(k=>!["title","category","content","approved","source_reference","review_due_at"].includes(k)))return r.status(400).json({error:"Unsupported fields."});
  if(body.title!==undefined&&(typeof body.title!=="string"||body.title.trim().length<2||body.title.length>160))return r.status(400).json({error:"Title must be 2–160 characters."});
@@ -285,6 +340,19 @@ app.post("/api/admin/escalations/:id/notify",requireDb,auth,role("owner","admin"
 app.patch("/api/admin/escalations/:id",requireDb,auth,role("owner","admin","staff"),async(q,r,n)=>{try{const s=q.body?.status;if(!["open","claimed","resolved"].includes(s))return r.status(400).json({error:"Invalid status."});
  const x=await db.query("UPDATE escalations SET status=$1,assigned_to=CASE WHEN $1='claimed' THEN $2 WHEN $1='open' THEN NULL ELSE assigned_to END,resolved_at=CASE WHEN $1='resolved' THEN now() ELSE NULL END WHERE id=$3 AND organization_id=$4 RETURNING id,status,assigned_to,resolved_at",[s,q.actor.user_id,q.params.id,q.actor.organization_id]);if(!x.rowCount)return r.status(404).json({error:"Escalation not found."});
  await db.query("UPDATE conversations SET status=$1 WHERE organization_id=$3 AND id=(SELECT conversation_id FROM escalations WHERE id=$2 AND organization_id=$3)",[s==="resolved"?"resolved":"escalated",q.params.id,q.actor.organization_id]);await audit(q.actor,"escalation."+s,"escalation",q.params.id);r.json({escalation:x.rows[0]});}catch(e){n(e);}});
+app.get("/api/public/:slug/chat",async(q,r,n)=>{
+ try{
+  if(!db)return r.status(503).json({error:"Hotel platform is not configured."});
+  const org=await db.query("SELECT id,status FROM organizations WHERE slug=$1",[q.params.slug]);
+  if(!org.rowCount||org.rows[0].status==="suspended")return r.status(404).json({error:"Assistant unavailable."});
+  let access;
+  try{access=normalizeGuestConversationAccess(q.query.conversationId,q.get("X-Veyra-Conversation-Token"));}catch(e){return r.status(400).json({error:e.message});}
+  const conversation=await db.query("SELECT id FROM conversations WHERE id=$1 AND organization_id=$2 AND guest_token_hash=$3",[access.conversationId,org.rows[0].id,hash(access.token)]);
+  if(!conversation.rowCount)return r.status(404).json({error:"Conversation not found."});
+  const messages=await db.query("SELECT id,content,created_at FROM messages WHERE conversation_id=$1 AND role='staff' ORDER BY created_at DESC LIMIT 50",[access.conversationId]);
+  r.json({messages:messages.rows.reverse()});
+ }catch(e){n(e);}
+});
 app.post("/api/public/:slug/chat",async(q,r,n)=>{
  try{if(!db)return r.status(503).json({error:"Hotel platform is not configured."});const releaseGate=await readinessSnapshot();if(!releaseGate.readyForPilot)return r.status(503).json({error:"Hotel pilot release gates are not all verified. Please contact hotel staff.",readyForPilot:false});const msg=q.body?.message;if(typeof msg!=="string"||!msg.trim()||msg.length>4000)return r.status(400).json({error:"Enter a message under 4,000 characters."});
  const orgR=await db.query("SELECT id,name,slug,status FROM organizations WHERE slug=$1",[q.params.slug]);if(!orgR.rowCount||orgR.rows[0].status==="suspended")return r.status(404).json({error:"Assistant unavailable."});const org=orgR.rows[0];

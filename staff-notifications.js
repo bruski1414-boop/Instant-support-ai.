@@ -53,7 +53,7 @@ function validateWebhookUrl(value) {
       host.endsWith(".example.org")) {
     throw new Error("Use a public HTTPS hostname. IP literals, reserved domains and non-HTTPS destinations are not allowed.");
   }
-  return url;
+  return url.toString();
 }
 async function resolvePublicAddress(hostname, lookup = dns.lookup) {
   const records = await lookup(hostname, { all: true, verbatim: true });
@@ -86,7 +86,8 @@ async function deliverStaffEscalation({
 }) {
   if (!webhookUrl || !webhookSecret) return { configured: false, delivered: false, status: "not_configured" };
   try {
-    const url = validateWebhookUrl(webhookUrl);
+    const safeUrl = validateWebhookUrl(webhookUrl);
+    const url = new URL(safeUrl);
     const address = await resolvePublicAddress(url.hostname, lookupImpl);
     const body = JSON.stringify({
       event, test: Boolean(test), organizationId: organization.id,

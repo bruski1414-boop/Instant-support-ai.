@@ -26,7 +26,7 @@
   var arrival=document.createElement("input");arrival.type="date";arrival.setAttribute("aria-label","Arrival date");
   var departure=document.createElement("input");departure.type="date";departure.setAttribute("aria-label","Departure date");
   stayFields.append(arrival,departure);
-  input.addEventListener("input",function(){var asksAvailability=/\\b(room|rooms|availability|available|vacancy)\\b/i.test(input.value);stayFields.classList.toggle("visible",asksAvailability);});
+  input.addEventListener("input",function(){var asksAvailability=/\b(room|rooms|availability|available|vacancy)\b/i.test(input.value);stayFields.classList.toggle("visible",asksAvailability);});
   var send=document.createElement("button");send.type="submit";send.textContent="Send";
   form.append(input,send,stayFields);
   var fine=document.createElement("div");fine.className="fine";fine.textContent="Please do not send payment details, passport numbers or sensitive personal information.";

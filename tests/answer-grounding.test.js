@@ -27,3 +27,28 @@ test("fails closed when there is no approved context or no reply", () => {
   assert.equal(validateAnswerGrounding("Check-in is at 3pm.", "").supported, false);
   assert.equal(validateAnswerGrounding("", "Check-in is at 3pm.").reason, "empty_reply");
 });
+
+
+test("rejects email addresses and website links absent from approved information", () => {
+  const email = validateAnswerGrounding(
+    "Email us at bookings@example.com.",
+    "The hotel front desk can help with questions."
+  );
+  assert.equal(email.supported, false);
+  assert.deepEqual(email.unsupportedContacts, ["bookings@example.com"]);
+
+  const url = validateAnswerGrounding(
+    "Book at https://example.com/reserve.",
+    "The hotel accepts booking enquiries by phone."
+  );
+  assert.equal(url.supported, false);
+  assert.deepEqual(url.unsupportedContacts, ["https://example.com/reserve"]);
+});
+
+test("allows contact details explicitly present in approved information", () => {
+  const result = validateAnswerGrounding(
+    "Email bookings@example.com or visit https://example.com/reserve.",
+    "Contact bookings@example.com or visit https://example.com/reserve."
+  );
+  assert.equal(result.supported, true);
+});

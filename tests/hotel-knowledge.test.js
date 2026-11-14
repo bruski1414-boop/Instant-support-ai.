@@ -83,7 +83,7 @@ test("returns source metadata only for knowledge actually included in context", 
 });
 
 test("rejects a weak single-keyword match for a multi-part guest question", () => {
-  const result = buildRelevantKnowledge("pool airport transfer schedule", docs);
+  const result = buildRelevantKnowledge("pool meteorology astronomy schedule", docs);
   assert.equal(result.matched, false);
   assert.deepEqual(result.sources, []);
   assert.equal(result.context, "");

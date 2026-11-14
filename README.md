@@ -148,4 +148,6 @@ Knowledge documents retain a version history. The dashboard can review saved ver
 
 ## PMS integration foundation
 
-A provider-neutral adapter contract is available in `pms-integration.js`, with canonical reservation-event and short-lived availability-snapshot validation. See `docs/pms-integration-contract.md`. This is an adapter foundation only: no named PMS provider, live API connection, credentials, booking sync or live inventory lookup is connected yet. Select the hotel's PMS and complete its documented authentication, webhook verification, sandbox and reconciliation work before describing this as a live integration.
+A provider-neutral adapter contract is available in `pms-integration.js`. The first provider-specific implementation is a read-only Mews Connector API client in `mews-connector.js`, restricted to the official Mews demo environment. It supports configuration verification, service discovery and service availability reads. See `docs/pms-integration-contract.md` and `docs/mews-demo-integration.md`.
+
+No credentials have been provisioned and no external API call, hotel connection, booking sync or production inventory lookup has been performed. Production access is intentionally disabled pending Mews partner onboarding/certification and explicit hotel authorization.

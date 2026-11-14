@@ -67,5 +67,6 @@ test("scopes status and connection resolution to the requested organization", as
   assert.equal(connection.service.id, "service-123");
   assert.equal(calls[1].values[0], "hotel-b");
   assert.deepEqual(calls[1].values[1], ["verified"]);
+  assert.equal(calls[1].values[2], true);
   assert.equal(Object.hasOwn(connection, "clientToken"), false);
 });

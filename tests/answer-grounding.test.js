@@ -35,6 +35,7 @@ test("rejects email addresses and website links absent from approved information
     "The hotel front desk can help with questions."
   );
   assert.equal(email.supported, false);
+  assert.equal(email.reason, "unsupported_contact_detail");
   assert.deepEqual(email.unsupportedContacts, ["bookings@example.com"]);
 
   const url = validateAnswerGrounding(
@@ -42,6 +43,7 @@ test("rejects email addresses and website links absent from approved information
     "The hotel accepts booking enquiries by phone."
   );
   assert.equal(url.supported, false);
+  assert.equal(url.reason, "unsupported_contact_detail");
   assert.deepEqual(url.unsupportedContacts, ["https://example.com/reserve"]);
 });
 

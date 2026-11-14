@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - feature/mews-demo-connector
+      - fix/mews-bookable-service-scope
   pull_request:
     branches:
       - feature/pms-adapter-foundation

@@ -202,6 +202,10 @@ test("retention policy is tenant-controlled, disabled by default and requires ex
   assert.match(server, /app\.put\("\/api\/admin\/retention",requireDb,auth,role\("owner","admin"\)/);
   assert.match(server, /app\.post\("\/api\/admin\/retention\/cleanup",requireDb,auth,role\("owner","admin"\)/);
   assert.match(server, /q\.body\?\.confirm!==true/);
+  assert.match(server, /privacyApprovalCurrent/);
+  assert.match(server, /cleanupAllowed:privacyApprovalCurrent&&count\.rows\[0\]\.eligible>0/);
+  assert.match(dashboard, /runRetention"\)\.disabled=!x\.enabled\|\|!x\.privacyApprovalCurrent\|\|x\.eligibleConversations===0/);
+
   assert.match(server, /A current, complete and unrevoked hotel privacy approval is required before retention cleanup/);
   assert.match(server, /policy_version=.*revoked_at IS NULL FOR SHARE/);
   assert.match(server, /c\.status='resolved'/);

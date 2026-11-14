@@ -6,6 +6,7 @@ Veyra now has a read-only Mews Connector API client in `mews-connector.js`.
 
 - `configuration/get`: verifies credentials and returns only the property's ID, name and timezone.
 - `services/getAll`: reads service metadata with pagination.
+- `reservations/getAll/2023-06-06`: reads minimal reservation status/date summaries with pagination and optional incremental `UpdatedUtc` filtering.
 - `services/getAvailability/2024-01-22`: reads service availability metrics for a bounded UTC interval.
 
 The client uses the official Mews demo host only: `https://api.mews-demo.com`. It sends the required `ClientToken`, `AccessToken`, and `Client` fields in each JSON POST body. It does not expose a production host, mutate reservations, charge cards, change rates, or write to hotel operations.
@@ -29,8 +30,8 @@ No API call has been made from this repository because no credentials have been 
 1. Obtain Mews demo credentials through the official Mews documentation and configure them as private server environment variables.
 2. Run the configuration check against the demo property.
 3. Map the demo property's bookable service and resource categories.
-4. Validate availability results against Mews Operations in the demo property.
-5. Add signed/registered event ingestion and idempotent reservation sync only after reviewing Mews webhook registration requirements.
+4. Run a bounded reservation-summary query using a demo date window; reconcile statuses and stay dates against Mews Operations.
+5. Add signed/registered event ingestion and idempotent incremental synchronization only after reviewing Mews event registration requirements.
 6. Complete Mews partner onboarding and certification before any production connection.
 7. Obtain the hotel's written authorization, least-privilege credentials, privacy review and operational sign-off before using production data.
 

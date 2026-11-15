@@ -2,6 +2,22 @@
 
 const crypto = require("node:crypto");
 
+async function sendStaffIntegrationTest({ organization, webhookUrl, webhookSecret, fetchImpl = fetch, timeoutMs = 5000 }) {
+  if (!webhookUrl || !webhookSecret) return { configured: false, verified: false };
+  const event = { event: "veyra.integration.test", test: true, organizationId: organization.id, organizationSlug: organization.slug, organization: organization.name, idempotencyKey: "test-" + crypto.randomUUID(), createdAt: new Date().toISOString() };
+  const body = JSON.stringify(event);
+  const signature = crypto.createHmac("sha256", webhookSecret).update(body).digest("hex");
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetchImpl(webhookUrl, { method: "POST", headers: { "content-type": "application/json", "x-veyra-signature": signature, "idempotency-key": event.idempotencyKey }, body, signal: controller.signal });
+    return { configured: true, verified: Boolean(response.ok), status: response.ok ? "delivered" : "failed", event };
+  } catch {
+    return { configured: true, verified: false, status: "failed" };
+  } finally {
+    clearTimeout(timer);
+  }
+}
 async function deliverStaffEscalation({
   organization,
   conversationId,
@@ -85,4 +101,4 @@ async function dispatchStaffNotification({ db, organizationId, escalationId, max
   return { ...result, claimed: true };
 }
 
-module.exports = { deliverStaffEscalation, shouldRetryStaffNotification, dispatchStaffNotification };
+module.exports = { sendStaffIntegrationTest, deliverStaffEscalation, shouldRetryStaffNotification, dispatchStaffNotification };

@@ -2,7 +2,7 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { analyzeKnowledgeQuality } = require("../knowledge-quality");
+const { analyzeKnowledgeQuality, getGuestEligibleKnowledge } = require("../knowledge-quality");
 
 test("flags unapproved, unsourced, unreviewed and overdue documents", () => {
   const result = analyzeKnowledgeQuality([{
@@ -36,6 +36,22 @@ test("detects possible conflicting values but never chooses one automatically", 
   assert.equal(result.possibleConflictCount, 1);
   assert.equal(result.possibleConflicts[0].severity, "review_required");
   assert.match(result.note, /never resolves conflicting/i);
+});
+
+test("guest retrieval excludes unapproved, overdue and potentially conflicting facts", () => {
+  const documents = [
+    { id: "current", title: "Breakfast service hours", category: "dining", content: "Breakfast is open from 6:30 until 10:30.", approved: true, review_due_at: "2026-12-01" },
+    { id: "conflict-a", title: "Pool opening hours", category: "facilities", content: "The pool opens at 7:00 and closes at 20:00.", approved: true, review_due_at: "2026-12-01" },
+    { id: "conflict-b", title: "Pool service hours", category: "facilities", content: "The pool opens at 8:00 and closes at 21:00.", approved: true, review_due_at: "2026-12-01" },
+    { id: "unapproved", title: "Gym hours", category: "facilities", content: "The gym opens at 6:00 and closes at 22:00.", approved: false, review_due_at: "2026-12-01" },
+    { id: "overdue", title: "Spa hours", category: "facilities", content: "The spa opens at 9:00 and closes at 18:00.", approved: true, review_due_at: "2026-11-01" }
+  ];
+  const eligible = getGuestEligibleKnowledge(documents, "2026-11-15");
+  assert.deepEqual(eligible.map(doc => doc.id), ["current"]);
+});
+
+test("guest knowledge filtering rejects malformed document collections", () => {
+  assert.throws(() => getGuestEligibleKnowledge(null, "2026-11-15"), /must be a list/);
 });
 
 test("does not compare unrelated categories or titles", () => {

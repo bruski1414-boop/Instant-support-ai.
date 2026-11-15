@@ -89,3 +89,14 @@ test("guest-support engine rejects missing AI configuration and empty messages",
     /guest message is required/,
   );
 });
+
+
+test("AI outage fallback gives a clear front-desk instruction and always requests staff help", () => {
+  const { createAiUnavailableAnswer } = require("../guest-support-engine");
+  const result = createAiUnavailableAnswer();
+
+  assert.equal(result.needsHuman, true);
+  assert.match(result.reply, /unable to verify a response right now/i);
+  assert.match(result.reply, /contact the front desk directly/i);
+  assert.match(result.handoffReason, /provider unavailable or timed out/i);
+});

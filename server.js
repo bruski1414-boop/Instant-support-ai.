@@ -14,6 +14,7 @@ const {loadApprovedKnowledge}=require("./hotel-knowledge");
 const {selectRelevantOffers,buildOfferContext}=require("./hotel-offers");
 const {buildPilotReadiness}=require("./pilot-readiness");
 const {PmsIntegrationError,createPmsRegistry,createSandboxAdapter}=require("./pms-integration");
+const {createPmsCredentialVault}=require("./pms-credential-vault");
 const {deliverStaffEscalation}=require("./staff-notifications");
 const {encryptWebhookConfig,decryptWebhookConfig,resolvePublicWebhook,postSignedWebhook}=require("./staff-webhook-security");
 const app=express();
@@ -23,6 +24,7 @@ const origins=(process.env.ALLOWED_ORIGINS||"http://localhost:3000,http://127.0.
 const ai=process.env.OPENAI_API_KEY?new OpenAI({apiKey:process.env.OPENAI_API_KEY}):null;
 const db=process.env.DATABASE_URL?new Pool({connectionString:process.env.DATABASE_URL,ssl:process.env.DATABASE_SSL==="false"?false:{rejectUnauthorized:false},max:5,connectionTimeoutMillis:5000}):null;
 const pmsRegistry=createPmsRegistry([createSandboxAdapter()]);
+const pmsCredentialVault=createPmsCredentialVault();
 const scrypt=promisify(crypto.scrypt);
 const prod=process.env.NODE_ENV==="production";
 const cookie=prod?"__Host-veyra_session":"veyra_session";
@@ -195,7 +197,47 @@ productionConnectionConfigured,
 notice:productionConnectionConfigured?"A production adapter and hotel connection are recorded. End-to-end booking and event tests are still required before pilot use.":"No verified production PMS adapter and hotel connection are configured. Sandbox checks do not verify room inventory or create bookings."
 });
 }catch(e){n(e);}});
-app.post("/api/admin/integrations/pms/:provider/test",requireDb,auth,role("owner","admin"),integrationTestLimiter,async(q,r,n)=>{try{const result=await pmsRegistry.testConnection(q.params.provider);await db.query("INSERT INTO organization_pms_adapter_tests(organization_id,provider,mode,test_passed,tested_by,tested_at) VALUES($1,$2,$3,true,$4,now()) ON CONFLICT(organization_id,provider) DO UPDATE SET mode=EXCLUDED.mode,test_passed=true,tested_by=EXCLUDED.tested_by,tested_at=now()",[q.actor.organization_id,result.provider,result.mode,q.actor.user_id]);await audit(q.actor,"integration.pms_adapter_tested","pms_adapter",result.provider);r.json({...result,productionConnectionConfigured:false,notice:result.mode==="sandbox"?"Sandbox adapter contract passed. This is not a live hotel PMS connection.":"Provider adapter connection verified."});}catch(e){if(e instanceof PmsIntegrationError)return r.status(e.status).json({verified:false,code:e.code,error:e.message});n(e);}});
+app.post("/api/admin/integrations/pms/:provider/connect",requireDb,auth,role("owner","admin"),integrationTestLimiter,async(q,r,n)=>{try{
+const adapter=pmsRegistry.list().find(item=>item.id===q.params.provider);
+if(!adapter)return r.status(404).json({error:"PMS provider adapter is not installed."});
+if(adapter.mode!=="production")return r.status(409).json({error:"Only a production provider adapter can be connected to a hotel workspace."});
+if(!pmsCredentialVault.configured)return r.status(503).json({error:"PMS credential encryption is not configured on the server."});
+const validated=await pmsRegistry.validateCredentials(q.params.provider,q.body?.credentials);
+const encrypted=pmsCredentialVault.encrypt(validated.credentials);
+await db.query("INSERT INTO pms_connections(organization_id,provider,mode,status,encrypted_credentials,scopes,connected_by,connected_at,last_tested_at,last_error,updated_at) VALUES($1,$2,$3,'pending_authorization',$4,$5,$6,now(),NULL,'',now()) ON CONFLICT(organization_id,provider) DO UPDATE SET mode=EXCLUDED.mode,status='pending_authorization',encrypted_credentials=EXCLUDED.encrypted_credentials,scopes=EXCLUDED.scopes,connected_by=EXCLUDED.connected_by,connected_at=now(),last_tested_at=NULL,last_error='',updated_at=now()",[q.actor.organization_id,q.params.provider,adapter.mode,encrypted,validated.scopes,q.actor.user_id]);
+await audit(q.actor,"integration.pms_connection_configured","pms_connection",q.params.provider);
+r.status(201).json({provider:q.params.provider,mode:adapter.mode,status:"pending_authorization",scopes:validated.scopes,credentialsStored:true});
+}catch(e){if(e instanceof PmsIntegrationError)return r.status(e.status).json({verified:false,code:e.code,error:e.message});n(e);}});
+app.post("/api/admin/integrations/pms/:provider/test",requireDb,auth,role("owner","admin"),integrationTestLimiter,async(q,r,n)=>{let storedConnection=false;try{
+const adapter=pmsRegistry.list().find(item=>item.id===q.params.provider);
+if(!adapter)return r.status(404).json({verified:false,error:"PMS provider adapter is not installed."});
+const connection=await db.query("SELECT mode,status,encrypted_credentials FROM pms_connections WHERE organization_id=$1 AND provider=$2",[q.actor.organization_id,q.params.provider]);
+let result;
+if(connection.rowCount){
+storedConnection=true;
+if(!pmsCredentialVault.configured)return r.status(503).json({verified:false,error:"PMS credential encryption is not configured on the server."});
+const credentials=pmsCredentialVault.decrypt(connection.rows[0].encrypted_credentials);
+result=await pmsRegistry.testConnection(q.params.provider,{credentials,organizationId:q.actor.organization_id});
+await db.query("UPDATE pms_connections SET status='connected',last_tested_at=now(),last_error='',updated_at=now() WHERE organization_id=$1 AND provider=$2",[q.actor.organization_id,q.params.provider]);
+}else{
+if(adapter.mode==="production")return r.status(409).json({verified:false,error:"Configure this hotel's encrypted PMS credentials before testing its production connection."});
+result=await pmsRegistry.testConnection(q.params.provider);
+result.productionReady=false;
+}
+await db.query("INSERT INTO organization_pms_adapter_tests(organization_id,provider,mode,test_passed,tested_by,tested_at) VALUES($1,$2,$3,true,$4,now()) ON CONFLICT(organization_id,provider) DO UPDATE SET mode=EXCLUDED.mode,test_passed=true,tested_by=EXCLUDED.tested_by,tested_at=now()",[q.actor.organization_id,result.provider,result.mode,q.actor.user_id]);
+await audit(q.actor,"integration.pms_adapter_tested","pms_adapter",result.provider);
+r.json({...result,productionConnectionConfigured:storedConnection&&result.mode==="production",notice:storedConnection?"Hotel-specific provider credentials passed the adapter connection test. End-to-end booking and event tests are still required.":"Sandbox adapter contract passed. This is not a live hotel PMS connection."});
+}catch(e){
+if(storedConnection)await db.query("UPDATE pms_connections SET status='error',last_tested_at=now(),last_error='Connection test failed',updated_at=now() WHERE organization_id=$1 AND provider=$2",[q.actor.organization_id,q.params.provider]).catch(()=>{});
+if(e instanceof PmsIntegrationError)return r.status(e.status).json({verified:false,code:e.code,error:e.message});
+console.error("PMS connection test failed:",e.message);
+r.status(502).json({verified:false,error:"The PMS connection could not be verified. Check the provider settings with the hotel's authorised administrator."});
+}});
+app.delete("/api/admin/integrations/pms/:provider",requireDb,auth,role("owner","admin"),async(q,r,n)=>{try{
+const deleted=await db.query("DELETE FROM pms_connections WHERE organization_id=$1 AND provider=$2",[q.actor.organization_id,q.params.provider]);
+await audit(q.actor,"integration.pms_connection_disconnected","pms_connection",q.params.provider);
+r.json({disconnected:deleted.rowCount===1});
+}catch(e){n(e);}});
 app.post("/api/admin/integrations/test-ai",requireDb,auth,role("owner","admin"),integrationTestLimiter,async(q,r,n)=>{try{if(!ai)return r.status(503).json({verified:false,error:"OPENAI_API_KEY is not configured on the server."});const model=await ai.models.retrieve(MODEL,{timeout:10000});await db.query("INSERT INTO organization_integration_checks(organization_id,integration,verified_at,verified_by) VALUES($1,'ai_provider',now(),$2) ON CONFLICT(organization_id,integration) DO UPDATE SET verified_at=now(),verified_by=EXCLUDED.verified_by",[q.actor.organization_id,q.actor.user_id]);await audit(q.actor,"integration.ai_provider_verified","integration",MODEL);r.json({verified:true,model:model.id||MODEL});}catch(e){console.error("AI provider verification failed:",e.message);r.status(502).json({verified:false,error:"The configured AI provider or model could not be verified. Check the server-side key and model access."});}});
 app.get("/api/admin/integrations/staff-webhook",requireDb,auth,role("owner","admin"),async(q,r,n)=>{try{const x=await db.query("SELECT status,updated_at FROM organization_staff_webhooks WHERE organization_id=$1",[q.actor.organization_id]);r.json({configured:Boolean(x.rowCount&&x.rows[0].status==="configured"),updatedAt:x.rows[0]?.updated_at||null,encryptionReady:Boolean(process.env.STAFF_WEBHOOK_ENCRYPTION_KEY)});}catch(e){n(e);}});
 app.put("/api/admin/integrations/staff-webhook",requireDb,auth,role("owner","admin"),async(q,r,n)=>{try{if(!process.env.STAFF_WEBHOOK_ENCRYPTION_KEY)return r.status(503).json({error:"The platform operator must configure the staff webhook encryption key first."});const url=typeof q.body?.url==="string"?q.body.url.trim():"",secret=typeof q.body?.secret==="string"?q.body.secret:"";if(url.length>2048||secret.length<24||secret.length>512)return r.status(400).json({error:"Enter an HTTPS webhook URL and a signing secret between 24 and 512 characters."});await resolvePublicWebhook(url);const encrypted=encryptWebhookConfig({url,secret},process.env.STAFF_WEBHOOK_ENCRYPTION_KEY);await db.query("INSERT INTO organization_staff_webhooks(organization_id,encrypted_config,status,updated_by,updated_at) VALUES($1,$2,'configured',$3,now()) ON CONFLICT(organization_id) DO UPDATE SET encrypted_config=EXCLUDED.encrypted_config,status='configured',updated_by=EXCLUDED.updated_by,updated_at=now()",[q.actor.organization_id,encrypted,q.actor.user_id]);await db.query("DELETE FROM organization_integration_checks WHERE organization_id=$1 AND integration='staff_webhook'",[q.actor.organization_id]);await audit(q.actor,"integration.staff_webhook_configured","integration",q.actor.organization_id);r.json({saved:true,configured:true,requiresVerification:true});}catch(e){r.status(400).json({error:e.message==="STAFF_WEBHOOK_ENCRYPTION_KEY must be a base64-encoded 32-byte key."?e.message:"Webhook URL could not be validated. Use a public HTTPS endpoint with DNS resolving only to public IP addresses."});}});

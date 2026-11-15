@@ -124,7 +124,7 @@ function createStorageRouter({ db, auth, role, audit }) {
       );
       const organizationProvider = provider === "google" ? "google_drive" : "microsoft_sharepoint";
       await client.query(
-        "INSERT INTO organization_storage_connections(organization_id,provider,workspace_reference,status,scopes,connected_by,connected_at,last_sync_status) VALUES($1,$2,$3,'connected',$4,$5,now(),'never') ON CONFLICT(organization_id) DO UPDATE SET provider=EXCLUDED.provider,workspace_reference=EXCLUDED.workspace_reference,status='connected',scopes=EXCLUDED.scopes,connected_by=EXCLUDED.connected_by,connected_at=now(),updated_at=now()",
+        "INSERT INTO organization_storage_connections(organization_id,provider,workspace_reference,status,scopes,connected_by,connected_at,last_sync_status) VALUES($1,$2,$3,'connected',$4,$5,now(),'never') ON CONFLICT(organization_id,provider) DO UPDATE SET workspace_reference=EXCLUDED.workspace_reference,status='connected',scopes=EXCLUDED.scopes,connected_by=EXCLUDED.connected_by,connected_at=now(),updated_at=now()",
         [context.organization_id, organizationProvider, accountEmail.slice(0,254), tokens.scope ? String(tokens.scope).split(/\\s+/).filter(Boolean) : [], context.user_id]
       );
       await client.query("INSERT INTO audit_logs(organization_id,actor_user_id,action,target_type) VALUES($1,$2,$3,'storage_connection')", [context.organization_id, context.user_id, "storage." + provider + ".connected"]);

@@ -45,6 +45,13 @@ test("system prompt limits answers to approved hotel knowledge", () => {
   assert.match(prompt, /Approved knowledge:\nBreakfast is served from 7 to 10\./);
 });
 
+test("system prompt treats source metadata as internal and rejects stale data as proof of live availability", () => {
+  const prompt = buildGuestSupportSystemPrompt("Hotel Alpha", "Source reference: hotel handbook\nLast manager review: 2026-11-01\nReview due: 2026-12-01\nApproved content:\nBreakfast is served from 7 to 10.");
+  assert.match(prompt, /internal source metadata/);
+  assert.match(prompt, /old document or a review date is not proof that it is current/);
+  assert.match(prompt, /cannot confirm that a particular room is available/);
+});
+
 test("system prompt does not accidentally include another hotel's content", () => {
   const prompt = buildGuestSupportSystemPrompt("Hotel Alpha", "Alpha breakfast hours only.");
   assert.equal(prompt.includes("Hotel Beta"), false);

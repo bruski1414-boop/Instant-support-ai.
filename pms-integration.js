@@ -21,7 +21,7 @@ function validateDateRange(input = {}) {
   }
   const start = Date.parse(checkIn + "T00:00:00Z");
   const end = Date.parse(checkOut + "T00:00:00Z");
-  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) {
+  if (!Number.isFinite(start) || !Number.isFinite(end) || new Date(start).toISOString().slice(0, 10) !== checkIn || new Date(end).toISOString().slice(0, 10) !== checkOut || end <= start) {
     throw new PmsIntegrationError("INVALID_DATE_RANGE", "Check-out must be after check-in.");
   }
   if (end - start > 366 * 86400000) {

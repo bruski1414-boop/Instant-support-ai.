@@ -246,7 +246,10 @@ test("guest conversation writes lock and revalidate the tenant-owned conversatio
 
 test("staff handoff events carry stable tenant identifiers for multi-hotel routing", () => {
   const server = fs.readFileSync("server.js", "utf8");
-  assert.match(server, /organizationId:org\.id,organizationSlug:org\.slug/);
+  const dispatcher = fs.readFileSync("staff-notifications.js", "utf8");
+  assert.match(dispatcher, /organizationId: organization\.id/);
+  assert.match(dispatcher, /organizationSlug: organization\.slug/);
+  assert.match(server, /deliverStaffEscalation/);
   assert.match(server, /o\.id AS organization_id,o\.name,o\.slug FROM escalations e JOIN organizations o ON o\.id=e\.organization_id/);
   assert.match(server, /notify\(\{id:item\.organization_id,name:item\.name,slug:item\.slug\}/);
 });

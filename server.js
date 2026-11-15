@@ -16,7 +16,7 @@ const {DEMO_METRICS,respondToDemoMessage}=require("./demo-mode");
 const {requiresStaffEscalation,requiresLiveAvailabilityCheck,buildGuestSupportSystemPrompt}=require("./guest-support-policy");
 const {buildPilotReadiness}=require("./pilot-readiness");
 const {buildRelevantKnowledge}=require("./hotel-knowledge");
-const {validateAnswerGrounding}=require("./answer-grounding");
+const {validateAnswerGrounding,validateStructuredAnswer}=require("./answer-grounding");
 const {isValidDateOnly,isOptionalBoolean}=require("./knowledge-validation");
 const {normalizeRevenueEvent,normalizeRevenueAdjustment}=require("./revenue-attribution");
 const {normalizeGuestConversationAccess,normalizeStaffReply,canReplyToConversation}=require("./guest-messaging");
@@ -434,6 +434,8 @@ app.post("/api/public/:slug/chat",async(q,r,n)=>{
   ...history,
   {role:"user",content:msg.trim()}]});
   try{answer=JSON.parse(completion.choices[0]?.message?.content||"");}catch{answer={reply:"I cannot prepare a reliable answer. Please contact hotel staff.",needsHuman:true,handoffReason:"Response validation failed."};}
+  const responseCheck=validateStructuredAnswer(answer);
+  if(!responseCheck.valid){answer={reply:"I cannot prepare a reliable answer. Please contact hotel staff.",needsHuman:true,handoffReason:"The generated response did not meet Veyra's required response format ("+responseCheck.reason+")."};}
  }
  if(availabilityCheck&&!liveAvailability?.verified){answer.reply="I can’t verify availability for your full stay yet. Please contact the hotel team so they can check the booking system and confirm it with you.";answer.needsHuman=true;answer.handoffReason="Guest requested live room availability but no complete verified full-stay result was available.";}
  let groundingCheck={supported:false,reason:"no_retrieved_knowledge",unsupportedNumbers:[]};

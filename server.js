@@ -8,7 +8,7 @@ const path=require("node:path");
 const {promisify}=require("node:util");
 const {Pool}=require("pg");
 const {createStorageRouter}=require("./storage-integrations");
-const {requiresStaffEscalation,requiresHumanHandoff,buildGuestSupportSystemPrompt,normalizeGuestSupportAnswer}=require("./guest-support-policy");
+const {requiresStaffEscalation,requiresHumanHandoff,resolveGuestSupportAnswer,buildGuestSupportSystemPrompt,normalizeGuestSupportAnswer}=require("./guest-support-policy");
 const {buildPilotReadiness}=require("./pilot-readiness");
 const {deliverStaffEscalation}=require("./staff-notifications");
 const app=express();
@@ -218,12 +218,13 @@ app.post("/api/public/:slug/chat",async(q,r,n)=>{
  {role:"user",content:msg.trim()}]});
  let parsedAnswer;try{parsedAnswer=JSON.parse(completion.choices[0]?.message?.content||"");}catch{parsedAnswer=null;}
  const answer=normalizeGuestSupportAnswer(parsedAnswer);
- const reply=answer.reply;const flagHuman=requiresHumanHandoff(msg,answer);
+ const resolvedAnswer=resolveGuestSupportAnswer(msg,answer);
+ const reply=resolvedAnswer.reply;const flagHuman=resolvedAnswer.needsHuman;
  const c=await db.connect();let cid=conversationId,eid,createdEscalation=false,existingNotificationStatus="not_configured";try{await c.query("BEGIN");if(!cid){const x=await c.query("INSERT INTO conversations(organization_id,channel,status,guest_token_hash) VALUES($1,'website',$2,$3) RETURNING id",[org.id,flagHuman?"escalated":"open",hash(guestToken)]);cid=x.rows[0].id;}else{const locked=await c.query("SELECT id FROM conversations WHERE id=$1 AND organization_id=$2 AND guest_token_hash=$3 FOR UPDATE",[cid,org.id,hash(guestToken)]);if(!locked.rowCount){await c.query("ROLLBACK");return r.status(404).json({error:"Conversation not found."});}}
  await c.query("INSERT INTO messages(conversation_id,role,content) VALUES($1,'guest',$2),($1,'assistant',$3)",[cid,msg.trim(),reply]);await c.query("UPDATE conversations SET last_message_at=now(),status=CASE WHEN $2 THEN 'escalated' WHEN status='resolved' THEN 'open' ELSE status END WHERE id=$1 AND organization_id=$3",[cid,flagHuman,org.id]);
- if(flagHuman){const prior=await c.query("SELECT id,notification_status FROM escalations WHERE conversation_id=$1 AND organization_id=$2 AND status<>'resolved' ORDER BY created_at DESC LIMIT 1",[cid,org.id]);if(prior.rowCount){eid=prior.rows[0].id;existingNotificationStatus=prior.rows[0].notification_status;}else{const e=await c.query("INSERT INTO escalations(organization_id,conversation_id,reason) VALUES($1,$2,$3) RETURNING id",[org.id,cid,String(answer.handoffReason||"Staff review required").slice(0,300)]);eid=e.rows[0].id;createdEscalation=true;}}
+ if(flagHuman){const prior=await c.query("SELECT id,notification_status FROM escalations WHERE conversation_id=$1 AND organization_id=$2 AND status<>'resolved' ORDER BY created_at DESC LIMIT 1",[cid,org.id]);if(prior.rowCount){eid=prior.rows[0].id;existingNotificationStatus=prior.rows[0].notification_status;}else{const e=await c.query("INSERT INTO escalations(organization_id,conversation_id,reason) VALUES($1,$2,$3) RETURNING id",[org.id,cid,String(resolvedAnswer.handoffReason||"Staff review required").slice(0,300)]);eid=e.rows[0].id;createdEscalation=true;}}
  await c.query("COMMIT");}catch(e){await c.query("ROLLBACK");throw e;}finally{c.release();}
- const notice=createdEscalation?await notify(org,cid,String(answer.handoffReason||"Staff review required").slice(0,300)):{configured:existingNotificationStatus!=="not_configured",delivered:existingNotificationStatus==="delivered",status:flagHuman?existingNotificationStatus:"not_configured"};
+ const notice=createdEscalation?await notify(org,cid,String(resolvedAnswer.handoffReason||"Staff review required").slice(0,300)):{configured:existingNotificationStatus!=="not_configured",delivered:existingNotificationStatus==="delivered",status:flagHuman?existingNotificationStatus:"not_configured"};
  if(createdEscalation)await db.query("UPDATE escalations SET notification_status=$1,notification_attempts=notification_attempts+CASE WHEN $2 THEN 1 ELSE 0 END,notification_last_attempt_at=CASE WHEN $2 THEN now() ELSE notification_last_attempt_at END WHERE id=$3 AND organization_id=$4",[notice.status,notice.configured,eid,org.id]);
  r.json({reply,needsHuman:flagHuman,handoffConfigured:notice.configured,notificationDelivered:notice.delivered,notificationStatus:notice.status,conversationId:cid,conversationToken:guestToken,escalationId:eid||null});
  }catch(e){n(e);}

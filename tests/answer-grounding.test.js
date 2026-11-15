@@ -125,3 +125,12 @@ test("accepts a short paraphrase when its factual terms are supported", () => {
   );
   assert.equal(result.supported, true);
 });
+
+
+test("does not reject polite wording around an otherwise supported answer", () => {
+  const result = validateAnswerGrounding(
+    "I’m happy to help. Guest parking is available on site.",
+    "Complimentary on-site guest parking is available in the hotel car park."
+  );
+  assert.equal(result.supported, true);
+});

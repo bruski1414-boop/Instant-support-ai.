@@ -38,9 +38,16 @@ The web service and database are currently on Render's free plans. The database 
 - Hotel owners/admins can browse plain-text documents and Google Docs, choose individual files, and import them into that hotel's knowledge base. Imports are unapproved by default and must be manager-verified before guest use. SharePoint site discovery and site-root text-file browsing are included.
 - AI answer generation constrained to each hotel's approved knowledge, with conservative escalation for uncertain or sensitive requests.
 - Signed, hotel-specific staff webhooks with persisted delivery status, attempt count and a dashboard retry action for failed notifications. A missing or failed webhook always leaves a manual staff follow-up requirement.
+- Provider-independent PMS adapter framework with a strict adapter contract for connection tests, availability lookup, booking creation and webhook verification; normalized date, availability and booking payloads; and a sandbox adapter. Sandbox checks are explicitly marked non-production and do not claim live inventory or create bookings. No live PMS vendor adapter is connected yet.
 - Separate rate limits for public guest chat and first-owner bootstrap.
 - Guest conversation storage is disabled by default until privacy and retention arrangements are approved.
 - GitHub Actions CI runs syntax checks and Node's test suite against PostgreSQL 16. The two-hotel integration test provisions separate workspaces, signs in as both owners, checks tenant separation across knowledge, settings, staff, audit events, storage connections, conversations, escalations and encrypted staff-webhook configuration, attempts cross-tenant reads/edits/deletes, verifies distinct website CORS origins and sends concurrent dashboard requests. Unit tests cover webhook encryption, URL validation, signed payload delivery and failure handling. Live Google/Microsoft OAuth, real provider credentials, real hotel notification receivers, backup/restore and sustained load testing remain outstanding.
+
+## PMS integration framework
+
+The PMS layer is deliberately provider-independent so a hotel can select its existing property-management or booking system before a vendor-specific connector is added. The adapter contract is in `pms-integration.js`. Each production adapter must implement a connection test and explicitly declare support for availability lookup, booking creation and webhook verification. Provider responses are normalized before they can enter Veyra's application layer; date ranges, currencies, inventory counts, booking statuses and idempotency keys are validated.
+
+The hotel setup dashboard exposes the installed adapter catalog and a sandbox contract test. The sandbox only proves that Veyra's adapter interface and tenant-scoped test recording work. It does **not** connect to a hotel's PMS, return live availability, confirm reservations or create bookings. The current release has no production PMS vendor adapter and does not store PMS credentials. A real connection requires the hotel to identify its provider, obtain an authorised sandbox/API account and approve the required scopes. Only then should a provider-specific adapter, encrypted credential storage, webhook signature validation, replay protection and end-to-end booking tests be implemented.
 
 ## Provisioning additional hotels
 

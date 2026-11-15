@@ -74,7 +74,8 @@ function postSignedWebhook(urlValue, secret, event, options = {}) {
     const body = JSON.stringify(event);
     const signature = crypto.createHmac("sha256",secret).update(body).digest("hex");
     const address = records[0];
-    const request = https.request({
+    const requestImpl = options.requestImpl || https.request;
+    const request = requestImpl({
       protocol:"https:",hostname:url.hostname,port:443,path:url.pathname+url.search,method:"POST",
       servername:url.hostname,agent:false,
       lookup:(_host,_opts,callback)=>callback(null,address.address,address.family),

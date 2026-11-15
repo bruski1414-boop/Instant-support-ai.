@@ -5,6 +5,15 @@ const { Pool } = require("pg");
 const { createStaffWebhookStore } = require("../staff-webhook-store");
 const { deliverStaffEscalation, dispatchStaffNotification, retryPendingStaffNotifications } = require("../staff-notifications");
 
+function validateRetryConfiguration(webhookStore) {
+  if (!webhookStore || !webhookStore.encryptionConfigured) {
+    throw new Error("STAFF_WEBHOOK_ENCRYPTION_KEY is required for notification retries.");
+  }
+  if (!webhookStore.allowedHostsConfigured) {
+    throw new Error("STAFF_WEBHOOK_ALLOWED_HOSTS must contain an approved host for notification retries.");
+  }
+}
+
 async function main() {
   if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL is required.");
   const db = new Pool({
@@ -19,12 +28,7 @@ async function main() {
     allowedHosts: process.env.STAFF_WEBHOOK_ALLOWED_HOSTS
   });
   try {
-    if (!webhookStore.encryptionConfigured) {
-      throw new Error("STAFF_WEBHOOK_ENCRYPTION_KEY is required for notification retries.");
-    }
-    if (!webhookStore.allowedHostsConfigured) {
-      throw new Error("STAFF_WEBHOOK_ALLOWED_HOSTS must contain an approved host for notification retries.");
-    }
+    validateRetryConfiguration(webhookStore);
     const result = await retryPendingStaffNotifications({
       db,
       batchSize: 50,
@@ -58,7 +62,11 @@ async function main() {
   }
 }
 
-main().catch(error => {
-  console.error("Staff notification retry job failed:", error.message);
-  process.exitCode = 1;
-});
+if (require.main === module) {
+  main().catch(error => {
+    console.error("Staff notification retry job failed:", error.message);
+    process.exitCode = 1;
+  });
+}
+
+module.exports = { validateRetryConfiguration };

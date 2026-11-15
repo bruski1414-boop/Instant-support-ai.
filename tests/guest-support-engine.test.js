@@ -1,0 +1,89 @@
+const { test } = require("node:test");
+const assert = require("node:assert/strict");
+const { generateGuestSupportAnswer } = require("../guest-support-engine");
+
+function fakeAi(content, inspect) {
+  return {
+    chat: {
+      completions: {
+        async create(request) {
+          if (inspect) inspect(request);
+          return { choices: [{ message: { content } }] };
+        },
+      },
+    },
+  };
+}
+
+test("guest-support engine answers from the approved-knowledge prompt and keeps bounded conversation history", async () => {
+  let request;
+  const result = await generateGuestSupportAnswer({
+    ai: fakeAi(JSON.stringify({
+      reply: "Breakfast is served from 7:00 to 10:00.",
+      needsHuman: false,
+      handoffReason: "",
+    }), (value) => { request = value; }),
+    model: "test-model",
+    hotelName: "Aster House",
+    approvedKnowledge: "[facilities] Breakfast: 7:00–10:00",
+    history: [
+      { role: "user", content: "Previous question" },
+      { role: "assistant", content: "Previous answer" },
+      { role: "system", content: "This untrusted role must be removed" },
+      { role: "user", content: "x".repeat(2000) },
+    ],
+    message: "When is breakfast?",
+  });
+
+  assert.equal(result.reply, "Breakfast is served from 7:00 to 10:00.");
+  assert.equal(result.needsHuman, false);
+  assert.equal(request.model, "test-model");
+  assert.equal(request.temperature, 0.1);
+  assert.equal(request.messages[0].role, "system");
+  assert.match(request.messages[0].content, /approved hotel reference data only/);
+  assert.equal(request.messages.at(-1).content, "When is breakfast?");
+  assert.equal(request.messages.filter((item) => item.role === "system").length, 1);
+  assert.equal(request.messages[2].content.length, 1500);
+});
+
+test("guest-support engine overrides a model answer when a deterministic handoff is required", async () => {
+  const result = await generateGuestSupportAnswer({
+    ai: fakeAi(JSON.stringify({
+      reply: "Breakfast starts at 7:00.",
+      needsHuman: false,
+      handoffReason: "",
+    })),
+    model: "test-model",
+    hotelName: "Aster House",
+    approvedKnowledge: "Breakfast is served at 7:00.",
+    message: "There is smoke in the hallway.",
+  });
+
+  assert.equal(result.needsHuman, true);
+  assert.match(result.reply, /local emergency services now/);
+  assert.match(result.reply, /Do not wait for a chat reply/);
+});
+
+test("guest-support engine fails closed when the model returns malformed JSON", async () => {
+  const result = await generateGuestSupportAnswer({
+    ai: fakeAi("not-json"),
+    model: "test-model",
+    hotelName: "Aster House",
+    approvedKnowledge: "Breakfast is served at 7:00.",
+    message: "When is breakfast?",
+  });
+
+  assert.equal(result.needsHuman, true);
+  assert.match(result.reply, /cannot prepare a reliable answer/);
+});
+
+test("guest-support engine rejects missing AI configuration and empty messages", async () => {
+  await assert.rejects(
+    () => generateGuestSupportAnswer({ ai: null, message: "Hello" }),
+    /AI provider is not configured/,
+  );
+  await assert.rejects(
+    () => generateGuestSupportAnswer({ ai: fakeAi("{}"), message: "  " }),
+    /guest message is required/,
+  );
+});

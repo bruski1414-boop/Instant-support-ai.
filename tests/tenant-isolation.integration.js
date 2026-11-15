@@ -4,7 +4,8 @@ import { randomUUID } from "node:crypto";
 import pg from "pg";
 import knowledgeLoader from "../hotel-knowledge.js";
 const { loadApprovedKnowledge } = knowledgeLoader;
-const { recordWebhookEvent } = require("../pms-integration.js");
+import pmsIntegration from "../pms-integration.js";
+const { recordWebhookEvent } = pmsIntegration;
 const { Pool } = pg;
 
 if (process.env.CI !== "true" || process.env.VEYRA_TENANT_TEST_DATABASE !== "true") {

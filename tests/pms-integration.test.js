@@ -127,13 +127,21 @@ test("registry verifies provider signatures before accepting webhook events", as
 });
 
 test("webhook event inbox is idempotent and tenant-scoped", async () => {
-  const inserted = new Set();
+  const inserted = new Map();
   const db = {
     async query(sql, params) {
       const key = params.slice(0, 3).join(":");
-      if (inserted.has(key)) return { rowCount: 0, rows: [] };
-      inserted.add(key);
-      return { rowCount: 1, rows: [{ id: "event-row" }] };
+      if (sql.startsWith("INSERT")) {
+        if (inserted.has(key)) return { rowCount: 0, rows: [] };
+        inserted.set(key, params[4]);
+        return { rowCount: 1, rows: [{ id: "event-row" }] };
+      }
+      if (sql.startsWith("SELECT")) {
+        return inserted.has(key)
+          ? { rowCount: 1, rows: [{ payload_sha256: inserted.get(key) }] }
+          : { rowCount: 0, rows: [] };
+      }
+      throw new Error("Unexpected database query in webhook inbox test.");
     },
   };
   const event = {
@@ -146,6 +154,12 @@ test("webhook event inbox is idempotent and tenant-scoped", async () => {
   assert.deepEqual(first, { accepted: true, duplicate: false, eventId: "evt_once" });
   assert.deepEqual(duplicate, { accepted: false, duplicate: true, eventId: "evt_once" });
   assert.deepEqual(otherTenant, { accepted: true, duplicate: false, eventId: "evt_once" });
+  await assert.rejects(
+    () => recordWebhookEvent(db, "hotel-a", "provider-a", {
+      ...event, data: { reservationId: "different-reservation" },
+    }, new Date("2027-01-10T12:00:03.000Z")),
+    error => error.code === "WEBHOOK_EVENT_ID_COLLISION" && error.status === 409,
+  );
 });
 
 

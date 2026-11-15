@@ -13,7 +13,7 @@ Veyra AI is a hotel customer-support platform prototype. It is designed to answe
 
 The Render web service is connected to PostgreSQL. GitHub Actions CI runs on Node.js 20 with a temporary PostgreSQL 16 service and executes the complete test suite, including a live two-hotel API isolation test. A successful deployment or CI run is useful evidence, but neither certifies the product for real guest data or a hotel launch.
 
-The web service and database are currently on Render's free plans. The database is temporary and is scheduled to expire on 11 December 2026. Do not put real hotel or guest data into this environment. A parent or guardian must manage hosting accounts, any paid upgrades and provider billing.
+The web service and database are currently on Render's free plans. The database is scheduled to expire on 11 December 2026. Render Free Postgres has no managed backups, logical exports, or point-in-time recovery; its data can be deleted after the expiry grace period. External database connections are currently blocked by an empty IP allowlist. Do not put real hotel or guest data into this environment. A parent or guardian must manage hosting accounts, any paid upgrades, database credentials, and provider billing. See [the database backup and restore runbook](docs/database-backup-restore.md).
 
 ## Implemented foundation
 

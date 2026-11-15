@@ -37,7 +37,7 @@ for (const [subnet, prefix] of [
 ]) blocked.addSubnet(subnet,prefix,"ipv4");
 for (const [subnet,prefix] of [
   ["::",128],["::1",128],["fc00::",7],["fe80::",10],["ff00::",8],
-  ["2001:db8::",32],["::ffff:0:0",96]
+  ["2001:db8::",32]
 ]) blocked.addSubnet(subnet,prefix,"ipv6");
 
 function isPublicAddress(address) {

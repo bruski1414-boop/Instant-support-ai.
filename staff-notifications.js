@@ -113,7 +113,7 @@ async function retryPendingStaffNotifications({ db, dispatch, batchSize = 50 }) 
   if (typeof dispatch !== "function") throw new TypeError("A notification dispatcher is required.");
   const limit = Number.isInteger(batchSize) ? Math.max(1, Math.min(batchSize, 100)) : 50;
   const pending = await db.query(
-    "SELECT e.id AS escalation_id,e.organization_id,e.conversation_id,e.reason,o.name AS organization_name,o.slug AS organization_slug FROM escalations e JOIN organizations o ON o.id=e.organization_id WHERE e.status<>'resolved' AND e.notification_attempts<5 AND ((e.notification_status='failed' AND (e.notification_last_attempt_at IS NULL OR e.notification_last_attempt_at<now()-interval '5 minutes')) OR (e.notification_status='sending' AND e.notification_last_attempt_at<now()-interval '2 minutes')) ORDER BY COALESCE(e.notification_last_attempt_at,e.created_at),e.created_at LIMIT $1",
+    "SELECT e.id AS escalation_id,e.organization_id,e.conversation_id,e.reason,o.name AS organization_name,o.slug AS organization_slug FROM escalations e JOIN organizations o ON o.id=e.organization_id JOIN organization_staff_webhooks w ON w.organization_id=e.organization_id AND w.status='verified' WHERE e.status<>'resolved' AND e.notification_attempts<5 AND ((e.notification_status IN ('failed','not_configured') AND (e.notification_last_attempt_at IS NULL OR e.notification_last_attempt_at<now()-interval '5 minutes')) OR (e.notification_status='sending' AND e.notification_last_attempt_at<now()-interval '2 minutes')) ORDER BY COALESCE(e.notification_last_attempt_at,e.created_at),e.created_at LIMIT $1",
     [limit]
   );
   const results = [];

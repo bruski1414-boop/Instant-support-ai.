@@ -315,3 +315,11 @@ test("hotel storage dashboard distinguishes disconnect from explicit imported-co
   assert.match(dashboard, /api\("\/api\/admin\/storage\/imports\/"\+b\.dataset\.storagePurge/);
   assert.match(dashboard, /Existing imported knowledge copies will remain in Veyra until separately deleted/);
 });
+
+test("staff notification retries are capped and direct staff to manual fallback", () => {
+  const server = fs.readFileSync("server.js", "utf8");
+  assert.match(server, /if\(item\.notification_attempts>=5\)return r\.status\(429\)/);
+  assert.match(server, /Notification retry limit reached\. Use the hotel manual staff contact process\./);
+  assert.match(server, /notification_attempts=notification_attempts\+CASE WHEN \$2 THEN 1 ELSE 0 END/);
+  assert.match(server, /notification_status===\"delivered\"\)return r\.status\(409\)/);
+});

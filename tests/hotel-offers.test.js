@@ -68,6 +68,7 @@ test("caps recommendations at three and includes only verified offer context", (
   const selected = selectRelevantOffers({ message: "I would like a massage", offers, now, limit: 10 });
   assert.equal(selected.length, 3);
   const context = buildOfferContext(selected);
-  assert.match(context, /price_minor_units/);
+  assert.match(context, /price_major_units/);
+  assert.match(context, /2500/);
   assert.match(context, /availability_verified_at/);
 });

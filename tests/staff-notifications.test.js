@@ -110,7 +110,7 @@ test("webhook URLs require public HTTPS hostnames", () => {
   for (const url of [
     "http://hooks.hotel.com/events", "https://localhost/hook", "https://127.0.0.1/hook",
     "https://10.0.0.8/hook", "https://192.168.1.2/hook", "https://172.16.0.1/hook",
-    "https://user:pass@hooks.hotel.com/hook", "https://[::1]/hook",
+    "https://user:pass@hooks.hotel.com/hook", "https://[::1]/hook", "https://[2001:4860:4860::8888]/hook",
     "https://service.example.test/hook", "https://hooks.hotel.com./hook"
   ]) assert.throws(() => validateWebhookUrl(url), undefined, url);
 });

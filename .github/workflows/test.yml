@@ -2,9 +2,9 @@ name: Veyra CI
 
 on:
   push:
-    branches: [main, "feature/**"]
+    branches: [main, "feature/**", "fix/**"]
   pull_request:
-    branches: [main, improve-booking-intent-handoffs, feature/pms-adapter-foundation]
+    branches: [main, improve-booking-intent-handoffs, feature/two-way-guest-messaging-ci, feature/pms-adapter-foundation, feature/mews-demo-connector, fix/mews-bookable-service-scope, fix/demo-hotel-faq-intents]
   workflow_dispatch:
 
 permissions:

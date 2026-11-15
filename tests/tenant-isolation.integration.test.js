@@ -3,6 +3,7 @@ const assert = require("node:assert/strict");
 const { spawn } = require("node:child_process");
 const net = require("node:net");
 const http = require("node:http");
+const path = require("node:path");
 const crypto = require("node:crypto");
 const { Pool } = require("pg");
 
@@ -14,7 +15,8 @@ test("two hotel workspaces remain isolated across live API resources", { skip: !
   let webhookServer;
   let webhookUrl;
   const webhookEvents = [];
-  const webhookSecret = "integration-test-webhook-secret";
+  const alphaWebhookSecret = "alpha-integration-test-webhook-secret";
+  const betaWebhookSecret = "beta-integration-test-webhook-secret";
   const password = "test-password-for-hotel-owner";
 
   async function freePort() {
@@ -87,8 +89,9 @@ test("two hotel workspaces remain isolated across live API resources", { skip: !
       OPENAI_API_KEY: "",
       BOOTSTRAP_TOKEN: bootstrapToken,
       PLATFORM_PROVISIONING_TOKEN: provisioningToken,
-      STAFF_WEBHOOK_URL: webhookUrl,
-      STAFF_WEBHOOK_SECRET: webhookSecret,
+      STORAGE_TOKEN_ENCRYPTION_KEY: "ci-storage-token-encryption-key-for-integration-tests",
+      NODE_OPTIONS: [process.env.NODE_OPTIONS || "", "--require=" + path.resolve("tests/mock-staff-notifications.js")].filter(Boolean).join(" "),
+      VEYRA_TEST_WEBHOOK_CAPTURE_URL: webhookUrl,
       GUEST_DATA_STORAGE_ENABLED: "false",
       ALLOWED_ORIGINS: "http://localhost:3000"
     },
@@ -213,12 +216,34 @@ test("two hotel workspaces remain isolated across live API resources", { skip: !
   const alphaAiCheck = await request("/api/admin/integrations/test-ai", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" }, alphaSession);
   assert.equal(alphaAiCheck.status, 503, "missing provider key must be reported rather than pretending AI is verified");
 
-  for (const [session, expectedSlug, expectedId] of [
-    [alphaSession, "hotel-alpha", alphaId],
-    [betaSession, "hotel-beta", betaId]
-  ]) {
-    const check = await request("/api/admin/integrations/test-staff-webhook", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" }, session);
-    assert.equal(check.status, 200, "each hotel owner should be able to verify the shared signed dispatcher");
+  const webhookConfigs = [
+    [alphaSession, "hotel-alpha", alphaId, "https://alpha-webhook.integrationtest.com/events", alphaWebhookSecret],
+    [betaSession, "hotel-beta", betaId, "https://beta-webhook.integrationtest.com/events", betaWebhookSecret]
+  ];
+  for (const [session, expectedSlug, expectedId, webhookDestination, secret] of webhookConfigs) {
+    const save = await request("/api/admin/staff-webhook", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ webhookUrl: webhookDestination, webhookSecret: secret })
+    }, session);
+    assert.equal(save.status, 200, await save.clone().text());
+    const saved = await save.json();
+    assert.equal(saved.configured, true);
+    assert.equal(saved.verified, false);
+
+    const status = await request("/api/admin/staff-webhook", {}, session);
+    assert.equal(status.status, 200);
+    const statusBody = await status.json();
+    assert.equal(statusBody.webhookUrl, webhookDestination);
+    assert.equal(statusBody.secretStored, true);
+    assert.equal(Object.hasOwn(statusBody, "secret"), false);
+
+    const check = await request("/api/admin/integrations/test-staff-webhook", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{}"
+    }, session);
+    assert.equal(check.status, 200, await check.clone().text());
     const body = await check.json();
     assert.equal(body.verified, true);
     assert.equal(body.organizationSlug, expectedSlug);
@@ -227,10 +252,18 @@ test("two hotel workspaces remain isolated across live API resources", { skip: !
     assert.equal(event.payload.organizationId, expectedId);
     assert.equal(event.payload.organizationSlug, expectedSlug);
     assert.equal(event.payload.test, true);
-    assert.equal(event.signature, crypto.createHmac("sha256", webhookSecret).update(JSON.stringify(event.payload)).digest("hex"));
+    assert.equal(event.payload.conversationId, undefined);
+    assert.equal(event.payload.reason, undefined);
+    assert.equal(event.signature, crypto.createHmac("sha256", secret).update(JSON.stringify(event.payload)).digest("hex"));
   }
+  const storedStaffWebhooks = await pool.query(
+    "SELECT organization_id,webhook_url,encrypted_secret FROM organization_staff_webhooks WHERE organization_id IN($1,$2) ORDER BY organization_id",
+    [alphaId, betaId]
+  );
+  assert.equal(storedStaffWebhooks.rowCount, 2);
+  assert.ok(storedStaffWebhooks.rows.every(row => !row.encrypted_secret.includes(alphaWebhookSecret) && !row.encrypted_secret.includes(betaWebhookSecret)));
   const verifiedChecks = await pool.query("SELECT organization_id,integration FROM organization_integration_checks WHERE integration='staff_webhook' ORDER BY organization_id");
-  assert.equal(verifiedChecks.rowCount, 2, "staff integration verification must be stored separately for each hotel");
+  assert.equal(verifiedChecks.rowCount, 2);
 
   for (const session of [alphaSession, betaSession]) {
     const onboarding = await request("/api/admin/onboarding", {}, session);
@@ -240,16 +273,16 @@ test("two hotel workspaces remain isolated across live API resources", { skip: !
     assert.equal(state.checks.find((item) => item.key === "ai").done, false);
   }
 
-  for (const [session, escalationId, expectedOrganizationId, expectedSlug] of [
-    [alphaSession, alphaEscalation.rows[0].id, alphaId, "hotel-alpha"],
-    [betaSession, betaEscalation.rows[0].id, betaId, "hotel-beta"]
+  for (const [session, escalationId, expectedOrganizationId, expectedSlug, secret] of [
+    [alphaSession, alphaEscalation.rows[0].id, alphaId, "hotel-alpha", alphaWebhookSecret],
+    [betaSession, betaEscalation.rows[0].id, betaId, "hotel-beta", betaWebhookSecret]
   ]) {
-    const response = await request(`/api/admin/escalations/${escalationId}/notify`, {
+    const response = await request("/api/admin/escalations/" + escalationId + "/notify", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: "{}"
     }, session);
-    assert.equal(response.status, 200, "each hotel should be able to retry its own staff handoff");
+    assert.equal(response.status, 200);
     const body = await response.json();
     assert.equal(body.delivered, true);
     assert.equal(body.notificationStatus, "delivered");
@@ -257,11 +290,8 @@ test("two hotel workspaces remain isolated across live API resources", { skip: !
     assert.equal(event.payload.organizationId, expectedOrganizationId);
     assert.equal(event.payload.organizationSlug, expectedSlug);
     assert.equal(event.payload.event, "veyra.escalation.created");
-    assert.equal(
-      event.signature,
-      crypto.createHmac("sha256", webhookSecret).update(JSON.stringify(event.payload)).digest("hex"),
-      "handoff webhook must be signed"
-    );
+    assert.ok(event.payload.conversationId);
+    assert.equal(event.signature, crypto.createHmac("sha256", secret).update(JSON.stringify(event.payload)).digest("hex"));
   }
 
   const alphaRetryState = await pool.query("SELECT notification_status,notification_attempts FROM escalations WHERE id=$1", [alphaEscalation.rows[0].id]);

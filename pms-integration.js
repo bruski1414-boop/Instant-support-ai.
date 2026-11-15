@@ -12,6 +12,7 @@ const RESERVATION_STATUSES = new Set([
 ]);
 const CURRENCY = /^[A-Z]{3}$/;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
+const ATTRIBUTION_TOKEN = /^[A-Za-z0-9_-]{43}$/;
 
 function requiredString(value, field, max = 160) {
   if (typeof value !== "string" || !value.trim() || value.length > max) {
@@ -37,7 +38,12 @@ function isoTimestamp(value, field) {
   }
   const time = Date.parse(value);
   if (!Number.isFinite(time)) throw new Error(field + " must be a valid timestamp.");
-  return new Date(time).toISOString();
+  const canonical = new Date(time).toISOString();
+  const supplied = value.includes(".")
+    ? value.replace(/(\.\d{1,2})Z$/, match => match.slice(0, -1).padEnd(4, "0") + "Z")
+    : value.replace("Z", ".000Z");
+  if (canonical !== supplied) throw new Error(field + " must be a real UTC calendar timestamp.");
+  return canonical;
 }
 
 function normalizeReservationEvent(input) {
@@ -64,6 +70,11 @@ function normalizeReservationEvent(input) {
     currency: input.currency == null ? null : requiredString(input.currency, "currency", 3).toUpperCase()
   };
   if (event.currency && !CURRENCY.test(event.currency)) throw new Error("currency must be a three-letter ISO currency code.");
+  if (input.attributionToken != null) {
+    const token = requiredString(input.attributionToken, "attributionToken", 43);
+    if (!ATTRIBUTION_TOKEN.test(token)) throw new Error("attributionToken must be a 256-bit base64url Veyra reference.");
+    event.attributionToken = token;
+  }
   if (input.totalAmountMinor != null) {
     if (!Number.isSafeInteger(input.totalAmountMinor) || input.totalAmountMinor < 0) {
       throw new Error("totalAmountMinor must be a non-negative safe integer.");
@@ -116,7 +127,8 @@ function createPmsAdapter({ provider, mapReservationEvent, mapAvailabilitySnapsh
   return Object.freeze({
     provider: providerName,
     reservationEvent(payload) {
-      return normalizeReservationEvent(mapReservationEvent(payload));
+      const event = normalizeReservationEvent(mapReservationEvent(payload));
+      return Object.freeze({ ...event, provider: providerName });
     },
     availabilitySnapshot(payload) {
       return normalizeAvailabilitySnapshot(mapAvailabilitySnapshot(payload));

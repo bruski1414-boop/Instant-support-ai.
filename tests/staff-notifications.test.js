@@ -54,3 +54,18 @@ test("network errors are reported as failed delivery without leaking error detai
   });
   assert.deepEqual(result, { configured: true, delivered: false, status: "failed" });
 });
+
+test("staff webhook timeout is aborted and reported as failed delivery", async () => {
+  const result = await deliverStaffEscalation({
+    ...input,
+    timeoutMs: 5,
+    fetchImpl: async (_url, options) => new Promise((resolve, reject) => {
+      options.signal.addEventListener("abort", () => {
+        const error = new Error("aborted");
+        error.name = "AbortError";
+        reject(error);
+      }, { once: true });
+    })
+  });
+  assert.deepEqual(result, { configured: true, delivered: false, status: "failed" });
+});

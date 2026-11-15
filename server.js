@@ -10,6 +10,7 @@ const {Pool}=require("pg");
 const {createStorageRouter}=require("./storage-integrations");
 const {requiresStaffEscalation}=require("./guest-support-policy");
 const {generateGuestSupportAnswer,createAiUnavailableAnswer}=require("./guest-support-engine");
+const {loadApprovedKnowledge}=require("./hotel-knowledge");
 const {buildPilotReadiness}=require("./pilot-readiness");
 const {deliverStaffEscalation}=require("./staff-notifications");
 const {encryptWebhookConfig,decryptWebhookConfig,resolvePublicWebhook,postSignedWebhook}=require("./staff-webhook-security");
@@ -213,7 +214,7 @@ app.post("/api/public/:slug/chat",async(q,r,n)=>{
  const verifiedForHotel=new Set(hotelIntegrations.rows.map(x=>x.integration));
  if(!verifiedForHotel.has("ai_provider")||!verifiedForHotel.has("staff_webhook"))return r.status(503).json({error:"This hotel's AI and staff notification integrations must be verified in its setup dashboard before guest chat is enabled."});
  if(!hotelStorage.rowCount)return r.status(503).json({error:"This hotel must connect and authorize its own storage provider before guest chat is enabled."});
- const docs=await db.query("SELECT title,category,content FROM knowledge_documents WHERE organization_id=$1 AND approved=true AND (review_due_at IS NULL OR review_due_at>=CURRENT_DATE) ORDER BY updated_at DESC LIMIT 40",[org.id]);if(!docs.rowCount)return r.status(503).json({error:"No hotel information has been approved. Please contact the hotel team."});if(process.env.GUEST_DATA_STORAGE_ENABLED!=="true")return r.status(503).json({error:"Guest data storage is disabled until the hotel has approved its privacy notice, retention period and data-processing terms."});if(!ai)return r.status(503).json({error:"Live AI is not configured. Please contact the hotel team."});
+ const docs=await loadApprovedKnowledge(db,org.id);if(!docs.rowCount)return r.status(503).json({error:"No hotel information has been approved. Please contact the hotel team."});if(process.env.GUEST_DATA_STORAGE_ENABLED!=="true")return r.status(503).json({error:"Guest data storage is disabled until the hotel has approved its privacy notice, retention period and data-processing terms."});if(!ai)return r.status(503).json({error:"Live AI is not configured. Please contact the hotel team."});
  const knowledge=docs.rows.map(d=>"["+d.category+"] "+d.title+"\n"+d.content).join("\n\n").slice(0,30000);const flag=escalate(msg);
  const requestedConversation=q.body?.conversationId,requestedToken=q.body?.conversationToken;
  if(requestedConversation!==undefined&&requestedConversation!==null&&requestedConversation!==""&&(typeof requestedConversation!=="string"||!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(requestedConversation)))return r.status(400).json({error:"Invalid conversation reference."});

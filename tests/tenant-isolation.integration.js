@@ -67,6 +67,7 @@ async function login(tenant) {
   });
   const body = await response.json();
   assert.equal(response.status, 200, JSON.stringify(body));
+  tenant.csrfToken = body.csrfToken;
   const setCookie = response.headers.get("set-cookie") || "";
   const cookie = setCookie.split(";")[0];
   assert.match(cookie, /^veyra_session=/, "login must issue the expected session cookie");
@@ -160,6 +161,8 @@ try {
   const storageABody = await storageA.json();
   assert.deepEqual(storageABody.connections.map(connection => connection.provider), ["google"]);
   assert.equal(storageABody.connections[0].account_email, "storage-" + tenants[0].email);
+  assert.equal(Object.hasOwn(storageABody.connections[0], "encrypted_tokens"), false, "storage tokens must never be returned by the dashboard API");
+  assert.equal(JSON.stringify(storageABody).includes("test-encrypted-token"), false, "storage token ciphertext must never be exposed");
   assert.equal(JSON.stringify(storageABody).includes(tenants[1].email), false, "tenant A must not see tenant B's storage account");
   const storageB = await readStorageConnections(cookieB);
   assert.equal(storageB.status, 200);
@@ -167,6 +170,16 @@ try {
   assert.deepEqual(storageBBody.connections.map(connection => connection.provider), ["google"]);
   assert.equal(storageBBody.connections[0].account_email, "storage-" + tenants[1].email);
   assert.equal(JSON.stringify(storageBBody).includes(tenants[0].email), false, "tenant B must not see tenant A's storage account");
+
+  const crossDisconnect = await fetch(baseUrl + "/api/admin/storage/connections/microsoft", {
+    method: "DELETE",
+    headers: { cookie: cookieA, "X-CSRF-Token": tenants[0].csrfToken },
+  });
+  assert.equal(crossDisconnect.status, 200, "disconnecting an unowned provider should safely report no local connection");
+  const storageBAfter = await readStorageConnections(cookieB);
+  assert.equal(storageBAfter.status, 200);
+  const storageBAfterBody = await storageBAfter.json();
+  assert.equal(storageBAfterBody.connections[0].account_email, "storage-" + tenants[1].email, "tenant A must not disconnect tenant B's storage connection");
 
   const ownA = await readTranscript(cookieA, tenants[0].conversationId);
   assert.equal(ownA.status, 200, "tenant A must read its own conversation");

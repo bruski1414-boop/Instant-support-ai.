@@ -53,9 +53,27 @@ function requiresHumanHandoff(message, normalizedAnswer) {
   return requiresStaffEscalation(message) || normalizedAnswer?.needsHuman === true;
 }
 
+function resolveGuestSupportAnswer(message, normalizedAnswer) {
+  const deterministicHandoff = requiresStaffEscalation(message);
+  const needsHuman = deterministicHandoff || normalizedAnswer?.needsHuman === true;
+  if (deterministicHandoff) {
+    return {
+      reply: "This request needs help from the hotel team. Please contact the front desk directly while they review it.",
+      needsHuman: true,
+      handoffReason: "Guest message matched a staff-escalation policy.",
+    };
+  }
+  return {
+    reply: normalizedAnswer.reply,
+    needsHuman,
+    handoffReason: normalizedAnswer.handoffReason || (needsHuman ? "Staff review required." : ""),
+  };
+}
+
 module.exports = {
   requiresStaffEscalation,
   requiresHumanHandoff,
+  resolveGuestSupportAnswer,
   buildGuestSupportSystemPrompt,
   normalizeGuestSupportAnswer,
 };

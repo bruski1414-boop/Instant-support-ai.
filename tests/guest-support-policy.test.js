@@ -254,3 +254,33 @@ test("model-requested handoffs retain their response and reason", () => {
     handoffReason: "Manager review required.",
   });
 });
+
+
+test("immediate-danger handoffs tell guests to seek emergency help without waiting for chat", () => {
+  for (const message of [
+    "There is smoke in the hallway.",
+    "I smell a gas leak.",
+    "Someone cannot breathe.",
+  ]) {
+    const resolved = resolveGuestSupportAnswer(message, {
+      reply: "The restaurant serves breakfast at 7:00.",
+      needsHuman: false,
+      handoffReason: "",
+    });
+    assert.equal(resolved.needsHuman, true);
+    assert.match(resolved.reply, /local emergency services now/);
+    assert.match(resolved.reply, /Do not wait for a chat reply/);
+    assert.match(resolved.handoffReason, /immediate danger/);
+  }
+});
+
+test("non-emergency sensitive requests are directed to the front desk", () => {
+  const resolved = resolveGuestSupportAnswer("Please cancel my reservation.", {
+    reply: "Your reservation is cancelled.",
+    needsHuman: false,
+    handoffReason: "",
+  });
+  assert.equal(resolved.needsHuman, true);
+  assert.match(resolved.reply, /contact the front desk/);
+  assert.doesNotMatch(resolved.reply, /emergency services/);
+});

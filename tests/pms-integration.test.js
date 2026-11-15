@@ -8,6 +8,8 @@ const {
   normalizeAvailability,
   normalizeBookingRequest,
   normalizeBooking,
+  normalizeWebhookEvent,
+  recordWebhookEvent,
   createPmsRegistry,
   createSandboxAdapter,
 } = require("../pms-integration");
@@ -73,4 +75,73 @@ test("registry rejects duplicate or incomplete adapters and unknown providers", 
   assert.throws(() => createPmsRegistry([{ id: "bad", name: "Broken", capabilities: {} }]), error => error.code === "INVALID_ADAPTER");
   const registry = createPmsRegistry();
   await assert.rejects(() => registry.testConnection("unknown"), error => error.code === "PROVIDER_UNAVAILABLE");
+});
+
+
+test("webhook events are normalized, time-bounded and size-limited", () => {
+  const now = new Date("2027-01-10T12:00:00.000Z");
+  assert.deepEqual(normalizeWebhookEvent({
+    eventId: "evt_123", eventType: "reservation.confirmed",
+    occurredAt: "2027-01-10T11:59:00.000Z", data: { reservationId: "res_123" },
+  }, now), {
+    eventId: "evt_123", eventType: "reservation.confirmed",
+    occurredAt: "2027-01-10T11:59:00.000Z", data: { reservationId: "res_123" },
+  });
+  assert.throws(() => normalizeWebhookEvent({
+    eventId: "evt_old", eventType: "reservation.confirmed",
+    occurredAt: "2026-01-01T00:00:00.000Z", data: {},
+  }, now), error => error.code === "INVALID_WEBHOOK_EVENT");
+  assert.throws(() => normalizeWebhookEvent({
+    eventId: "evt_big", eventType: "reservation.confirmed",
+    occurredAt: "2027-01-10T11:59:00.000Z", data: { large: "x".repeat(17000) },
+  }, now), error => error.code === "WEBHOOK_EVENT_TOO_LARGE");
+});
+
+test("registry verifies provider signatures before accepting webhook events", async () => {
+  const adapter = {
+    id: "signedtest", name: "Signed test provider", mode: "sandbox",
+    capabilities: { webhooks: true },
+    async testConnection() { return { ok: true }; },
+    async verifyWebhook({ headers, rawBody, secret }) {
+      return {
+        verified: headers["x-test-signature"] === "valid" && rawBody.toString() === '{"id":1}' && secret === "test-secret-long-enough",
+        event: {
+          eventId: "evt_signed_1", eventType: "reservation.confirmed",
+          occurredAt: "2027-01-10T11:59:00.000Z", data: { reservationId: "res_1" },
+        },
+      };
+    },
+  };
+  const registry = createPmsRegistry([adapter]);
+  const accepted = await registry.verifyWebhook("signedtest", {
+    headers: { "x-test-signature": "valid" }, rawBody: Buffer.from('{"id":1}'),
+    secret: "test-secret-long-enough", receivedAt: new Date("2027-01-10T12:00:00.000Z"),
+  });
+  assert.equal(accepted.eventId, "evt_signed_1");
+  await assert.rejects(() => registry.verifyWebhook("signedtest", {
+    headers: { "x-test-signature": "invalid" }, rawBody: Buffer.from('{"id":1}'),
+    secret: "test-secret-long-enough", receivedAt: new Date("2027-01-10T12:00:00.000Z"),
+  }), error => error.code === "INVALID_WEBHOOK_SIGNATURE");
+});
+
+test("webhook event inbox is idempotent and tenant-scoped", async () => {
+  const inserted = new Set();
+  const db = {
+    async query(sql, params) {
+      const key = params.slice(0, 3).join(":");
+      if (inserted.has(key)) return { rowCount: 0, rows: [] };
+      inserted.add(key);
+      return { rowCount: 1, rows: [{ id: "event-row" }] };
+    },
+  };
+  const event = {
+    eventId: "evt_once", eventType: "reservation.confirmed",
+    occurredAt: "2027-01-10T11:59:00.000Z", data: { reservationId: "res_once" },
+  };
+  const first = await recordWebhookEvent(db, "hotel-a", "provider-a", event, new Date("2027-01-10T12:00:00.000Z"));
+  const duplicate = await recordWebhookEvent(db, "hotel-a", "provider-a", event, new Date("2027-01-10T12:00:01.000Z"));
+  const otherTenant = await recordWebhookEvent(db, "hotel-b", "provider-a", event, new Date("2027-01-10T12:00:02.000Z"));
+  assert.deepEqual(first, { accepted: true, duplicate: false, eventId: "evt_once" });
+  assert.deepEqual(duplicate, { accepted: false, duplicate: true, eventId: "evt_once" });
+  assert.deepEqual(otherTenant, { accepted: true, duplicate: false, eventId: "evt_once" });
 });

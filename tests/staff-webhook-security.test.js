@@ -2,10 +2,12 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const { EventEmitter } = require("node:events");
 const {
   encryptWebhookConfig,
   decryptWebhookConfig,
   resolvePublicWebhook,
+  postSignedWebhook,
   isPublicAddress
 } = require("../staff-webhook-security");
 
@@ -41,4 +43,37 @@ test("public address validation rejects private, loopback and documentation rang
     assert.equal(isPublicAddress(address), false, address);
   }
   assert.equal(isPublicAddress("93.184.216.34"), true);
+});
+
+
+test("signed HTTPS delivery pins the validated public IP and sends the HMAC header", async () => {
+  const secret = "hotel-webhook-signing-secret";
+  const event = { event: "veyra.integration.test", organizationId: "hotel-a" };
+  let requestOptions;
+  let requestBody;
+  const result = await postSignedWebhook("https://hotel.example/hooks?key=hidden", secret, event, {
+    lookup: async () => [{ address: "93.184.216.34", family: 4 }],
+    requestImpl: (options, onResponse) => {
+      requestOptions = options;
+      const request = new EventEmitter();
+      request.setTimeout = () => {};
+      request.end = body => {
+        requestBody = body;
+        onResponse({ statusCode: 202, resume() {} });
+      };
+      return request;
+    }
+  });
+  assert.equal(result.ok, true);
+  assert.equal(requestOptions.hostname, "hotel.example");
+  assert.equal(requestOptions.servername, "hotel.example");
+  assert.equal(requestOptions.agent, false);
+  assert.equal(requestOptions.path, "/hooks?key=hidden");
+  assert.equal(requestBody, JSON.stringify(event));
+  const expected = crypto.createHmac("sha256", secret).update(requestBody).digest("hex");
+  assert.equal(requestOptions.headers["x-veyra-signature"], expected);
+  const pinned = await new Promise((resolve, reject) => {
+    requestOptions.lookup("hotel.example", {}, (error, address, family) => error ? reject(error) : resolve({ address, family }));
+  });
+  assert.deepEqual(pinned, { address: "93.184.216.34", family: 4 });
 });

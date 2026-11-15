@@ -25,9 +25,11 @@ function createPmsCredentialVault(keyText = process.env.PMS_CREDENTIAL_ENCRYPTIO
   return Object.freeze({
     configured: cipher.configured,
     encrypt(value) {
+      if (!cipher.configured) throw new Error("PMS_CREDENTIAL_ENCRYPTION_KEY must be a base64-encoded 32-byte key.");
       return cipher.encrypt(validateCredentials(value));
     },
     decrypt(value) {
+      if (!cipher.configured) throw new Error("PMS credential encryption key is unavailable.");
       const result = cipher.decrypt(value);
       return validateCredentials(result);
     },

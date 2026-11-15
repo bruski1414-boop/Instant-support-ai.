@@ -179,25 +179,25 @@ function createPmsRegistry(adapters = []) {
   return Object.freeze({
     register,
     list: () => [...registered.values()].map(({ id, name, mode, capabilities }) => ({ id, name, mode, capabilities })),
-    testConnection: async provider => {
+    testConnection: async (provider, context = {}) => {
       const adapter = get(provider);
-      const result = await adapter.testConnection();
+      const result = await adapter.testConnection(context);
       if (!result || result.ok !== true) throw new PmsIntegrationError("CONNECTION_TEST_FAILED", "PMS provider connection test failed.", 502);
       return { provider: adapter.id, providerName: adapter.name, mode: adapter.mode, ok: true, productionReady: adapter.mode === "production" };
     },
-    getAvailability: async (provider, input) => {
+    getAvailability: async (provider, input, context = {}) => {
       const adapter = get(provider);
       if (!adapter.capabilities.availability) throw new PmsIntegrationError("CAPABILITY_UNAVAILABLE", "This provider adapter does not support availability lookup.", 409);
       const dates = validateDateRange(input);
-      const rows = await adapter.getAvailability(dates);
+      const rows = await adapter.getAvailability(dates, context);
       if (!Array.isArray(rows) || rows.length > 200) throw new PmsIntegrationError("INVALID_PROVIDER_RESPONSE", "Provider returned an invalid availability list.", 502);
       return rows.map(normalizeAvailability);
     },
-    createBooking: async (provider, input) => {
+    createBooking: async (provider, input, context = {}) => {
       const adapter = get(provider);
       if (!adapter.capabilities.booking) throw new PmsIntegrationError("CAPABILITY_UNAVAILABLE", "This provider adapter does not support booking creation.", 409);
       const request = normalizeBookingRequest(input);
-      return normalizeBooking(await adapter.createBooking(request));
+      return normalizeBooking(await adapter.createBooking(request, context));
     },
     verifyWebhook: async (provider, input) => {
       const adapter = get(provider);

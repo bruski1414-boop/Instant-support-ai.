@@ -4,6 +4,8 @@ import { createServer } from "node:http";
 import { randomUUID, randomBytes, scrypt as scryptCallback, createHash, createHmac } from "node:crypto";
 import { promisify } from "node:util";
 import pg from "pg";
+import storageSecurity from "../storage-security.js";
+const { createTokenCipher } = storageSecurity;
 const { Pool } = pg;
 
 if (process.env.CI !== "true" || process.env.VEYRA_TENANT_TEST_DATABASE !== "true") {
@@ -27,6 +29,8 @@ let child;
 let childOutput = "";
 let serverReady = false;
 const webhookSecret = "ci-webhook-secret-" + tag;
+const staffEncryptionKey = randomBytes(32).toString("base64");
+const staffCipher = createTokenCipher(staffEncryptionKey);
 const webhookRequests = [];
 let webhookResponseStatus = 200;
 let webhookDelayMs = 0;
@@ -206,8 +210,8 @@ try {
       PLATFORM_PROVISIONING_TOKEN: token,
       OPENAI_API_KEY: "ci-mock-api-key",
       OPENAI_BASE_URL: "http://127.0.0.1:" + mockAiPort + "/v1",
-      STAFF_WEBHOOK_URL: "http://127.0.0.1:" + mockWebhookPort + "/notify",
-      STAFF_WEBHOOK_SECRET: webhookSecret,
+      STAFF_WEBHOOK_ENCRYPTION_KEY: staffEncryptionKey,
+      STAFF_WEBHOOK_ALLOWED_HOSTS: "127.0.0.1",
       GUEST_DATA_STORAGE_ENABLED: "true",
       DURABLE_BACKUPS_VERIFIED: "true",
       TENANT_ISOLATION_TESTS_PASSED: "true",
@@ -226,6 +230,9 @@ try {
   for (const tenant of tenants) await provision(tenant);
 
   const orgAForPilot = await pool.query("SELECT id FROM organizations WHERE slug=$1", [tenants[0].slug]);
+  const orgBForPilot = await pool.query("SELECT id FROM organizations WHERE slug=$1", [tenants[1].slug]);
+  const staffWebhookUrl = "http://127.0.0.1:" + mockWebhookPort + "/notify";
+  await pool.query("INSERT INTO organization_staff_webhooks(organization_id,webhook_url,encrypted_secret,status) VALUES($1,$2,$3,'verified'),($4,$5,$6,'verified')", [orgAForPilot.rows[0].id, staffWebhookUrl, staffCipher.encrypt({ webhookSecret: webhookSecret + "-a" }), orgBForPilot.rows[0].id, staffWebhookUrl, staffCipher.encrypt({ webhookSecret: webhookSecret + "-b" })]);
   await pool.query("INSERT INTO organization_privacy_approvals(organization_id,policy_version,purpose_acknowledged,retention_acknowledged,backup_acknowledged,access_acknowledged,deletion_acknowledged,approved_by) SELECT $1,'2026-11-14-v1',true,true,true,true,true,id FROM users WHERE organization_id=$1 AND role='owner'", [orgAForPilot.rows[0].id]);
 
   // The real guest-chat route must remain closed until every pilot release gate is verified.
@@ -255,7 +262,6 @@ try {
 
   // Configure Beta independently: its own privacy approval, integration checks,
   // storage connection and approved knowledge must be required for its guest chat.
-  const orgBForPilot = await pool.query("SELECT id FROM organizations WHERE slug=$1", [tenants[1].slug]);
   await pool.query("INSERT INTO organization_privacy_approvals(organization_id,policy_version,purpose_acknowledged,retention_acknowledged,backup_acknowledged,access_acknowledged,deletion_acknowledged,approved_by) SELECT $1,'2026-11-14-v1',true,true,true,true,true,id FROM users WHERE organization_id=$1 AND role='owner'", [orgBForPilot.rows[0].id]);
   await pool.query("INSERT INTO organization_integration_checks(organization_id,integration,verified_at) VALUES($1,$2,now()),($1,$3,now())", [orgBForPilot.rows[0].id, "ai_provider", "staff_webhook"]);
   await pool.query("INSERT INTO organization_storage_connections(organization_id,provider,workspace_reference,root_folder_reference,status,connected_at,last_sync_at,last_sync_status,last_sync_error) VALUES($1,$2,$3,$4,$5,now(),now(),'success','')", [orgBForPilot.rows[0].id, "google_drive", "ci-workspace-b", "ci-folder-b", "connected"]);
@@ -413,7 +419,7 @@ try {
   assert.equal(guestEscalationBody.notificationDelivered, true);
   assert.equal(webhookRequests.length, 1, "the staff webhook must receive the escalation exactly once");
   const webhookRequest = webhookRequests[0];
-  const expectedSignature = createHmac("sha256", webhookSecret).update(webhookRequest.body).digest("hex");
+  const expectedSignature = createHmac("sha256", webhookSecret + "-a").update(webhookRequest.body).digest("hex");
   assert.equal(webhookRequest.signature, expectedSignature, "staff webhook payload must carry a valid HMAC signature");
   const webhookPayload = JSON.parse(webhookRequest.body);
   assert.equal(webhookPayload.event, "veyra.escalation.created");
@@ -439,7 +445,7 @@ try {
   assert.equal(guestEscalationBBody.notificationStatus, "delivered");
   assert.equal(webhookRequests.length, 2, "each hotel's escalation must produce exactly one staff notification");
   const webhookRequestB = webhookRequests[1];
-  const expectedSignatureB = createHmac("sha256", webhookSecret).update(webhookRequestB.body).digest("hex");
+  const expectedSignatureB = createHmac("sha256", webhookSecret + "-b").update(webhookRequestB.body).digest("hex");
   assert.equal(webhookRequestB.signature, expectedSignatureB, "Beta staff webhook payload must carry a valid HMAC signature");
   const webhookPayloadB = JSON.parse(webhookRequestB.body);
   assert.equal(webhookPayloadB.event, "veyra.escalation.created");

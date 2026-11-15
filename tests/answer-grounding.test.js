@@ -54,3 +54,21 @@ test("allows contact details explicitly present in approved information", () => 
   );
   assert.equal(result.supported, true);
 });
+
+
+const { validateStructuredAnswer } = require("../answer-grounding");
+
+test("accepts only a complete, correctly typed structured AI response", () => {
+  assert.deepEqual(
+    validateStructuredAnswer({ reply: "Breakfast is served in the restaurant.", needsHuman: false, handoffReason: "" }),
+    { valid: true, reason: "" }
+  );
+});
+
+test("rejects malformed AI response objects and missing handoff reasons", () => {
+  assert.equal(validateStructuredAnswer(null).valid, false);
+  assert.equal(validateStructuredAnswer({ reply: "Hello", needsHuman: "false", handoffReason: "" }).reason, "invalid_handoff_flag");
+  assert.equal(validateStructuredAnswer({ reply: "Please contact staff.", needsHuman: true, handoffReason: "" }).reason, "missing_handoff_reason");
+  assert.equal(validateStructuredAnswer({ reply: "", needsHuman: false, handoffReason: "" }).reason, "invalid_reply");
+  assert.equal(validateStructuredAnswer({ reply: "x".repeat(4001), needsHuman: false, handoffReason: "" }).reason, "invalid_reply");
+});

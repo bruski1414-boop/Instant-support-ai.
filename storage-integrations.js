@@ -122,6 +122,11 @@ function createStorageRouter({ db, auth, role, audit }) {
         "INSERT INTO storage_connections(organization_id,provider,account_email,encrypted_tokens,status,connected_by,connected_at) VALUES($1,$2,$3,$4,'connected',$5,now()) ON CONFLICT(organization_id,provider) DO UPDATE SET account_email=EXCLUDED.account_email,encrypted_tokens=EXCLUDED.encrypted_tokens,status='connected',connected_by=EXCLUDED.connected_by,connected_at=now(),last_error=NULL",
         [context.organization_id, provider, accountEmail.slice(0,254), encrypted, context.user_id]
       );
+      const organizationProvider = provider === "google" ? "google_drive" : "microsoft_sharepoint";
+      await client.query(
+        "INSERT INTO organization_storage_connections(organization_id,provider,workspace_reference,status,scopes,connected_by,connected_at,last_sync_status) VALUES($1,$2,$3,'connected',$4,$5,now(),'never') ON CONFLICT(organization_id) DO UPDATE SET provider=EXCLUDED.provider,workspace_reference=EXCLUDED.workspace_reference,status='connected',scopes=EXCLUDED.scopes,connected_by=EXCLUDED.connected_by,connected_at=now(),updated_at=now()",
+        [context.organization_id, organizationProvider, accountEmail.slice(0,254), tokens.scope ? String(tokens.scope).split(/\\s+/).filter(Boolean) : [], context.user_id]
+      );
       await client.query("INSERT INTO audit_logs(organization_id,actor_user_id,action,target_type) VALUES($1,$2,$3,'storage_connection')", [context.organization_id, context.user_id, "storage." + provider + ".connected"]);
       await client.query("COMMIT");
       res.redirect("/dashboard.html?storage=connected");
@@ -283,6 +288,7 @@ function createStorageRouter({ db, auth, role, audit }) {
     if (!providerValid(provider)) return safeError(res, "Unsupported storage provider.");
     try {
       const result = await db.query("DELETE FROM storage_connections WHERE organization_id=$1 AND provider=$2 RETURNING provider", [req.actor.organization_id, provider]);
+      await db.query("DELETE FROM organization_storage_connections WHERE organization_id=$1 AND provider=$2", [req.actor.organization_id, provider === "google" ? "google_drive" : "microsoft_sharepoint"]);
       await db.query("DELETE FROM storage_oauth_states WHERE organization_id=$1 AND provider=$2", [req.actor.organization_id, provider]);
       await audit(req.actor, "storage." + provider + ".disconnected", "storage_connection");
       res.json({ disconnected: Boolean(result.rowCount) });

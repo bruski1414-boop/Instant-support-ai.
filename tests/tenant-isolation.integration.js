@@ -128,6 +128,15 @@ async function seedStorageConnection(tenant, provider) {
   );
 }
 
+async function seedOffer(tenant) {
+  const org = await pool.query("SELECT id FROM organizations WHERE slug=$1", [tenant.slug]);
+  const expires = new Date(Date.now() + 24 * 60 * 60 * 1000);
+  const inserted = await pool.query(
+    "INSERT INTO hotel_offers(organization_id,name,description,category,amount_minor,currency,status,availability_status,availability_verified_at,expires_at) VALUES($1,$2,$3,'spa',250000,'THB','active','available',now(),$4) RETURNING id",
+    [org.rows[0].id, "Private spa offer " + tenant.name, "Only for " + tenant.name, expires]
+  );
+  tenant.offerId = inserted.rows[0].id;
+}
 async function readStorageConnections(cookie) {
   return fetch(baseUrl + "/api/admin/storage/connections", { headers: { cookie } });
 }
@@ -158,10 +167,44 @@ try {
   const [cookieA, cookieB] = await Promise.all(tenants.map(login));
   await Promise.all(tenants.map(seedConversation));
   await Promise.all(tenants.map(seedKnowledge));
+  await Promise.all(tenants.map(seedOffer));
   await Promise.all([
     seedStorageConnection(tenants[0], "google_drive"),
     seedStorageConnection(tenants[1], "microsoft_sharepoint"),
   ]);
+
+
+  const offersAResponse = await fetch(baseUrl + "/api/admin/offers", { headers: { cookie: cookieA } });
+  assert.equal(offersAResponse.status, 200, "tenant A must read its own offers");
+  const offersABody = await offersAResponse.json();
+  assert.equal(offersABody.offers.length, 1);
+  assert.equal(offersABody.offers[0].id, tenants[0].offerId);
+  assert.equal(JSON.stringify(offersABody).includes(tenants[1].name), false, "tenant A must not see tenant B offer data");
+  const offersBResponse = await fetch(baseUrl + "/api/admin/offers", { headers: { cookie: cookieB } });
+  assert.equal(offersBResponse.status, 200, "tenant B must read its own offers");
+  const offersBBody = await offersBResponse.json();
+  assert.equal(offersBBody.offers.length, 1);
+  assert.equal(offersBBody.offers[0].id, tenants[1].offerId);
+  const crossOfferEdit = await fetch(baseUrl + "/api/admin/offers/" + tenants[1].offerId, {
+    method: "PATCH",
+    headers: { cookie: cookieA, "X-CSRF-Token": tenants[0].csrfToken, "content-type": "application/json" },
+    body: JSON.stringify({ name: "Unauthorised edit", description: "Attempt to edit another hotel's offer", category: "spa", amount_minor: 1, currency: "THB", status: "paused", verify_availability: false, expires_at: new Date(Date.now() + 3600000).toISOString() }),
+  });
+  assert.equal(crossOfferEdit.status, 404, "tenant A must not edit tenant B's offer");
+  const crossOfferDelete = await fetch(baseUrl + "/api/admin/offers/" + tenants[1].offerId, {
+    method: "DELETE",
+    headers: { cookie: cookieA, "X-CSRF-Token": tenants[0].csrfToken },
+  });
+  assert.equal(crossOfferDelete.status, 404, "tenant A must not delete tenant B's offer");
+  const ownOfferDelete = await fetch(baseUrl + "/api/admin/offers/" + tenants[0].offerId, {
+    method: "DELETE",
+    headers: { cookie: cookieA, "X-CSRF-Token": tenants[0].csrfToken },
+  });
+  assert.equal(ownOfferDelete.status, 200, "tenant A must be able to delete its own offer");
+  const offerADeleted = await pool.query("SELECT id FROM hotel_offers WHERE id=$1 AND organization_id=(SELECT id FROM organizations WHERE slug=$2)", [tenants[0].offerId, tenants[0].slug]);
+  const offerBPreserved = await pool.query("SELECT id FROM hotel_offers WHERE id=$1 AND organization_id=(SELECT id FROM organizations WHERE slug=$2)", [tenants[1].offerId, tenants[1].slug]);
+  assert.equal(offerADeleted.rowCount, 0, "tenant A's offer must be deleted");
+  assert.equal(offerBPreserved.rowCount, 1, "tenant A deletion must not affect tenant B's offer");
 
   const storageA = await readStorageConnections(cookieA);
   assert.equal(storageA.status, 200);
@@ -262,7 +305,7 @@ try {
   const preservedB = await pool.query("SELECT id FROM knowledge_documents WHERE id=$1 AND organization_id=$2", [tenants[1].knowledgeId, orgB]);
   assert.equal(deletedA.rowCount, 0, "tenant A's selected document must be deleted");
   assert.equal(preservedB.rowCount, 1, "tenant A deletion must not affect tenant B's document");
-  console.log("PASS: tenant-scoped transcripts, knowledge read/edit/delete, approval invalidation, approved guest context and storage connections verified for two hotel workspaces.");
+  console.log("PASS: tenant-scoped transcripts, knowledge, storage connections and revenue offers verified for two hotel workspaces.");
 } finally {
   if (serverReady) {
     for (const tenant of tenants) {

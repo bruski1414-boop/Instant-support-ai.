@@ -106,3 +106,22 @@ test("continues to accept concise answers using approved hotel terms", () => {
   );
   assert.equal(result.supported, true);
 });
+
+
+test("rejects unsupported negation that reverses an approved hotel fact", () => {
+  const result = validateAnswerGrounding(
+    "Parking is not available at the hotel.",
+    "Complimentary on-site guest parking is available in the hotel car park."
+  );
+  assert.equal(result.supported, false);
+  assert.equal(result.reason, "unsupported_claim_terms");
+  assert.ok(result.unsupportedClaimTerms.includes("not"));
+});
+
+test("accepts a short paraphrase when its factual terms are supported", () => {
+  const result = validateAnswerGrounding(
+    "Guest parking is available on site.",
+    "Complimentary on-site guest parking is available in the hotel car park."
+  );
+  assert.equal(result.supported, true);
+});

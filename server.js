@@ -8,7 +8,7 @@ const path=require("node:path");
 const {promisify}=require("node:util");
 const {Pool}=require("pg");
 const {createStorageRouter}=require("./storage-integrations");
-const {requiresStaffEscalation,buildGuestSupportSystemPrompt,normalizeGuestSupportAnswer}=require("./guest-support-policy");
+const {requiresStaffEscalation,requiresHumanHandoff,buildGuestSupportSystemPrompt,normalizeGuestSupportAnswer}=require("./guest-support-policy");
 const {buildPilotReadiness}=require("./pilot-readiness");
 const {deliverStaffEscalation}=require("./staff-notifications");
 const app=express();
@@ -218,7 +218,7 @@ app.post("/api/public/:slug/chat",async(q,r,n)=>{
  {role:"user",content:msg.trim()}]});
  let parsedAnswer;try{parsedAnswer=JSON.parse(completion.choices[0]?.message?.content||"");}catch{parsedAnswer=null;}
  const answer=normalizeGuestSupportAnswer(parsedAnswer);
- const reply=answer.reply;const flagHuman=Boolean(flag||answer.needsHuman);
+ const reply=answer.reply;const flagHuman=requiresHumanHandoff(msg,answer);
  const c=await db.connect();let cid=conversationId,eid,createdEscalation=false,existingNotificationStatus="not_configured";try{await c.query("BEGIN");if(!cid){const x=await c.query("INSERT INTO conversations(organization_id,channel,status,guest_token_hash) VALUES($1,'website',$2,$3) RETURNING id",[org.id,flagHuman?"escalated":"open",hash(guestToken)]);cid=x.rows[0].id;}else{const locked=await c.query("SELECT id FROM conversations WHERE id=$1 AND organization_id=$2 AND guest_token_hash=$3 FOR UPDATE",[cid,org.id,hash(guestToken)]);if(!locked.rowCount){await c.query("ROLLBACK");return r.status(404).json({error:"Conversation not found."});}}
  await c.query("INSERT INTO messages(conversation_id,role,content) VALUES($1,'guest',$2),($1,'assistant',$3)",[cid,msg.trim(),reply]);await c.query("UPDATE conversations SET last_message_at=now(),status=CASE WHEN $2 THEN 'escalated' WHEN status='resolved' THEN 'open' ELSE status END WHERE id=$1 AND organization_id=$3",[cid,flagHuman,org.id]);
  if(flagHuman){const prior=await c.query("SELECT id,notification_status FROM escalations WHERE conversation_id=$1 AND organization_id=$2 AND status<>'resolved' ORDER BY created_at DESC LIMIT 1",[cid,org.id]);if(prior.rowCount){eid=prior.rows[0].id;existingNotificationStatus=prior.rows[0].notification_status;}else{const e=await c.query("INSERT INTO escalations(organization_id,conversation_id,reason) VALUES($1,$2,$3) RETURNING id",[org.id,cid,String(answer.handoffReason||"Staff review required").slice(0,300)]);eid=e.rows[0].id;createdEscalation=true;}}

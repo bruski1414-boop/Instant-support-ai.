@@ -125,7 +125,8 @@ const staffWebhookStore=db?createStaffWebhookStore({db,encryptionKey:process.env
 const escalate=requiresStaffEscalation;
 async function notify(org,cid,reason,eid){
  const connection=staffWebhookStore?await staffWebhookStore.resolve(org.id):null;
- return deliverStaffEscalation({organization:org,conversationId:cid,reason,idempotencyKey:eid,...(connection||{})});
+ const delivery=connection&&connection.verified?connection:{};
+ return deliverStaffEscalation({organization:org,conversationId:cid,reason,idempotencyKey:eid,...delivery});
 }
 async function dispatchEscalationNotification({org,cid,reason,eid,organizationId,maxAttempts=5}){
  return dispatchStaffNotification({

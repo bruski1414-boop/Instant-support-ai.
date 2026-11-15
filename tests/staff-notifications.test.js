@@ -3,6 +3,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const crypto = require("node:crypto");
+const { createServer } = require("node:http");
 const { sendStaffIntegrationTest, deliverStaffEscalation, shouldRetryStaffNotification, dispatchStaffNotification } = require("../staff-notifications");
 
 const input = {
@@ -243,4 +244,39 @@ test("staff integration test reports missing configuration without making a requ
   const result = await sendStaffIntegrationTest({ organization: input.organization, webhookUrl: "", webhookSecret: "", fetchImpl: async () => { called = true; } });
   assert.deepEqual(result, { configured: false, verified: false });
   assert.equal(called, false);
+});
+
+test("real fetch rejects webhook redirects without contacting the redirect target", async () => {
+  let redirectTargetHits = 0;
+  const target = createServer((_req, res) => {
+    redirectTargetHits += 1;
+    res.writeHead(200);
+    res.end("should never be reached");
+  });
+  const redirector = createServer((_req, res) => {
+    res.writeHead(302, { location: `http://127.0.0.1:${target.address().port}/capture` });
+    res.end();
+  });
+  const listen = server => new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", resolve);
+  });
+  const close = server => new Promise(resolve => {
+    if (!server.listening) return resolve();
+    server.close(resolve);
+  });
+  await listen(target);
+  await listen(redirector);
+  try {
+    const webhookUrl = `http://127.0.0.1:${redirector.address().port}/webhook`;
+    const result = await deliverStaffEscalation({
+      ...input,
+      webhookUrl,
+      fetchImpl: fetch
+    });
+    assert.deepEqual(result, { configured: true, delivered: false, status: "failed" });
+    assert.equal(redirectTargetHits, 0, "redirect target must never receive the signed staff event");
+  } finally {
+    await Promise.all([close(redirector), close(target)]);
+  }
 });

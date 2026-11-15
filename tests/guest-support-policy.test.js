@@ -58,6 +58,7 @@ test("guest support prompt limits answers to approved hotel facts", () => {
   assert.match(prompt, /Escalate urgent, safety, allergy, complaint, refund, booking-change, payment, or other sensitive requests/);
   assert.match(prompt, /Breakfast is served from 7:00 to 10:00\./);
   assert.match(prompt, /Return JSON only/);
+  assert.match(prompt, /Set needsHuman=false when the guest asks a straightforward question/);
 });
 
 

@@ -3,6 +3,7 @@ const assert = require("node:assert/strict");
 const {
   requiresStaffEscalation,
   requiresHumanHandoff,
+  resolveGuestSupportAnswer,
   buildGuestSupportSystemPrompt,
   normalizeGuestSupportAnswer,
 } = require("../guest-support-policy");
@@ -213,4 +214,43 @@ test("model-requested handoff is preserved even without a keyword trigger", () =
     }),
     true
   );
+});
+
+
+test("deterministic safety triggers replace unsafe model-generated automatic replies", () => {
+  const resolved = resolveGuestSupportAnswer("There is smoke in the hallway.", {
+    reply: "Breakfast starts at 7:00.",
+    needsHuman: false,
+    handoffReason: "",
+  });
+  assert.equal(resolved.needsHuman, true);
+  assert.match(resolved.reply, /hotel team/);
+  assert.match(resolved.reply, /front desk directly/);
+  assert.match(resolved.handoffReason, /staff-escalation policy/);
+});
+
+test("ordinary questions keep the model answer when no handoff is required", () => {
+  const resolved = resolveGuestSupportAnswer("What time is breakfast?", {
+    reply: "Breakfast starts at 7:00.",
+    needsHuman: false,
+    handoffReason: "",
+  });
+  assert.deepEqual(resolved, {
+    reply: "Breakfast starts at 7:00.",
+    needsHuman: false,
+    handoffReason: "",
+  });
+});
+
+test("model-requested handoffs retain their response and reason", () => {
+  const resolved = resolveGuestSupportAnswer("I have an unusual request.", {
+    reply: "Please contact the hotel team.",
+    needsHuman: true,
+    handoffReason: "Manager review required.",
+  });
+  assert.deepEqual(resolved, {
+    reply: "Please contact the hotel team.",
+    needsHuman: true,
+    handoffReason: "Manager review required.",
+  });
 });

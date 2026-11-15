@@ -16,7 +16,8 @@ const {DEMO_METRICS,respondToDemoMessage}=require("./demo-mode");
 const {requiresStaffEscalation,requiresLiveAvailabilityCheck,buildGuestSupportSystemPrompt}=require("./guest-support-policy");
 const {buildPilotReadiness}=require("./pilot-readiness");
 const {buildRelevantKnowledge}=require("./hotel-knowledge");
-const {validateAnswerGrounding,validateStructuredAnswer}=require("./answer-grounding");
+const {validateAnswerGrounding}=require("./answer-grounding");
+const {generateStructuredGuestAnswer}=require("./ai-provider");
 const {isValidDateOnly,isOptionalBoolean}=require("./knowledge-validation");
 const {analyzeKnowledgeQuality,getGuestEligibleKnowledge}=require("./knowledge-quality");
 const {normalizeRevenueEvent,normalizeRevenueAdjustment}=require("./revenue-attribution");
@@ -437,13 +438,10 @@ app.post("/api/public/:slug/chat",async(q,r,n)=>{
   answer={reply:"I don’t have approved hotel information to answer that confidently. I’ll ask the hotel team to help you.",needsHuman:true,handoffReason:"No relevant approved hotel knowledge matched the guest question."};
  }else{
   const systemPrompt=buildGuestSupportSystemPrompt(org.name,knowledge)+(availabilityCheck?"\\n\\nLIVE AVAILABILITY RULES: "+(liveAvailability?.verified?"A verified Mews connection returned this full-stay inventory. Report only these dates and counts. Never claim a booking is held or confirmed; staff must complete any booking.":"No complete verified live inventory result is available. Do not claim availability; ask hotel staff to confirm.")+"\\n"+(liveAvailability?.verified?liveAvailability.context:""):"");
-  const completion=await ai.chat.completions.create({model:MODEL,temperature:0.1,max_tokens:500,response_format:{type:"json_object"},messages:[
+  answer=await generateStructuredGuestAnswer({client:ai,model:MODEL,messages:[
   {role:"system",content:systemPrompt},
   ...history,
   {role:"user",content:msg.trim()}]});
-  try{answer=JSON.parse(completion.choices[0]?.message?.content||"");}catch{answer={reply:"I cannot prepare a reliable answer. Please contact hotel staff.",needsHuman:true,handoffReason:"Response validation failed."};}
-  const responseCheck=validateStructuredAnswer(answer);
-  if(!responseCheck.valid){answer={reply:"I cannot prepare a reliable answer. Please contact hotel staff.",needsHuman:true,handoffReason:"The generated response did not meet Veyra's required response format ("+responseCheck.reason+")."};}
  }
  if(availabilityCheck&&!liveAvailability?.verified){answer.reply="I can’t verify availability for your full stay yet. Please contact the hotel team so they can check the booking system and confirm it with you.";answer.needsHuman=true;answer.handoffReason="Guest requested live room availability but no complete verified full-stay result was available.";}
  let groundingCheck={supported:false,reason:"no_retrieved_knowledge",unsupportedNumbers:[]};

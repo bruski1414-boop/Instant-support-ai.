@@ -9,7 +9,7 @@ A controlled evaluation of a website customer-support assistant for one hotel. I
 - A hotel manager approves every answer source: breakfast times, check-in/out, facilities, parking, transport, accessibility, and contact routes.
 - Do not ingest guest names, passport details, payment data, rooming lists, medical details, or private booking records for this pilot.
 - Never claim a reservation, cancellation, refund, payment, or staff notification has been completed.
-- Keep a named hotel staff member responsible for escalations. The current backend only sets an escalation flag; it does not notify staff.
+- Keep a named hotel staff member responsible for escalations. When the hotel's signed staff webhook is configured, Veyra attempts to send an escalation notification. Without a configured webhook, the escalation is recorded but staff are not automatically notified, so the agreed channel must be monitored manually.
 - The hotel can disable the widget immediately and has a human contact route available at all times.
 
 ## Before the first guest-facing test
@@ -20,7 +20,7 @@ A controlled evaluation of a website customer-support assistant for one hotel. I
 5. Confirm the health endpoint reports ai-configured; confirm the model and provider usage limits with the account owner.
 6. Run the automated tests with npm test.
 7. Test at least 30 hotel-approved questions, including unknown questions, outdated information, complaints, refund requests, allergies, safety issues, and attempts to override the assistant instructions.
-8. Verify uncertain and sensitive cases are routed to a visible human contact route. Until a real notification integration is implemented, staff must monitor the agreed channel manually.
+8. Verify uncertain and sensitive cases are routed to a visible human contact route. Configure and test the hotel's signed staff webhook, confirm the receiving team actually receives the event, and test the manual fallback. If no webhook is configured, staff must monitor the agreed channel manually.
 9. Get hotel approval before placing the widget on a public website.
 
 ## Pilot measurement (baseline first)

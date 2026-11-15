@@ -182,7 +182,11 @@ db.query("SELECT provider,mode,test_passed,tested_at FROM organization_pms_adapt
 db.query("SELECT provider,mode,status,scopes,connected_at,last_tested_at,(last_error <> '') AS has_error,updated_at FROM pms_connections WHERE organization_id=$1 ORDER BY provider",[q.actor.organization_id])
 ]);
 const installed=new Map(pmsRegistry.list().map(item=>[item.id,item]));
-const productionConnectionConfigured=connections.rows.some(item=>item.status==="connected"&&installed.get(item.provider)?.mode==="production");
+const productionConnectionConfigured=connections.rows.some(item=>
+item.status==="connected"&&installed.get(item.provider)?.mode==="production"&&
+tests.rows.some(check=>check.provider===item.provider&&check.mode==="production"&&check.test_passed&&
+check.tested_at&&new Date(check.tested_at).getTime()>Date.now()-24*60*60*1000)
+);
 r.json({
 providers:pmsRegistry.list(),
 tests:tests.rows,

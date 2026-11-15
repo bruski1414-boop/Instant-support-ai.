@@ -141,7 +141,21 @@ async function recordWebhookEvent(db, organizationId, provider, event, receivedA
     "INSERT INTO pms_webhook_events(organization_id,provider,external_event_id,event_type,payload_sha256,received_at,status) VALUES($1,$2,$3,$4,$5,$6,'received') ON CONFLICT(organization_id,provider,external_event_id) DO NOTHING RETURNING id",
     [organizationId, provider, normalized.eventId, normalized.eventType, payloadHash, receivedAt],
   );
-  return { accepted: result.rowCount === 1, duplicate: result.rowCount !== 1, eventId: normalized.eventId };
+  if (result.rowCount === 1) {
+    return { accepted: true, duplicate: false, eventId: normalized.eventId };
+  }
+  const existing = await db.query(
+    "SELECT payload_sha256 FROM pms_webhook_events WHERE organization_id=$1 AND provider=$2 AND external_event_id=$3",
+    [organizationId, provider, normalized.eventId],
+  );
+  if (!existing.rowCount || existing.rows[0].payload_sha256 !== payloadHash) {
+    throw new PmsIntegrationError(
+      "WEBHOOK_EVENT_ID_COLLISION",
+      "Provider reused an event ID with different event data.",
+      409,
+    );
+  }
+  return { accepted: false, duplicate: true, eventId: normalized.eventId };
 }
 
 function createPmsRegistry(adapters = []) {

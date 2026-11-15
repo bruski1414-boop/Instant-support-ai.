@@ -5,6 +5,7 @@ const assert = require("node:assert/strict");
 const crypto = require("node:crypto");
 const { createServer } = require("node:http");
 const { sendStaffIntegrationTest, deliverStaffEscalation, shouldRetryStaffNotification, dispatchStaffNotification, retryPendingStaffNotifications } = require("../staff-notifications");
+const { validateRetryConfiguration } = require("../scripts/staff-notification-retry");
 
 const input = {
   organization: { id: "org-1", slug: "aster-house", name: "Aster House" },
@@ -14,6 +15,18 @@ const input = {
   webhookUrl: "https://hotel.example.test/veyra",
   webhookSecret: "test-only-secret"
 };
+
+test("retry worker fails closed when encryption or the host allowlist is missing", () => {
+  assert.throws(
+    () => validateRetryConfiguration({ encryptionConfigured: false, allowedHostsConfigured: true }),
+    /STAFF_WEBHOOK_ENCRYPTION_KEY is required/
+  );
+  assert.throws(
+    () => validateRetryConfiguration({ encryptionConfigured: true, allowedHostsConfigured: false }),
+    /STAFF_WEBHOOK_ALLOWED_HOSTS must contain an approved host/
+  );
+  assert.doesNotThrow(() => validateRetryConfiguration({ encryptionConfigured: true, allowedHostsConfigured: true }));
+});
 
 test("staff escalation is explicitly not configured when webhook credentials are absent", async () => {
   const result = await deliverStaffEscalation({ ...input, webhookUrl: "", webhookSecret: "" });

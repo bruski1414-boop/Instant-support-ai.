@@ -46,7 +46,7 @@ async function generateGuestSupportAnswer({
       ...safeHistory,
       { role: "user", content: message.trim() },
     ],
-  });
+  }, { timeout: 15000, maxRetries: 0 });
 
   let parsedAnswer;
   try {

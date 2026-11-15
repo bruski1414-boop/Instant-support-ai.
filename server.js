@@ -24,6 +24,7 @@ const {normalizeRevenueEvent,normalizeRevenueAdjustment}=require("./revenue-attr
 const {normalizeGuestConversationAccess,normalizeStaffReply,canReplyToConversation}=require("./guest-messaging");
 const {sendStaffIntegrationTest,deliverStaffEscalation,shouldRetryStaffNotification,dispatchStaffNotification}=require("./staff-notifications");
 const {createStaffWebhookStore}=require("./staff-webhook-store");
+const {applyExplicitStaffHandoff}=require("./staff-handoff");
 const app=express();
 const PORT=Number(process.env.PORT||3000);
 const MODEL=process.env.OPENAI_MODEL||"gpt-4.1-mini";
@@ -434,7 +435,7 @@ app.post("/api/public/:slug/chat",async(q,r,n)=>{
   {role:"user",content:msg.trim()}]});
  }
  if(availabilityCheck&&!liveAvailability?.verified){answer.reply="I can’t verify availability for your full stay yet. Please contact the hotel team so they can check the booking system and confirm it with you.";answer.needsHuman=true;answer.handoffReason="Guest requested live room availability but no complete verified full-stay result was available.";}
- if(flag&&!answer.needsHuman){answer.reply="Of course. I’ll pass your request to the hotel team so a member of staff can assist you.";answer.needsHuman=true;answer.handoffReason="Guest explicitly requested staff assistance or raised an issue requiring human review.";}
+ applyExplicitStaffHandoff(answer,flag);
  let groundingCheck={supported:false,reason:"no_retrieved_knowledge",unsupportedNumbers:[]};
  if(retrieval.matched&&answer.needsHuman){groundingCheck={supported:false,reason:"staff_handoff",unsupportedNumbers:[]};}
  else if(retrieval.matched){groundingCheck=validateAnswerGrounding(answer.reply,retrieval.groundingText+(liveAvailability?.verified?"\n"+liveAvailability.context:""),msg);if(!groundingCheck.supported){answer.reply="I can’t confidently verify every detail in that answer from the hotel’s approved information. I’ll ask the hotel team to confirm it for you.";answer.needsHuman=true;answer.handoffReason=groundingCheck.reason==="unsupported_contact_detail"?"Generated answer contained an email address or website link not present in approved information.":groundingCheck.reason==="unsupported_claim_terms"?"Generated answer contained factual terms not supported by approved hotel information.":"Generated answer contained unsupported numeric details ("+groundingCheck.unsupportedNumbers.join(", ")+").";}}

@@ -62,7 +62,7 @@ function createStaffWebhookStore({ db, encryptionKey, allowedHosts = "", allowIn
   async function resolve(organizationId) {
     if (!cipher.configured) return null;
     const result = await db.query(
-      "SELECT webhook_url,encrypted_secret,status FROM organization_staff_webhooks WHERE organization_id=$1 AND status IN ('configured','verified')",
+      "SELECT webhook_url,encrypted_secret,status FROM organization_staff_webhooks WHERE organization_id=$1 AND status IN ('configured','verified','error')",
       [organizationId]
     );
     if (!result.rowCount) return null;
@@ -77,6 +77,7 @@ function createStaffWebhookStore({ db, encryptionKey, allowedHosts = "", allowIn
 
   async function markError(organizationId, message) {
     await db.query("UPDATE organization_staff_webhooks SET status='error',last_error=$1,updated_at=now() WHERE organization_id=$2", [String(message || "Verification failed").slice(0, 240), organizationId]);
+    await db.query("DELETE FROM organization_integration_checks WHERE organization_id=$1 AND integration='staff_webhook'", [organizationId]);
   }
 
   async function remove(organizationId) {

@@ -89,6 +89,8 @@ main{padding:28px clamp(16px,4vw,48px);max-width:1450px;width:100%;margin:auto}.
   <div class="card" id="pmsIntegrationCard">
    <p class="muted">Veyra now has a provider adapter contract for connection tests, room availability, booking requests and provider webhooks. The installed sandbox checks the framework only; it does not connect to a real hotel system, read live inventory or create bookings.</p>
    <div id="pmsProviderList" class="notice">Loading available adapters…</div>
+   <div class="muted" style="margin-top:12px">Hotel connections</div>
+   <div id="pmsConnectionsList" class="notice">Loading hotel connections…</div>
    <div class="actions"><button class="btn" id="testPmsSandbox" type="button">Test PMS adapter framework</button></div>
    <div id="pmsIntegrationStatus" class="notice" role="status">No live hotel PMS provider is connected.</div>
   </div>
@@ -358,6 +360,8 @@ async function loadPmsIntegration(){
  const d=await api("/api/admin/integrations/pms");
  const list=$("pmsProviderList");
  list.innerHTML=(d.providers||[]).map(p=>'<div style="padding:8px 0;border-bottom:1px solid var(--line)"><strong>'+safe(p.name)+'</strong> <span class="tag '+(p.mode==="production"?"good":"warn")+'">'+safe(p.mode)+'</span><div class="muted" style="font-size:12px">Availability: '+(p.capabilities.availability?"supported":"not available")+' · Booking: '+(p.capabilities.booking?"supported":"not available")+' · Webhooks: '+(p.capabilities.webhooks?"supported":"not available")+'</div></div>').join("")||"No PMS provider adapters are installed yet.";
+ const connections=d.connections||[];
+ $("pmsConnectionsList").innerHTML=connections.map(c=>'<div style="padding:8px 0;border-bottom:1px solid var(--line)"><strong>'+safe(c.provider)+'</strong> <span class="tag '+(c.status==="connected"?"good":"warn")+'">'+safe(c.status)+'</span> <span class="tag">'+safe(c.mode)+'</span><div class="muted" style="font-size:12px">Scopes: '+safe((c.scopes||[]).join(", ")||"not specified")+' · '+(c.has_error?"Last test needs attention":"No reported connection error")+'</div></div>').join("")||"No hotel PMS connections configured.";
  const tests=d.tests||[];
  $("pmsIntegrationStatus").className="notice "+(d.productionConnectionConfigured?"good":"");
  $("pmsIntegrationStatus").textContent=d.productionConnectionConfigured?"A production PMS provider is connected.":(tests.some(x=>x.provider==="sandbox"&&x.test_passed)?"Sandbox adapter test passed. No live PMS connection is configured.":d.notice);

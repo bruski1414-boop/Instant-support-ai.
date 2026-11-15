@@ -17,6 +17,15 @@ The Render web service is connected to PostgreSQL. GitHub Actions CI runs on Nod
 
 The web service and database are currently on Render's free plans. The database is temporary and is scheduled to expire on 11 December 2026. Do not put real hotel or guest data into this environment. A parent or guardian must manage hosting accounts, any paid upgrades and provider billing.
 
+## Per-hotel staff notification setup
+
+The staff notification integration is configured separately inside each hotel's owner dashboard. The server requires two operator-managed Render environment variables:
+
+- `STAFF_WEBHOOK_ENCRYPTION_KEY`: base64-encoded 32-byte key used to encrypt each hotel's signing secret at rest. Keep it only in the hosting secret manager; do not put it in GitHub or chat.
+- `STAFF_WEBHOOK_ALLOWED_HOSTS`: comma-separated hostnames approved by the Veyra operator. Hotel owners can only save HTTPS endpoints on these approved domains.
+
+A hotel owner/admin saves that hotel's HTTPS webhook URL and signing secret in the dashboard, then sends a signed test event. Changing the URL or secret clears the previous verification. Removing the endpoint is owner-only. The server does not fall back to a shared global staff webhook.
+
 ## Implemented foundation
 
 - Express API and PostgreSQL multi-tenant schema.
@@ -29,7 +38,7 @@ The web service and database are currently on Render's free plans. The database 
 - Workspace member management: owner/admin can deactivate staff accounts; deactivation revokes all active sessions. Admins cannot change owner or administrator access.
 - Tenant-scoped security activity viewer for workspace owners and admins.
 - Hotel workspace profile and pre-pilot readiness checklist for website origin, approved knowledge, AI configuration, staff notification and privacy/storage gate. Each hotel's saved HTTPS website origin is dynamically allowed by CORS without adding every hotel to a global allowlist.
-- Per-hotel AI model verification and signed staff-dispatcher test events. Successful checks are recorded against the specific hotel workspace and appear in its onboarding checklist. The shared staff dispatcher receives each hotel's organization ID and slug so it can route to the correct hotel team.
+- Per-hotel AI model verification and signed staff-dispatcher test events. Each hotel stores its own webhook URL and signing secret; secrets are encrypted at rest with AES-256-GCM, never returned by status APIs, and independently verified before guest chat is enabled. Endpoint hosts must be on an operator-managed allowlist. Delivery resolves credentials by the escalation's organization ID, preventing one hotel's webhook settings from being reused for another hotel.
 - Knowledge source references and review dates, with overdue documents automatically excluded from guest-answer context until reviewed.
 - Owner dashboard for conversations, knowledge approval and escalation status.
 - Embeddable guest chat widget with multi-turn conversation continuity, bounded history and a per-conversation access token stored only as a hash server-side.

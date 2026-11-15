@@ -2,6 +2,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const {
   requiresStaffEscalation,
+  requiresHumanHandoff,
   buildGuestSupportSystemPrompt,
   normalizeGuestSupportAnswer,
 } = require("../guest-support-policy");
@@ -175,4 +176,41 @@ test("fictional hotel knowledge QA fixture stays bounded to approved facts", () 
   assert.equal(requiresStaffEscalation("Can you confirm a room upgrade?"), false);
   assert.equal(requiresStaffEscalation("I have a food allergy."), true);
   assert.equal(requiresStaffEscalation("Please refund my booking."), true);
+});
+
+
+test("a model cannot suppress a deterministic staff-escalation trigger", () => {
+  const modelAnswer = { reply: "Breakfast starts at 7:00.", needsHuman: false };
+  for (const message of [
+    "There is smoke in the hallway.",
+    "I have a severe food allergy.",
+    "Please cancel my reservation.",
+    "Someone has stolen my bag.",
+  ]) {
+    assert.equal(
+      requiresHumanHandoff(message, modelAnswer),
+      true,
+      `model must not suppress staff escalation for: ${message}`
+    );
+  }
+});
+
+test("ordinary supported questions remain eligible for an automatic answer", () => {
+  assert.equal(
+    requiresHumanHandoff("What time is breakfast?", {
+      reply: "Breakfast starts at 7:00.",
+      needsHuman: false,
+    }),
+    false
+  );
+});
+
+test("model-requested handoff is preserved even without a keyword trigger", () => {
+  assert.equal(
+    requiresHumanHandoff("Could you help me with something unusual?", {
+      reply: "Please contact the hotel team.",
+      needsHuman: true,
+    }),
+    true
+  );
 });

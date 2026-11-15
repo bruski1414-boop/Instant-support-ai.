@@ -455,6 +455,19 @@ test("unsupported numeric AI claims are replaced with a staff-confirmation hando
   assert.match(server, /answer\.needsHuman=true/);
 });
 
+test("unsupported factual terms and contact details receive distinct handoff reasons", () => {
+  const server = fs.readFileSync("server.js", "utf8");
+  assert.match(server, /Generated answer contained factual terms not supported by approved hotel information/);
+  assert.match(server, /Generated answer contained an email address or website link not present in approved information/);
+  assert.match(server, /unsupportedClaimTerms:groundingCheck\.unsupportedClaimTerms\|\|\[\]/);
+});
+
+test("a deliberate AI staff handoff is preserved without running answer grounding", () => {
+  const server = fs.readFileSync("server.js", "utf8");
+  assert.match(server, /if\(retrieval\.matched&&answer\.needsHuman\)\{groundingCheck=\{supported:false,reason:"staff_handoff"/);
+});
+
+
 
 test("conversation evidence is tenant-scoped and exposes approved source provenance to managers", () => {
   const server = fs.readFileSync("server.js", "utf8");

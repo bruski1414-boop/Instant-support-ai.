@@ -193,6 +193,8 @@ main{padding:28px clamp(16px,4vw,48px);max-width:1450px;width:100%;margin:auto}.
  </section>
  <section id="panel-knowledge" class="panel">
   <div class="sectionrow"><h2>Approved business knowledge</h2><span class="muted">Only approved documents can inform the guest assistant.</span></div>
+  <div class="sectionrow"><h2>Knowledge quality review</h2><span class="muted">Manager review required for flagged items</span></div>
+  <div id="knowledgeQuality" class="card" aria-live="polite"><div class="muted">Checking knowledge quality…</div></div>
   <div class="card">
    <h3 style="margin:0 0 6px">Add a knowledge document</h3><p class="muted" style="font-size:12px">Use hotel-approved, current information. Leave it unapproved until a manager checks it.</p>
    <div class="field" style="margin:10px 0"><label for="kImportFile">Import a text or Markdown policy (.txt or .md)</label><input id="kImportFile" type="file" accept=".txt,.md,text/plain,text/markdown"><small class="muted">Up to 12 KB. The file is read in this browser only and placed into the draft fields. Nothing is approved or uploaded automatically.</small><div id="kImportStatus" class="muted" aria-live="polite"></div></div>
@@ -308,6 +310,10 @@ async function loadRevenue(){
 }
 async function loadKnowledge(){
  const d=await api("/api/admin/knowledge");
+ const quality=d.quality||{documentCount:(d.documents||[]).length,blockingCount:0,warningCount:0,possibleConflictCount:0,findings:[],possibleConflicts:[],note:"Quality analysis is unavailable. Review every document manually."};
+ const qualityItems=(quality.findings||[]).map(item=>'<div style="padding:9px 0;border-bottom:1px solid var(--line)"><div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap"><strong>'+safe(item.title||"Untitled document")+'</strong><span class="tag '+(item.severity==="blocking"?"bad":"warn")+'">'+safe(item.code.replace(/_/g," "))+'</span></div><div class="muted" style="font-size:12px">'+safe(item.message)+'</div></div>').join("");
+ const conflictItems=(quality.possibleConflicts||[]).map(item=>'<div style="padding:9px 0;border-bottom:1px solid var(--line)"><strong>Possible conflict — manager confirmation needed</strong><div class="muted" style="font-size:12px">'+(item.documents||[]).map(doc=>safe(doc.title||"Untitled document")).join(" ↔ ")+'</div><div class="muted" style="font-size:12px">'+safe(item.message)+'</div></div>').join("");
+ $("knowledgeQuality").innerHTML='<div class="grid" style="grid-template-columns:repeat(3,minmax(0,1fr))"><div><div class="metriclabel">Documents checked</div><div class="metric">'+Number(quality.documentCount||0)+'</div></div><div><div class="metriclabel">Blocking flags</div><div class="metric">'+Number(quality.blockingCount||0)+'</div></div><div><div class="metriclabel">Warnings / possible conflicts</div><div class="metric">'+(Number(quality.warningCount||0)+Number(quality.possibleConflictCount||0))+'</div></div></div><div style="margin-top:14px"><strong>Review findings</strong>'+(qualityItems||'<p class="muted">No document-quality flags found by the automated checks.</p>')+'</div><div style="margin-top:14px"><strong>Possible conflicting information</strong>'+(conflictItems||'<p class="muted">No likely conflicts detected by the basic comparison.</p>')+'</div><p class="muted" style="font-size:11px;margin:12px 0 0">'+safe(quality.note||"Flags are prompts for human review, not proof that information is false.")+'</p>';
  $( "knowledgeList" ).innerHTML=(d.documents||[]).map(x=>{
   const due=x.review_due_at?new Date(x.review_due_at+"T00:00:00"):null;
   const today=new Date();today.setHours(0,0,0,0);

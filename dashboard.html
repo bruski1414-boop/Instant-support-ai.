@@ -256,12 +256,13 @@ function moneyMinor(amount,currency){return (Number(amount||0)/100).toLocaleStri
 async function loadRevenueAttributions(){
  const d=await api("/api/admin/offer-attributions");
  const rows=d.attributions||[];
- const enquiries=rows.filter(x=>x.status==="enquiry").length;
- const converted=rows.filter(x=>x.status==="converted");
+ const totals=d.totals||[];
+ const enquiries=totals.filter(x=>x.status==="enquiry").reduce((sum,x)=>sum+Number(x.count||0),0);
+ const conversions=totals.filter(x=>x.status==="converted").reduce((sum,x)=>sum+Number(x.count||0),0);
  $("revenueEnquiries").textContent=String(enquiries);
- $("revenueConversions").textContent=String(converted.length);
+ $("revenueConversions").textContent=String(conversions);
  const currencyGroups={};
- for(const x of converted){const c=x.currency||"UNKNOWN";currencyGroups[c]=(currencyGroups[c]||0)+Number(x.amount_minor||0);}
+ for(const x of totals.filter(x=>x.status==="converted")){const c=x.currency||"UNKNOWN";currencyGroups[c]=(currencyGroups[c]||0)+Number(x.amount_minor||0);}
  $("revenueTotal").textContent=Object.keys(currencyGroups).length===1?moneyMinor(Object.values(currencyGroups)[0],Object.keys(currencyGroups)[0]):"See currencies below";
  $("revenueCurrencyTotals").innerHTML=Object.keys(currencyGroups).length?Object.entries(currencyGroups).map(([c,v])=>'<div style="display:flex;justify-content:space-between;padding:7px 0"><span>'+safe(c)+'</span><strong>'+moneyMinor(v,c)+'</strong></div>').join(""):'<div class="empty">No staff-confirmed revenue yet.</div>';
  $("attributionList").innerHTML=rows.map(x=>'<article class="card"><div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap"><strong>'+safe(x.offer_name)+'</strong>'+statusTag(x.status)+'</div><div class="muted" style="font-size:11px;margin-top:5px">'+safe(x.category)+' · Enquiry '+date(x.created_at)+' · '+safe(x.conversation_id)+'</div>'+(x.status==="converted"?'<p><strong>Confirmed sale: '+moneyMinor(x.amount_minor,x.currency)+'</strong></p>':'')+(x.notes?'<p class="muted">'+safe(x.notes)+'</p>':'')+(x.status==="enquiry"?'<div class="actions" style="margin-top:12px"><button class="btn primary" data-attribution-action="converted" data-id="'+safe(x.id)+'" data-currency="'+safe(x.offer_currency)+'">Confirm completed sale</button><button class="btn" data-attribution-action="not_converted" data-id="'+safe(x.id)+'">Close · no sale</button></div>':'')+'</article>').join("")||'<div class="card empty">No offer enquiries recorded yet. They will appear when guest chat is enabled and a guest asks about a verified offer.</div>';

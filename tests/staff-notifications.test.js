@@ -4,7 +4,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const crypto = require("node:crypto");
 const { createServer } = require("node:http");
-const { sendStaffIntegrationTest, deliverStaffEscalation, shouldRetryStaffNotification, dispatchStaffNotification } = require("../staff-notifications");
+const { sendStaffIntegrationTest, deliverStaffEscalation, shouldRetryStaffNotification, dispatchStaffNotification, retryPendingStaffNotifications } = require("../staff-notifications");
 
 const input = {
   organization: { id: "org-1", slug: "aster-house", name: "Aster House" },
@@ -279,4 +279,40 @@ test("real fetch rejects webhook redirects without contacting the redirect targe
   } finally {
     await Promise.all([close(redirector), close(target)]);
   }
+});
+
+
+test("background retry scans only eligible unresolved failures and dispatches each candidate", async () => {
+  const calls = [];
+  const db = {
+    query: async (sql, params) => {
+      calls.push({ sql, params });
+      return { rows: [
+        { escalation_id: "e-1", organization_id: "org-1", conversation_id: "c-1", reason: "Needs staff", organization_name: "Hotel One", organization_slug: "hotel-one" },
+        { escalation_id: "e-2", organization_id: "org-2", conversation_id: "c-2", reason: "Needs staff", organization_name: "Hotel Two", organization_slug: "hotel-two" }
+      ] };
+    }
+  };
+  const dispatched = [];
+  const result = await retryPendingStaffNotifications({
+    db,
+    batchSize: 20,
+    dispatch: async row => { dispatched.push(row.escalation_id); return { claimed: true, delivered: true, status: "delivered" }; }
+  });
+  assert.equal(result.scanned, 2);
+  assert.deepEqual(dispatched, ["e-1", "e-2"]);
+  assert.match(calls[0].sql, /e.status<>'resolved'/);
+  assert.match(calls[0].sql, /notification_attempts<5/);
+  assert.match(calls[0].sql, /interval '5 minutes'/);
+  assert.match(calls[0].sql, /interval '2 minutes'/);
+  assert.deepEqual(calls[0].params, [20]);
+});
+
+test("background retry clamps batch size and requires a dispatcher", async () => {
+  let limit;
+  const db = { query: async (_sql, params) => { limit = params[0]; return { rows: [] }; } };
+  const result = await retryPendingStaffNotifications({ db, batchSize: 1000, dispatch: async () => ({}) });
+  assert.equal(limit, 100);
+  assert.equal(result.scanned, 0);
+  await assert.rejects(() => retryPendingStaffNotifications({ db }), /dispatcher is required/);
 });

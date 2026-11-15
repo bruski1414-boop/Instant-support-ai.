@@ -186,7 +186,12 @@ function createPmsRegistry(adapters = []) {
     validateCredentials: async (provider, input) => {
       const adapter = get(provider);
       if (typeof adapter.validateCredentials !== "function") throw new PmsIntegrationError("CREDENTIAL_VALIDATION_UNAVAILABLE", "This adapter does not accept hotel credentials.", 409);
-      const result = await adapter.validateCredentials(input);
+      let result;
+      try {
+        result = await adapter.validateCredentials(input);
+      } catch {
+        throw new PmsIntegrationError("INVALID_CREDENTIALS", "Provider adapter rejected the supplied connection details.");
+      }
       if (!result || typeof result !== "object" || Array.isArray(result) ||
           !result.credentials || typeof result.credentials !== "object" || Array.isArray(result.credentials) ||
           !Array.isArray(result.scopes) || result.scopes.some(scope => typeof scope !== "string" || !/^[a-zA-Z0-9:._-]{1,100}$/.test(scope))) {

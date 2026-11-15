@@ -75,3 +75,34 @@ test("rejects malformed AI response objects and missing handoff reasons", () => 
   assert.equal(validateStructuredAnswer({ reply: "Hello", needsHuman: false, handoffReason: "not empty" }).reason, "unexpected_handoff_reason");
   assert.equal(validateStructuredAnswer({ reply: "Please contact staff.", needsHuman: true, handoffReason: " " }).reason, "missing_handoff_reason");
 });
+
+
+test("rejects unsupported amenity and service claims even when they contain no new numbers", () => {
+  const result = validateAnswerGrounding(
+    "Our rooftop pool is open daily and offers panoramic ocean views.",
+    "The hotel offers complimentary on-site guest parking and breakfast in the restaurant."
+  );
+  assert.equal(result.supported, false);
+  assert.equal(result.reason, "unsupported_claim_terms");
+  assert.ok(result.unsupportedClaimTerms.includes("rooftop"));
+  assert.ok(result.unsupportedClaimTerms.includes("pool"));
+  assert.ok(result.unsupportedClaimTerms.includes("ocean"));
+});
+
+test("rejects a claim that changes a documented amenity's price description", () => {
+  const result = validateAnswerGrounding(
+    "Parking is free for all guests.",
+    "Complimentary on-site guest parking is available in the hotel car park."
+  );
+  assert.equal(result.supported, false);
+  assert.equal(result.reason, "unsupported_claim_terms");
+  assert.ok(result.unsupportedClaimTerms.includes("free"));
+});
+
+test("continues to accept concise answers using approved hotel terms", () => {
+  const result = validateAnswerGrounding(
+    "Breakfast is served from 6:30 to 10:30.",
+    "Breakfast is served daily from 6:30 AM to 10:30 AM."
+  );
+  assert.equal(result.supported, true);
+});

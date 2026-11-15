@@ -71,4 +71,7 @@ test("rejects malformed AI response objects and missing handoff reasons", () => 
   assert.equal(validateStructuredAnswer({ reply: "Please contact staff.", needsHuman: true, handoffReason: "" }).reason, "missing_handoff_reason");
   assert.equal(validateStructuredAnswer({ reply: "", needsHuman: false, handoffReason: "" }).reason, "invalid_reply");
   assert.equal(validateStructuredAnswer({ reply: "x".repeat(4001), needsHuman: false, handoffReason: "" }).reason, "invalid_reply");
+  assert.equal(validateStructuredAnswer({ reply: "Hello", needsHuman: false, handoffReason: "", extra: "ignored" }).reason, "unexpected_response_fields");
+  assert.equal(validateStructuredAnswer({ reply: "Hello", needsHuman: false, handoffReason: "not empty" }).reason, "unexpected_handoff_reason");
+  assert.equal(validateStructuredAnswer({ reply: "Please contact staff.", needsHuman: true, handoffReason: " " }).reason, "missing_handoff_reason");
 });

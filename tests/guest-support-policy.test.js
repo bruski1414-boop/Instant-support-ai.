@@ -3,6 +3,7 @@ const assert = require("node:assert/strict");
 const {
   requiresStaffEscalation,
   buildGuestSupportSystemPrompt,
+  normalizeGuestSupportAnswer,
 } = require("../guest-support-policy");
 
 test("sensitive, urgent and operational requests are routed to staff", () => {
@@ -75,4 +76,43 @@ test("guest support prompt requires staff confirmation for unverified facts and 
   assert.match(prompt, /Do not guess or fill gaps/);
   assert.match(prompt, /Do not claim that staff have been notified unless the system confirms delivery/);
   assert.match(prompt, /Set needsHuman to true whenever a fact cannot be verified/);
+});
+
+
+test("malformed model answers fail closed and require staff", () => {
+  for (const value of [
+    null,
+    [],
+    {},
+    { reply: "", needsHuman: false },
+    { reply: "I can help", needsHuman: "false" },
+    { reply: "I can help" },
+  ]) {
+    const answer = normalizeGuestSupportAnswer(value);
+    assert.equal(answer.needsHuman, true);
+    assert.equal(answer.reply, "I cannot prepare a reliable answer. Please contact hotel staff.");
+    assert.equal(answer.handoffReason, "Response validation failed.");
+  }
+});
+
+test("valid model answers are normalized without weakening escalation", () => {
+  const answer = normalizeGuestSupportAnswer({
+    reply: "  Breakfast starts at 7.  ",
+    needsHuman: false,
+    handoffReason: "",
+  });
+  assert.deepEqual(answer, {
+    reply: "Breakfast starts at 7.",
+    needsHuman: false,
+    handoffReason: "",
+  });
+});
+
+test("valid escalation answers receive a safe fallback reason", () => {
+  const answer = normalizeGuestSupportAnswer({
+    reply: "A staff member needs to help with that.",
+    needsHuman: true,
+  });
+  assert.equal(answer.needsHuman, true);
+  assert.equal(answer.handoffReason, "Staff review required.");
 });

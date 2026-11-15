@@ -65,6 +65,21 @@ test("demo HTTP routes return isolated synthetic data and safe handoffs", async 
 
   await waitForDemo();
 
+  const healthResponse = await fetch(baseUrl + "/api/health");
+  assert.equal(healthResponse.status, 200);
+  const health = await healthResponse.json();
+  assert.equal(health.status, "degraded");
+  assert.equal(health.mode, "demo-no-api-key");
+  assert.equal(health.readyForPilot, false);
+  assert.equal(health.aiConfigured, undefined);
+
+  const readinessResponse = await fetch(baseUrl + "/api/readiness");
+  assert.equal(readinessResponse.status, 503);
+  const readiness = await readinessResponse.json();
+  assert.equal(readiness.status, "not-ready");
+  assert.equal(readiness.readyForPilot, false);
+  assert.equal(Object.values(readiness.checks).every(value => value === false), false);
+
   const page = await fetch(baseUrl + "/demo");
   assert.equal(page.status, 200);
   assert.match(await page.text(), /DEMO ONLY/);

@@ -154,10 +154,14 @@ function createPmsRegistry(adapters = []) {
       throw new PmsIntegrationError("INVALID_ADAPTER", "PMS adapter does not implement the required contract.");
     }
     if (registered.has(adapter.id)) throw new PmsIntegrationError("DUPLICATE_ADAPTER", "PMS adapter is already registered.");
+    if (adapter.mode !== "sandbox" && typeof adapter.validateCredentials !== "function") {
+      throw new PmsIntegrationError("INVALID_ADAPTER", "Production PMS adapters must validate credentials before use.");
+    }
     registered.set(adapter.id, Object.freeze({
       id: adapter.id,
       name: adapter.name.trim(),
       mode: adapter.mode === "sandbox" ? "sandbox" : "production",
+      validateCredentials: adapter.validateCredentials,
       capabilities: Object.freeze({
         availability: adapter.capabilities.availability === true && typeof adapter.getAvailability === "function",
         booking: adapter.capabilities.booking === true && typeof adapter.createBooking === "function",
@@ -179,6 +183,17 @@ function createPmsRegistry(adapters = []) {
   return Object.freeze({
     register,
     list: () => [...registered.values()].map(({ id, name, mode, capabilities }) => ({ id, name, mode, capabilities })),
+    validateCredentials: async (provider, input) => {
+      const adapter = get(provider);
+      if (typeof adapter.validateCredentials !== "function") throw new PmsIntegrationError("CREDENTIAL_VALIDATION_UNAVAILABLE", "This adapter does not accept hotel credentials.", 409);
+      const result = await adapter.validateCredentials(input);
+      if (!result || typeof result !== "object" || Array.isArray(result) ||
+          !result.credentials || typeof result.credentials !== "object" || Array.isArray(result.credentials) ||
+          !Array.isArray(result.scopes) || result.scopes.some(scope => typeof scope !== "string" || !/^[a-zA-Z0-9:._-]{1,100}$/.test(scope))) {
+        throw new PmsIntegrationError("INVALID_CREDENTIALS", "Provider adapter rejected the supplied connection details.");
+      }
+      return { credentials: result.credentials, scopes: [...new Set(result.scopes)] };
+    },
     testConnection: async (provider, context = {}) => {
       const adapter = get(provider);
       const result = await adapter.testConnection(context);

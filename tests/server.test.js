@@ -323,3 +323,14 @@ test("staff notification retries are capped and direct staff to manual fallback"
   assert.match(server, /notification_attempts=notification_attempts\+CASE WHEN \$2 THEN 1 ELSE 0 END/);
   assert.match(server, /notification_status===\"delivered\"\)return r\.status\(409\)/);
 });
+
+
+test("staff handoff dashboard makes failed and unconfigured notifications require manual follow-up", () => {
+  const dashboard = fs.readFileSync("dashboard.html", "utf8");
+  assert.match(dashboard, /No staff notification configured — contact hotel staff manually/);
+  assert.match(dashboard, /Delivery failed — contact hotel staff manually now/);
+  assert.match(dashboard, /Retry limit reached — contact hotel staff manually now/);
+  assert.match(dashboard, /Manual follow-up must not be skipped/);
+  assert.match(dashboard, /notification_last_attempt_at/);
+  assert.match(dashboard, /notification==="failed"&&!exhausted/);
+});

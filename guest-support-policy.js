@@ -20,4 +20,36 @@ function buildGuestSupportSystemPrompt(hotelName, approvedKnowledge) {
   ].join("\n");
 }
 
-module.exports = { requiresStaffEscalation, buildGuestSupportSystemPrompt };
+function normalizeGuestSupportAnswer(value) {
+  if (
+    !value ||
+    typeof value !== "object" ||
+    Array.isArray(value) ||
+    typeof value.reply !== "string" ||
+    !value.reply.trim() ||
+    typeof value.needsHuman !== "boolean"
+  ) {
+    return {
+      reply: "I cannot prepare a reliable answer. Please contact hotel staff.",
+      needsHuman: true,
+      handoffReason: "Response validation failed.",
+    };
+  }
+
+  return {
+    reply: value.reply.trim().slice(0, 4000),
+    needsHuman: value.needsHuman,
+    handoffReason:
+      typeof value.handoffReason === "string" && value.handoffReason.trim()
+        ? value.handoffReason.trim().slice(0, 300)
+        : value.needsHuman
+          ? "Staff review required."
+          : "",
+  };
+}
+
+module.exports = {
+  requiresStaffEscalation,
+  buildGuestSupportSystemPrompt,
+  normalizeGuestSupportAnswer,
+};

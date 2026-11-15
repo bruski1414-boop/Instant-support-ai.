@@ -199,6 +199,21 @@ try {
   assert.equal(pmsBResponse.status, 200);
   assert.equal(pmsBBody.tests.some(x => x.provider === "tenant-b-private-adapter"), true, "tenant B can see its own PMS test record");
   assert.equal(pmsBBody.connections.some(x => x.provider === "tenant-b-private-adapter"), true, "tenant B can see its own PMS connection metadata");
+  const sandboxCredentialConnect = await fetch(baseUrl + "/api/admin/integrations/pms/sandbox/connect", {
+    method: "POST",
+    headers: { cookie: cookieA, "content-type": "application/json", "X-CSRF-Token": tenants[0].csrfToken },
+    body: JSON.stringify({ credentials: { clientSecret: "not-used" } }),
+  });
+  assert.equal(sandboxCredentialConnect.status, 409, "the framework sandbox must not accept production hotel credentials");
+  const crossPmsDisconnect = await fetch(baseUrl + "/api/admin/integrations/pms/tenant-b-private-adapter", {
+    method: "DELETE",
+    headers: { cookie: cookieA, "X-CSRF-Token": tenants[0].csrfToken },
+  });
+  assert.equal(crossPmsDisconnect.status, 200);
+  assert.equal((await crossPmsDisconnect.json()).disconnected, false, "tenant A cannot disconnect tenant B's PMS connection");
+  const pmsBAfterCrossDisconnect = await fetch(baseUrl + "/api/admin/integrations/pms", { headers: { cookie: cookieB } });
+  const pmsBAfterCrossDisconnectBody = await pmsBAfterCrossDisconnect.json();
+  assert.equal(pmsBAfterCrossDisconnectBody.connections.some(x => x.provider === "tenant-b-private-adapter"), true, "tenant B's PMS connection must remain intact after tenant A's disconnect attempt");
   await Promise.all(tenants.map(seedConversation));
   await Promise.all(tenants.map(seedKnowledge));
   await Promise.all(tenants.map(seedOffer));

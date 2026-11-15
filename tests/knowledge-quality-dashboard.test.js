@@ -6,6 +6,7 @@ const fs = require("node:fs");
 const vm = require("node:vm");
 
 const html = fs.readFileSync(require("node:path").join(__dirname, "..", "dashboard.html"), "utf8");
+const server = fs.readFileSync(require("node:path").join(__dirname, "..", "server.js"), "utf8");
 
 test("hotel dashboard includes a knowledge quality review panel", () => {
   assert.match(html, /id="knowledgeQuality"/);
@@ -33,7 +34,17 @@ test("hotel onboarding dashboard displays all deployment safety gates", () => {
     "Staff handoff and fallback test",
     "Pilot release approval",
   ]) {
-    assert.ok(html.includes("readinessList"), "expected the readiness list container");
+    assert.ok(server.includes(label), "missing server readiness label: " + label);
+  }
+  for (const key of [
+    "guest_storage",
+    "durable_backups",
+    "tenant_isolation",
+    "provider_oauth",
+    "staff_fallback",
+    "release_approval",
+  ]) {
+    assert.ok(server.includes('key:"' + key + '"'), "missing readiness gate: " + key);
   }
   assert.match(html, /o\.checks\.map/);
   assert.match(html, /safe\(x\.label\)/);

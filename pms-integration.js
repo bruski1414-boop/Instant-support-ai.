@@ -73,6 +73,37 @@ function normalizeBooking(value) {
   return { bookingId, status };
 }
 
+function createHmacSha256Verifier(options = {}) {
+  const signatureHeader = String(options.signatureHeader || "x-pms-signature").toLowerCase();
+  const timestampHeader = String(options.timestampHeader || "x-pms-timestamp").toLowerCase();
+  const prefix = typeof options.signaturePrefix === "string" ? options.signaturePrefix : "";
+  const maxSkewSeconds = Number.isInteger(options.maxSkewSeconds) ? options.maxSkewSeconds : 300;
+  if (!/^[a-z0-9-]{1,80}$/.test(signatureHeader) || !/^[a-z0-9-]{1,80}$/.test(timestampHeader) ||
+      !Number.isInteger(maxSkewSeconds) || maxSkewSeconds < 30 || maxSkewSeconds > 600) {
+    throw new PmsIntegrationError("INVALID_VERIFIER_CONFIG", "HMAC verifier configuration is invalid.");
+  }
+  return ({ headers, rawBody, secret, receivedAt = new Date() }) => {
+    if (!headers || !Buffer.isBuffer(rawBody) || typeof secret !== "string" || secret.length < 16) return false;
+    const header = name => {
+      const key = Object.keys(headers).find(k => k.toLowerCase() === name);
+      return key ? String(headers[key]) : "";
+    };
+    const timestampText = header(timestampHeader);
+    if (!/^\d{10}$/.test(timestampText)) return false;
+    const timestamp = Number(timestampText);
+    const nowMs = receivedAt instanceof Date ? receivedAt.getTime() : Date.parse(receivedAt);
+    if (!Number.isFinite(nowMs) || Math.abs(Math.floor(nowMs / 1000) - timestamp) > maxSkewSeconds) return false;
+    const suppliedText = header(signatureHeader);
+    if (!suppliedText.startsWith(prefix)) return false;
+    const supplied = suppliedText.slice(prefix.length);
+    if (!/^[a-f0-9]{64}$/i.test(supplied)) return false;
+    const signed = Buffer.concat([Buffer.from(timestampText + ".", "utf8"), rawBody]);
+    const expected = crypto.createHmac("sha256", secret).update(signed).digest();
+    const actual = Buffer.from(supplied, "hex");
+    return actual.length === expected.length && crypto.timingSafeEqual(actual, expected);
+  };
+}
+
 function normalizeWebhookEvent(value, now = new Date()) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new PmsIntegrationError("INVALID_WEBHOOK_EVENT", "Provider webhook event must be an object.");
@@ -199,6 +230,7 @@ module.exports = {
   normalizeBookingRequest,
   normalizeBooking,
   normalizeWebhookEvent,
+  createHmacSha256Verifier,
   recordWebhookEvent,
   createPmsRegistry,
   createSandboxAdapter,

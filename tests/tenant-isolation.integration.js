@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import pg from "pg";
+import knowledgeLoader from "../hotel-knowledge.js";
+const { loadApprovedKnowledge } = knowledgeLoader;
 const { Pool } = pg;
 
 if (process.env.CI !== "true" || process.env.VEYRA_TENANT_TEST_DATABASE !== "true") {
@@ -100,6 +102,10 @@ async function seedKnowledge(tenant) {
   const privateContent = "PRIVATE KNOWLEDGE FOR " + tenant.name;
   const inserted = await pool.query("INSERT INTO knowledge_documents(organization_id,title,category,content,approved) VALUES($1,$2,'general',$3,false) RETURNING id", [org.rows[0].id, title, privateContent]);
   tenant.knowledgeId = inserted.rows[0].id;
+  tenant.privateKnowledge = privateContent;
+  tenant.approvedKnowledge = "APPROVED KNOWLEDGE FOR " + tenant.name;
+  await pool.query("INSERT INTO knowledge_documents(organization_id,title,category,content,approved) VALUES($1,$2,'general',$3,true)", [org.rows[0].id, "Approved policy " + tenant.name, tenant.approvedKnowledge]);
+  await pool.query("INSERT INTO knowledge_documents(organization_id,title,category,content,approved,review_due_at) VALUES($1,$2,'general',$3,true,CURRENT_DATE - INTERVAL '1 day')", [org.rows[0].id, "Expired policy " + tenant.name, "EXPIRED KNOWLEDGE FOR " + tenant.name]);
   await pool.query("INSERT INTO knowledge_document_versions(organization_id,document_id,title,category,content,approved,change_type) VALUES($1,$2,$3,'general',$4,false,'created')", [org.rows[0].id, tenant.knowledgeId, title, privateContent]);
 }
 
@@ -208,7 +214,20 @@ try {
   assert.equal(crossKnowledgeAtoB.status, 404, "tenant A must not read tenant B knowledge history");
   const crossKnowledgeBtoA = await readKnowledgeVersions(cookieB, tenants[0].knowledgeId);
   assert.equal(crossKnowledgeBtoA.status, 404, "tenant B must not read tenant A knowledge history");
-  console.log("PASS: tenant-scoped transcripts, knowledge history and storage connections verified for two hotel workspaces.");
+
+  const orgA = (await pool.query("SELECT id FROM organizations WHERE slug=$1", [tenants[0].slug])).rows[0].id;
+  const orgB = (await pool.query("SELECT id FROM organizations WHERE slug=$1", [tenants[1].slug])).rows[0].id;
+  const approvedA = await loadApprovedKnowledge(pool, orgA);
+  const approvedB = await loadApprovedKnowledge(pool, orgB);
+  assert.equal(approvedA.rows.length, 1, "tenant A guest context must include only its current approved document");
+  assert.equal(approvedB.rows.length, 1, "tenant B guest context must include only its current approved document");
+  assert.equal(approvedA.rows[0].content, tenants[0].approvedKnowledge);
+  assert.equal(approvedB.rows[0].content, tenants[1].approvedKnowledge);
+  assert.equal(JSON.stringify(approvedA.rows).includes(tenants[0].privateKnowledge), false, "unapproved tenant A knowledge must never enter guest context");
+  assert.equal(JSON.stringify(approvedA.rows).includes("EXPIRED KNOWLEDGE"), false, "expired tenant A knowledge must never enter guest context");
+  assert.equal(JSON.stringify(approvedA.rows).includes(tenants[1].approvedKnowledge), false, "tenant A guest context must never include tenant B knowledge");
+  assert.equal(JSON.stringify(approvedB.rows).includes(tenants[0].approvedKnowledge), false, "tenant B guest context must never include tenant A knowledge");
+  console.log("PASS: tenant-scoped transcripts, knowledge history, approved guest context and storage connections verified for two hotel workspaces.");
 } finally {
   if (serverReady) {
     for (const tenant of tenants) {

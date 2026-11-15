@@ -230,7 +230,7 @@ r.json({...result,productionConnectionConfigured:storedConnection&&result.mode==
 }catch(e){
 if(storedConnection)await db.query("UPDATE pms_connections SET status='error',last_tested_at=now(),last_error='Connection test failed',updated_at=now() WHERE organization_id=$1 AND provider=$2",[q.actor.organization_id,q.params.provider]).catch(()=>{});
 if(e instanceof PmsIntegrationError)return r.status(e.status).json({verified:false,code:e.code,error:e.message});
-console.error("PMS connection test failed:",e.message);
+console.error("PMS connection test failed for configured provider.");
 r.status(502).json({verified:false,error:"The PMS connection could not be verified. Check the provider settings with the hotel's authorised administrator."});
 }});
 app.delete("/api/admin/integrations/pms/:provider",requireDb,auth,role("owner","admin"),async(q,r,n)=>{try{

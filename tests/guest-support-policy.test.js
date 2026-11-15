@@ -117,3 +117,25 @@ test("valid escalation answers receive a safe fallback reason", () => {
   assert.equal(answer.needsHuman, true);
   assert.equal(answer.handoffReason, "Staff review required.");
 });
+
+
+test("model answer fields are bounded before they are returned", () => {
+  const answer = normalizeGuestSupportAnswer({
+    reply: "R".repeat(5000),
+    needsHuman: true,
+    handoffReason: "H".repeat(500),
+  });
+  assert.equal(answer.reply.length, 4000);
+  assert.equal(answer.handoffReason.length, 300);
+  assert.equal(answer.needsHuman, true);
+});
+
+test("normalization never converts a staff-required answer into an automatic answer", () => {
+  const answer = normalizeGuestSupportAnswer({
+    reply: "Please contact the hotel team.",
+    needsHuman: true,
+    handoffReason: "  Manager review required.  ",
+  });
+  assert.equal(answer.needsHuman, true);
+  assert.equal(answer.handoffReason, "Manager review required.");
+});

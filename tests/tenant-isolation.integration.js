@@ -322,7 +322,7 @@ try {
   assert.equal(storageBBody.connections[0].account_email, "storage-google-" + tenants[1].email);
   assert.equal(JSON.stringify(storageBBody).includes(tenants[0].email), false, "tenant B must not see tenant A's storage account");
 
-  const crossDisconnect = await fetch(baseUrl + "/api/admin/storage/connections/microsoft", {
+  const crossDisconnect = await fetch(baseUrl + "/api/admin/storage/connections/google", {
     method: "DELETE",
     headers: { cookie: cookieA, "X-CSRF-Token": tenants[0].csrfToken },
   });

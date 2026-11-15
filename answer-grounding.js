@@ -45,6 +45,11 @@ function validateStructuredAnswer(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return { valid: false, reason: "response_not_an_object" };
   }
+  const expectedKeys = ["handoffReason", "needsHuman", "reply"];
+  const actualKeys = Object.keys(value).sort();
+  if (actualKeys.length !== expectedKeys.length || actualKeys.some((key, index) => key !== expectedKeys[index])) {
+    return { valid: false, reason: "unexpected_response_fields" };
+  }
   if (typeof value.reply !== "string" || !value.reply.trim() || value.reply.length > 4000) {
     return { valid: false, reason: "invalid_reply" };
   }
@@ -56,6 +61,9 @@ function validateStructuredAnswer(value) {
   }
   if (value.needsHuman && !value.handoffReason.trim()) {
     return { valid: false, reason: "missing_handoff_reason" };
+  }
+  if (!value.needsHuman && value.handoffReason.trim()) {
+    return { valid: false, reason: "unexpected_handoff_reason" };
   }
   return { valid: true, reason: "" };
 }

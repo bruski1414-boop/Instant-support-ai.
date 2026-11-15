@@ -104,7 +104,7 @@ async function recordWebhookEvent(db, organizationId, provider, event, receivedA
       !PROVIDER_KEY.test(provider || "")) {
     throw new PmsIntegrationError("INVALID_WEBHOOK_CONTEXT", "Webhook event context is incomplete.");
   }
-  const normalized = normalizeWebhookEvent(event);
+  const normalized = normalizeWebhookEvent(event, receivedAt);
   const payloadHash = crypto.createHash("sha256").update(JSON.stringify(normalized)).digest("hex");
   const result = await db.query(
     "INSERT INTO pms_webhook_events(organization_id,provider,external_event_id,event_type,payload_sha256,received_at,status) VALUES($1,$2,$3,$4,$5,$6,'received') ON CONFLICT(organization_id,provider,external_event_id) DO NOTHING RETURNING id",

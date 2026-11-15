@@ -48,7 +48,7 @@ A hotel owner/admin saves that hotel's HTTPS webhook URL and signing secret in t
 - Tenant-scoped, read-only Google Drive and Microsoft OneDrive/SharePoint OAuth connectors. OAuth tokens are encrypted at rest with AES-256-GCM; each workspace stores its own provider connection; OAuth state is single-use and expires after ten minutes.
 - Hotel owners/admins can browse plain-text documents and Google Docs, choose individual files, and import them into that hotel's knowledge base. Imports are unapproved by default and must be manager-verified before guest use. SharePoint site discovery and site-root text-file browsing are included.
 - AI answer generation constrained to each hotel's approved knowledge, with conservative escalation for uncertain or sensitive requests.
-- Optional signed staff webhook with persisted delivery status, attempt count and a dashboard retry action for failed notifications.
+- Per-hotel signed staff webhooks with encrypted secrets, operator-approved hostname allowlists, persisted delivery status, attempt counts and dashboard retry for failed notifications.
 - Per-hotel plus client-IP rate limits for public guest chat, plus separate first-owner bootstrap, authentication, invitation and provisioning limits. The default limiter store is in-memory per process and is not distributed across multiple instances.
 - Guest conversation storage is disabled by default until privacy and retention arrangements are approved.
 - GitHub Actions CI runs syntax checks and Node's test suite against PostgreSQL 16. The two-hotel integration test provisions separate workspaces, signs in as both owners, checks tenant separation across knowledge, settings, staff, audit events, storage connections, conversations and escalations, attempts cross-tenant reads/edits/deletes, verifies distinct website CORS origins, tests signed staff-dispatcher events for both hotels and sends concurrent dashboard requests. The AI connection test correctly reports unconfigured when no provider key is present. Live Google/Microsoft OAuth, real provider credentials, production notification routing, backup/restore and sustained load testing remain outstanding.
@@ -63,7 +63,7 @@ Each hotel owner then signs in to its own workspace, saves the hotel's HTTPS web
 
 ## Runtime configuration
 
-The Render service currently starts with PostgreSQL connected. Live AI responses require a server-side `OPENAI_API_KEY`; staff notifications require a verified `STAFF_WEBHOOK_URL` and matching `STAFF_WEBHOOK_SECRET`.
+The Render service currently starts with PostgreSQL connected. Live AI responses require a server-side `OPENAI_API_KEY`. Staff notifications use a separate encrypted webhook URL and signing secret saved by each hotel owner in that hotel's dashboard. The platform operator must configure `STAFF_WEBHOOK_ENCRYPTION_KEY` and `STAFF_WEBHOOK_ALLOWED_HOSTS` before hotel owners can save endpoints.
 
 Important environment variables:
 - `DATABASE_URL`: Render Postgres internal connection string.
@@ -78,7 +78,10 @@ Important environment variables:
 - `STORAGE_TOKEN_ENCRYPTION_KEY`: base64-encoded 32-byte random key used for AES-256-GCM encryption of per-hotel OAuth tokens. Keep only in hosting secrets; never commit it.
 - `GOOGLE_OAUTH_CLIENT_ID` and `GOOGLE_OAUTH_CLIENT_SECRET`: Google OAuth web application credentials. Register callback `https://<veyra-origin>/api/admin/storage/oauth/callback` and enable the Google Drive API.
 - `MICROSOFT_OAUTH_CLIENT_ID` and `MICROSOFT_OAUTH_CLIENT_SECRET`: Microsoft Entra application credentials. Register the same callback as a Web redirect URI and grant admin-approved delegated permissions `Files.Read.All`, `Sites.Read.All`, `User.Read`, and `offline_access`.
-- `STAFF_WEBHOOK_URL` and `STAFF_WEBHOOK_SECRET`: signed central staff-dispatcher receiver. It must route using the event's `organizationId` and `organizationSlug`; each hotel owner can send a labelled integration test from their workspace. Escalation events include a stable `idempotencyKey` (also sent as the `Idempotency-Key` header) equal to the escalation ID. The receiver should persist and deduplicate this key before creating alerts; Veyra cannot guarantee exactly-once delivery if the receiver ignores it.\n- `DURABLE_BACKUPS_VERIFIED=true`: set only after a durable backup and restore test is documented.\n- `TENANT_ISOLATION_TESTS_PASSED=true`: set only after automated tests prove cross-hotel data isolation.\n- `PROVIDER_OAUTH_TESTED=true`: set only after Google/Microsoft OAuth and document access are tested with separate test tenants.\n- `HOTEL_PRIVACY_APPROVED=true`: set only after the pilot hotel has approved its privacy and retention arrangements in writing.\n- `STAFF_HANDOFF_TESTED=true`: set only after a real staff notification and manual fallback have both been tested.\n- `PILOT_RELEASE_APPROVED=true`: final release approval after all evidence above is reviewed. Never set these flags just to make the dashboard green.
+- `STAFF_WEBHOOK_ENCRYPTION_KEY`: base64-encoded 32-byte key used to encrypt each hotel's staff-webhook signing secret at rest. Keep it only in Render's secret environment settings.
+- `STAFF_WEBHOOK_ALLOWED_HOSTS`: comma-separated hostname allowlist for hotel-owned HTTPS notification endpoints. The operator must approve each hostname before a hotel can configure it. Never use a broad wildcard allowlist.
+
+Each hotel owner saves that hotel's own webhook URL and signing secret in the dashboard and sends a signed test event. Verification is cleared whenever the URL or secret changes. Veyra delivers only to verified endpoints. Events include an `idempotencyKey` (also sent as the `Idempotency-Key` header) equal to the escalation ID; receivers should deduplicate it because delivery is at-least-once, not exactly-once.\n- `DURABLE_BACKUPS_VERIFIED=true`: set only after a durable backup and restore test is documented.\n- `TENANT_ISOLATION_TESTS_PASSED=true`: set only after automated tests prove cross-hotel data isolation.\n- `PROVIDER_OAUTH_TESTED=true`: set only after Google/Microsoft OAuth and document access are tested with separate test tenants.\n- `HOTEL_PRIVACY_APPROVED=true`: set only after the pilot hotel has approved its privacy and retention arrangements in writing.\n- `STAFF_HANDOFF_TESTED=true`: set only after a real staff notification and manual fallback have both been tested.\n- `PILOT_RELEASE_APPROVED=true`: final release approval after all evidence above is reviewed. Never set these flags just to make the dashboard green.
 
 Never commit secrets or place them in browser JavaScript.
 
@@ -93,7 +96,7 @@ Never commit secrets or place them in browser JavaScript.
 6. Sign in at `/dashboard.html` using the workspace slug shown by the setup page, plus the owner email and password.
 7. Add hotel knowledge as unapproved; a hotel manager must verify it before approval.
 8. Set `ALLOWED_ORIGINS` to the exact hotel website origin.
-9. Test the staff notification receiver and its fallback process.
+9. Configure the operator-managed webhook encryption key and hostname allowlist in Render. Have the hotel owner save the hotel's own HTTPS webhook URL and signing secret, send a signed test event, and document the manual fallback process. Do not enable guest-facing handoff until the endpoint is verified.
 10. Enable guest-data storage only after the hotel has approved its privacy notice, data-processing terms and retention period, and the database has durable backups and a restore plan.
 11. Embed the widget on the hotel site:
 

@@ -1,21 +1,20 @@
 "use strict";
 
-const crypto = require("node:crypto");
+const { postSignedWebhook } = require("./staff-webhook-security");
 
 async function deliverStaffEscalation({
   organization,
   conversationId,
   reason,
-  webhookUrl,
-  webhookSecret,
-  fetchImpl = fetch,
+  webhookConfig,
+  postImpl = postSignedWebhook,
   timeoutMs = 5000
 }) {
-  if (!webhookUrl || !webhookSecret) {
+  if (!webhookConfig?.url || !webhookConfig?.secret) {
     return { configured: false, delivered: false, status: "not_configured" };
   }
 
-  const body = JSON.stringify({
+  const event = {
     event: "veyra.escalation.created",
     organizationId: organization.id,
     organizationSlug: organization.slug,
@@ -23,21 +22,10 @@ async function deliverStaffEscalation({
     conversationId,
     reason,
     createdAt: new Date().toISOString()
-  });
-  const signature = crypto.createHmac("sha256", webhookSecret).update(body).digest("hex");
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  };
 
   try {
-    const response = await fetchImpl(webhookUrl, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-veyra-signature": signature
-      },
-      body,
-      signal: controller.signal
-    });
+    const response = await postImpl(webhookConfig.url, webhookConfig.secret, event, { timeoutMs });
     return {
       configured: true,
       delivered: Boolean(response.ok),
@@ -45,8 +33,6 @@ async function deliverStaffEscalation({
     };
   } catch {
     return { configured: true, delivered: false, status: "failed" };
-  } finally {
-    clearTimeout(timer);
   }
 }
 

@@ -74,7 +74,7 @@ main{padding:28px clamp(16px,4vw,48px);max-width:1450px;width:100%;margin:auto}.
    <div id="retentionNotice" class="notice hidden" role="status"></div>
   </div>
   <div class="sectionrow"><h2>Hotel-owned staff notifications</h2><span class="muted">Private endpoint for this hotel only</span></div>
-  <div class="card">
+  <div class="card" id="staffWebhookCard">
    <p class="muted">Connect the hotel's own HTTPS staff receiver. Veyra encrypts this endpoint and signing secret separately for this hotel. The secret is never displayed again after saving. Your receiver must accept Veyra JSON events and verify the x-veyra-signature HMAC-SHA256 header.</p>
    <form id="staffWebhookForm">
     <div class="field"><label for="staffWebhookUrl">Hotel staff webhook HTTPS URL</label><input id="staffWebhookUrl" type="url" maxlength="2048" placeholder="https://your-hotel-domain.example/veyra-events" required></div>
@@ -265,7 +265,7 @@ $("previewRetention").addEventListener("click",async()=>{try{await loadRetention
 $("runRetention").addEventListener("click",async()=>{if(!confirm("Permanently delete eligible resolved conversations for this hotel? This cannot be undone."))return;try{const x=await api("/api/admin/retention/cleanup",{method:"POST",body:JSON.stringify({confirm:true})});showToast("Deleted "+x.deleted+" eligible conversation(s).");await loadRetention();}catch(err){notice(err.message,"error");}});
 async function loadSetup(){
  const [s,o]=await Promise.all([api("/api/admin/settings"),api("/api/admin/onboarding")]);
- await loadStaffWebhook();
+ if(["owner","admin"].includes(currentRole))await loadStaffWebhook();else $("staffWebhookCard").classList.add("hidden");
  $("hotelWebsite").value=s.settings.website_url||"";
  $("supportEmail").value=s.settings.support_email||"";
  $("hotelTimezone").value=s.settings.timezone||"UTC";

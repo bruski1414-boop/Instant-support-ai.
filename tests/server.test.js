@@ -521,3 +521,16 @@ test("live hotel guest chat remains blocked when its database and pilot prerequi
   assert.notEqual(body.mode, "demo-simulation");
 });
 
+
+
+test("staff webhook setup is per-hotel and never displays saved signing secrets", () => {
+  const dashboard = fs.readFileSync("dashboard.html", "utf8");
+  assert.match(dashboard, /id="staffWebhookConfigCard"/);
+  assert.match(dashboard, /id="staffWebhookUrl"/);
+  assert.match(dashboard, /id="staffWebhookSecret"/);
+  assert.match(dashboard, /api\("\/api\/admin\/staff-webhook"/);
+  assert.match(dashboard, /method:"PUT"/);
+  assert.match(dashboard, /method:"DELETE"/);
+  assert.match(dashboard, /STAFF_WEBHOOK_ALLOWED_HOSTS/);
+  assert.match(dashboard, /Secrets are encrypted on the server and never shown again/);
+});

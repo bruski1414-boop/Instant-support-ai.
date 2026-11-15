@@ -3,7 +3,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const crypto = require("node:crypto");
-const { deliverStaffEscalation, shouldRetryStaffNotification, dispatchStaffNotification } = require("../staff-notifications");
+const { sendStaffIntegrationTest, deliverStaffEscalation, shouldRetryStaffNotification, dispatchStaffNotification } = require("../staff-notifications");
 
 const input = {
   organization: { id: "org-1", slug: "aster-house", name: "Aster House" },
@@ -206,4 +206,39 @@ test("staff webhook timeout is treated as a failed delivery", async () => {
     })
   });
   assert.deepEqual(result, { configured: true, delivered: false, status: "failed" });
+});
+
+test("staff integration test sends a signed, idempotent event", async () => {
+  let request;
+  const result = await sendStaffIntegrationTest({
+    organization: { id: "org-1", slug: "aster-house", name: "Aster House" },
+    webhookUrl: input.webhookUrl, webhookSecret: input.webhookSecret,
+    fetchImpl: async (url, options) => { request = { url, ...options }; return { ok: true, status: 200 }; }
+  });
+  assert.equal(result.verified, true);
+  assert.equal(request.url, input.webhookUrl);
+  const body = JSON.parse(request.body);
+  assert.equal(body.event, "veyra.integration.test");
+  assert.equal(body.test, true);
+  assert.equal(body.organizationId, "org-1");
+  assert.match(request.headers["idempotency-key"], /^test-/);
+  assert.equal(body.idempotencyKey, request.headers["idempotency-key"]);
+  const expected = crypto.createHmac("sha256", input.webhookSecret).update(request.body).digest("hex");
+  assert.equal(request.headers["x-veyra-signature"], expected);
+});
+
+test("staff integration test times out safely and does not verify the connection", async () => {
+  const result = await sendStaffIntegrationTest({
+    organization: { id: "org-1", slug: "aster-house", name: "Aster House" },
+    webhookUrl: input.webhookUrl, webhookSecret: input.webhookSecret, timeoutMs: 5,
+    fetchImpl: async (_url, options) => new Promise((_resolve, reject) => options.signal.addEventListener("abort", () => reject(new Error("aborted")), { once: true }))
+  });
+  assert.deepEqual(result, { configured: true, verified: false, status: "failed" });
+});
+
+test("staff integration test reports missing configuration without making a request", async () => {
+  let called = false;
+  const result = await sendStaffIntegrationTest({ organization: input.organization, webhookUrl: "", webhookSecret: "", fetchImpl: async () => { called = true; } });
+  assert.deepEqual(result, { configured: false, verified: false });
+  assert.equal(called, false);
 });

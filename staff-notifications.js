@@ -10,7 +10,7 @@ async function sendStaffIntegrationTest({ organization, webhookUrl, webhookSecre
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const response = await fetchImpl(webhookUrl, { method: "POST", headers: { "content-type": "application/json", "x-veyra-signature": signature, "idempotency-key": event.idempotencyKey }, body, signal: controller.signal });
+    const response = await fetchImpl(webhookUrl, { method: "POST", headers: { "content-type": "application/json", "x-veyra-signature": signature, "idempotency-key": event.idempotencyKey }, body, signal: controller.signal, redirect: "error" });
     return { configured: true, verified: Boolean(response.ok), status: response.ok ? "delivered" : "failed", event };
   } catch {
     return { configured: true, verified: false, status: "failed" };
@@ -49,7 +49,8 @@ async function deliverStaffEscalation({
       method: "POST",
       headers: { "content-type": "application/json", "x-veyra-signature": signature, ...(idempotencyKey ? { "idempotency-key": idempotencyKey } : {}) },
       body,
-      signal: controller.signal
+      signal: controller.signal,
+      redirect: "error"
     });
     return { configured: true, delivered: Boolean(response.ok), status: response.ok ? "delivered" : "failed" };
   } catch {

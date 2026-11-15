@@ -41,4 +41,23 @@ function validateAnswerGrounding(reply, approvedContext, guestQuestion = "") {
   return { supported: true, reason: "", unsupportedNumbers: [] };
 }
 
-module.exports = { validateAnswerGrounding };
+function validateStructuredAnswer(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return { valid: false, reason: "response_not_an_object" };
+  }
+  if (typeof value.reply !== "string" || !value.reply.trim() || value.reply.length > 4000) {
+    return { valid: false, reason: "invalid_reply" };
+  }
+  if (typeof value.needsHuman !== "boolean") {
+    return { valid: false, reason: "invalid_handoff_flag" };
+  }
+  if (typeof value.handoffReason !== "string" || value.handoffReason.length > 300) {
+    return { valid: false, reason: "invalid_handoff_reason" };
+  }
+  if (value.needsHuman && !value.handoffReason.trim()) {
+    return { valid: false, reason: "missing_handoff_reason" };
+  }
+  return { valid: true, reason: "" };
+}
+
+module.exports = { validateAnswerGrounding, validateStructuredAnswer };

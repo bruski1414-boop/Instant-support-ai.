@@ -6,8 +6,8 @@ function fakeAi(content, inspect) {
   return {
     chat: {
       completions: {
-        async create(request) {
-          if (inspect) inspect(request);
+        async create(request, options) {
+          if (inspect) inspect(request, options);
           return { choices: [{ message: { content } }] };
         },
       },
@@ -17,12 +17,13 @@ function fakeAi(content, inspect) {
 
 test("guest-support engine answers from the approved-knowledge prompt and keeps bounded conversation history", async () => {
   let request;
+  let requestOptions;
   const result = await generateGuestSupportAnswer({
     ai: fakeAi(JSON.stringify({
       reply: "Breakfast is served from 7:00 to 10:00.",
       needsHuman: false,
       handoffReason: "",
-    }), (value) => { request = value; }),
+    }), (value, options) => { request = value; requestOptions = options; }),
     model: "test-model",
     hotelName: "Aster House",
     approvedKnowledge: "[facilities] Breakfast: 7:00–10:00",
@@ -39,6 +40,7 @@ test("guest-support engine answers from the approved-knowledge prompt and keeps 
   assert.equal(result.needsHuman, false);
   assert.equal(request.model, "test-model");
   assert.equal(request.temperature, 0.1);
+  assert.deepEqual(requestOptions, { timeout: 15000, maxRetries: 0 });
   assert.equal(request.messages[0].role, "system");
   assert.match(request.messages[0].content, /approved hotel reference data only/);
   assert.equal(request.messages.at(-1).content, "When is breakfast?");

@@ -57,7 +57,7 @@ function resolveGuestSupportAnswer(message, normalizedAnswer) {
   const deterministicHandoff = requiresStaffEscalation(message);
   const needsHuman = deterministicHandoff || normalizedAnswer?.needsHuman === true;
   if (deterministicHandoff) {
-    const immediateDanger = /\\b(fire|smoke|gas leak|cannot breathe|can.t breathe|unconscious|not breathing)\\b/i.test(String(message || ""));
+    const immediateDanger = /\b(fire|smoke|gas leak|cannot breathe|can.t breathe|unconscious|not breathing)\b/i.test(String(message || ""));
     return {
       reply: immediateDanger
         ? "Please move away from the immediate danger and contact local emergency services now. Alert hotel staff as soon as it is safe. Do not wait for a chat reply."

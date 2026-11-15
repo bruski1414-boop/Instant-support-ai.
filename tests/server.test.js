@@ -341,7 +341,15 @@ test("AI and staff integrations require live verification before onboarding mark
   assert.match(server, /ai\.models\.retrieve\(MODEL/);
   assert.match(server, /veyra\.integration\.test/);
   assert.match(server, /verified_at,verified_by/);
-  assert.match(server, /handoffVerified=Boolean\(handoffConfigured&&verified\.staff_webhook\)/);
+  assert.match(server, /staffWebhookStatus=await staffWebhookStore\.getStatus\(q\.actor\.organization_id\)/);
+  assert.match(server, /organization_staff_webhooks/);
+  assert.match(server, /createStaffWebhookStore/);
+  assert.match(server, /STAFF_WEBHOOK_ENCRYPTION_KEY/);
+  assert.match(server, /STAFF_WEBHOOK_ALLOWED_HOSTS/);
+  assert.match(server, /staffWebhookStore\.resolve\(org\.id\)/);
+  assert.match(server, /staffWebhookStatus\.verified/);
+  assert.match(server, /app\.put\("\/api\/admin\/staff-webhook"/);
+  assert.match(server, /app\.delete\("\/api\/admin\/staff-webhook"/);
 });
 
 

@@ -102,4 +102,29 @@ async function dispatchStaffNotification({ db, organizationId, escalationId, max
   return { ...result, claimed: true };
 }
 
-module.exports = { sendStaffIntegrationTest, deliverStaffEscalation, shouldRetryStaffNotification, dispatchStaffNotification };
+
+/**
+ * Retry a bounded batch of failed or abandoned staff notifications.
+ * The dispatcher still performs the atomic per-escalation lease claim, so
+ * overlapping invocations cannot send the same escalation concurrently.
+ */
+async function retryPendingStaffNotifications({ db, dispatch, batchSize = 50 }) {
+  if (!db || typeof db.query !== "function") throw new TypeError("A database client is required.");
+  if (typeof dispatch !== "function") throw new TypeError("A notification dispatcher is required.");
+  const limit = Number.isInteger(batchSize) ? Math.max(1, Math.min(batchSize, 100)) : 50;
+  const pending = await db.query(
+    "SELECT e.id AS escalation_id,e.organization_id,e.conversation_id,e.reason,o.name AS organization_name,o.slug AS organization_slug FROM escalations e JOIN organizations o ON o.id=e.organization_id WHERE e.status<>'resolved' AND e.notification_attempts<5 AND ((e.notification_status='failed' AND (e.notification_last_attempt_at IS NULL OR e.notification_last_attempt_at<now()-interval '5 minutes')) OR (e.notification_status='sending' AND e.notification_last_attempt_at<now()-interval '2 minutes')) ORDER BY COALESCE(e.notification_last_attempt_at,e.created_at),e.created_at LIMIT $1",
+    [limit]
+  );
+  const results = [];
+  for (const escalation of pending.rows) {
+    try {
+      results.push(await dispatch(escalation));
+    } catch {
+      results.push({ claimed: false, status: "failed", delivered: false, configured: true });
+    }
+  }
+  return { scanned: pending.rows.length, results };
+}
+
+module.exports = { sendStaffIntegrationTest, deliverStaffEscalation, shouldRetryStaffNotification, dispatchStaffNotification, retryPendingStaffNotifications };

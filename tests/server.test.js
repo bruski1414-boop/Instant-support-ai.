@@ -467,6 +467,12 @@ test("a deliberate AI staff handoff is preserved without running answer groundin
   assert.match(server, /if\(retrieval\.matched&&answer\.needsHuman\)\{groundingCheck=\{supported:false,reason:"staff_handoff"/);
 });
 
+test("an explicit request for staff replaces any ordinary AI answer with a clear handoff", () => {
+  const server = fs.readFileSync("server.js", "utf8");
+  assert.match(server, /if\(flag&&!answer\.needsHuman\)\{answer\.reply="Of course\. I’ll pass your request to the hotel team so a member of staff can assist you\."/);
+  assert.match(server, /answer\.needsHuman=true;answer\.handoffReason="Guest explicitly requested staff assistance or raised an issue requiring human review\."/);
+});
+
 
 
 test("conversation evidence is tenant-scoped and exposes approved source provenance to managers", () => {

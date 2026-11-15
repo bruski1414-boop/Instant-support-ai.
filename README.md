@@ -4,10 +4,11 @@ Veyra AI is a hotel customer-support platform prototype. It is designed to answe
 
 ## Live project
 
-- Public demo site: https://veyra-ai-prototype.onrender.com
-- Owner dashboard: https://veyra-ai-prototype.onrender.com/dashboard.html
-- Synthetic interactive hotel demo (separate pinned Render deployment; not the current feature-branch head): https://veyra-demo-6y5a.onrender.com/demo
-- First workspace setup: https://veyra-ai-prototype.onrender.com/setup.html
+- Current Render service: https://veyra-demo-6y5a.onrender.com
+- Synthetic interactive hotel demo: https://veyra-demo-6y5a.onrender.com/demo
+- Owner dashboard: https://veyra-demo-6y5a.onrender.com/dashboard.html
+- First workspace setup: https://veyra-demo-6y5a.onrender.com/setup.html
+- Note: the interactive demo uses fictional Aster House Hotel data and scripted responses; it is not connected to live hotel systems or staff.
 - Source code: https://github.com/bruski1414-boop/Instant-support-ai.
 
 ## Current deployment

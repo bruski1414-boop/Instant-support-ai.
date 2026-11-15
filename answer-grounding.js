@@ -23,7 +23,7 @@ const NON_CLAIM_TERMS = new Set([
   "thanks","that","the","their","them","then","there","these","they","this","those","through","to","today",
   "tomorrow","too","under","up","us","very","was","we","well","were","what","when","where","which","while",
   "who","why","will","with","would","yes","you","your","hotel","team","staff","contact","assist","assistance",
-  "email","happy","sorry","apologize","apologies","welcome","pleasure","understand","understood","reach","check","checking","checked","confirm","confirmed","confirmation","information","question","questions","answer","details","available","availability","served","serving",
+  "email","visit","happy","sorry","apologize","apologies","welcome","pleasure","understand","understood","reach","check","checking","checked","confirm","confirmed","confirmation","information","question","questions","answer","details","available","availability","served","serving",
   "offer","offers","offered","offering","please","kindly","currently","simply","certainly","sure"
 ]);
 

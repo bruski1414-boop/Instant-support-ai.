@@ -243,7 +243,7 @@ try {
   });
   assert.equal(gatedChat.status, 503, "guest chat must not start before this hotel's integrations are verified");
   const gatedChatBody = await gatedChat.json();
-  assert.match(gatedChatBody.error, /AI and staff notification integrations must be verified/i);
+  assert.match(gatedChatBody.error, /AI and its own staff notification endpoint must be verified/i);
   const tenantBWithoutApproval = await fetch(`${baseUrl}/api/public/${tenants[1].slug}/chat`, {
     method: "POST", headers: { "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true" },
     body: JSON.stringify({ message: "What time is breakfast?" }),

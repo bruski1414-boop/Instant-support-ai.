@@ -172,6 +172,26 @@ try {
 
   for (const tenant of tenants) await provision(tenant);
   const [cookieA, cookieB] = await Promise.all(tenants.map(login));
+  const pmsTestResponse = await fetch(baseUrl + "/api/admin/integrations/pms/sandbox/test", {
+    method: "POST",
+    headers: { cookie: cookieA, "content-type": "application/json", "X-CSRF-Token": tenants[0].csrfToken },
+    body: "{}",
+  });
+  assert.equal(pmsTestResponse.status, 200, "tenant A owner can test the sandbox adapter");
+  const pmsTestBody = await pmsTestResponse.json();
+  assert.equal(pmsTestBody.mode, "sandbox");
+  assert.equal(pmsTestBody.productionReady, false, "sandbox must never be represented as a production connection");
+  const tenantBOrg = await pool.query("SELECT id FROM organizations WHERE slug=$1", [tenants[1].slug]);
+  const tenantBUser = await pool.query("SELECT id FROM users WHERE organization_id=$1 AND email=$2", [tenantBOrg.rows[0].id, tenants[1].email]);
+  await pool.query("INSERT INTO organization_pms_adapter_tests(organization_id,provider,mode,test_passed,tested_by) VALUES($1,'tenant-b-private-adapter','sandbox',true,$2)", [tenantBOrg.rows[0].id, tenantBUser.rows[0].id]);
+  const pmsAResponse = await fetch(baseUrl + "/api/admin/integrations/pms", { headers: { cookie: cookieA } });
+  const pmsABody = await pmsAResponse.json();
+  assert.equal(pmsAResponse.status, 200);
+  assert.equal(pmsABody.tests.some(x => x.provider === "tenant-b-private-adapter"), false, "tenant A must not see tenant B PMS test records");
+  const pmsBResponse = await fetch(baseUrl + "/api/admin/integrations/pms", { headers: { cookie: cookieB } });
+  const pmsBBody = await pmsBResponse.json();
+  assert.equal(pmsBResponse.status, 200);
+  assert.equal(pmsBBody.tests.some(x => x.provider === "tenant-b-private-adapter"), true, "tenant B can see its own PMS test record");
   await Promise.all(tenants.map(seedConversation));
   await Promise.all(tenants.map(seedKnowledge));
   await Promise.all(tenants.map(seedOffer));

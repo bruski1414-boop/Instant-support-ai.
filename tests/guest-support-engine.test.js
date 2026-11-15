@@ -43,7 +43,7 @@ test("guest-support engine answers from the approved-knowledge prompt and keeps 
   assert.match(request.messages[0].content, /approved hotel reference data only/);
   assert.equal(request.messages.at(-1).content, "When is breakfast?");
   assert.equal(request.messages.filter((item) => item.role === "system").length, 1);
-  assert.equal(request.messages[2].content.length, 1500);
+  assert.equal(request.messages.at(-2).content.length, 1500);
 });
 
 test("guest-support engine overrides a model answer when a deterministic handoff is required", async () => {

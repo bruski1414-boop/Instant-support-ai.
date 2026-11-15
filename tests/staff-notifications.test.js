@@ -119,3 +119,75 @@ test("dispatcher persists failed delivery and propagates a safe failure if deliv
   assert.deepEqual(result, { configured: true, delivered: false, status: "failed", claimed: true });
   assert.deepEqual(db.calls[1].params, ["failed", true, "escalation-123", "org-1"]);
 });
+
+
+function statefulNotificationDb() {
+  const state = { status: "failed", attempts: 0, lastAttempt: 0, resolved: false };
+  const calls = [];
+  return {
+    state,
+    calls,
+    query: async (sql, params) => {
+      calls.push({ sql, params });
+      if (sql.startsWith("UPDATE escalations SET notification_status='sending'")) {
+        const maxAttempts = params[2];
+        const leaseExpired = state.status !== "sending" || Date.now() - state.lastAttempt > 120000;
+        if (state.resolved || state.status === "delivered" || state.attempts >= maxAttempts || !leaseExpired) {
+          return { rowCount: 0, rows: [] };
+        }
+        state.status = "sending";
+        state.attempts += 1;
+        state.lastAttempt = Date.now();
+        return { rowCount: 1, rows: [{ id: "escalation-123" }] };
+      }
+      if (sql.startsWith("SELECT notification_status")) {
+        return { rowCount: 1, rows: [{ notification_status: state.status, notification_attempts: state.attempts }] };
+      }
+      if (sql.startsWith("UPDATE escalations SET notification_status=$1")) {
+        state.status = params[0];
+        if (!params[1]) state.attempts -= 1;
+        return { rowCount: 1, rows: [] };
+      }
+      throw new Error("Unexpected database query");
+    }
+  };
+}
+
+test("configured webhook failures consume the automatic retry budget and stop at the cap", async () => {
+  const db = statefulNotificationDb();
+  let deliveryCalls = 0;
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    const result = await dispatchStaffNotification({
+      db, organizationId: "org-1", escalationId: "escalation-123", maxAttempts: 3,
+      deliver: async () => {
+        deliveryCalls += 1;
+        return { configured: true, delivered: false, status: "failed" };
+      }
+    });
+    assert.equal(result.claimed, true);
+    assert.equal(result.status, "failed");
+    assert.equal(db.state.attempts, attempt);
+  }
+  const capped = await dispatchStaffNotification({
+    db, organizationId: "org-1", escalationId: "escalation-123", maxAttempts: 3,
+    deliver: async () => {
+      deliveryCalls += 1;
+      return { configured: true, delivered: false, status: "failed" };
+    }
+  });
+  assert.equal(capped.claimed, false);
+  assert.equal(capped.status, "failed");
+  assert.equal(deliveryCalls, 3);
+  assert.equal(db.state.attempts, 3);
+});
+
+test("unconfigured webhook attempts do not consume the delivery retry budget", async () => {
+  const db = statefulNotificationDb();
+  const result = await dispatchStaffNotification({
+    db, organizationId: "org-1", escalationId: "escalation-123", maxAttempts: 3,
+    deliver: async () => ({ configured: false, delivered: false, status: "not_configured" })
+  });
+  assert.equal(result.claimed, true);
+  assert.equal(result.status, "not_configured");
+  assert.equal(db.state.attempts, 0);
+});

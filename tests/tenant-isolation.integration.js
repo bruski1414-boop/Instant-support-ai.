@@ -106,6 +106,24 @@ async function readKnowledgeVersions(cookie, documentId) {
   return fetch(baseUrl + "/api/admin/knowledge/" + documentId + "/versions", { headers: { cookie } });
 }
 
+async function seedStorageConnection(tenant, provider) {
+  const org = await pool.query("SELECT id FROM organizations WHERE slug=$1", [tenant.slug]);
+  const organizationId = org.rows[0].id;
+  const email = "storage-" + tenant.email;
+  await pool.query(
+    "INSERT INTO storage_connections(organization_id,provider,account_email,encrypted_tokens,status,connected_by) VALUES($1,'google',$2,'test-encrypted-token','connected',(SELECT id FROM users WHERE organization_id=$1 AND email=$3))",
+    [organizationId, email, tenant.email]
+  );
+  await pool.query(
+    "INSERT INTO organization_storage_connections(organization_id,provider,workspace_reference,status,scopes,connected_by,connected_at,last_sync_status) VALUES($1,$2,$3,'connected',ARRAY['drive.readonly'],(SELECT id FROM users WHERE organization_id=$1 AND email=$4),now(),'never')",
+    [organizationId, provider, email, tenant.email]
+  );
+}
+
+async function readStorageConnections(cookie) {
+  return fetch(baseUrl + "/api/admin/storage/connections", { headers: { cookie } });
+}
+
 try {
   child = spawn(process.execPath, ["server.js"], {
     cwd: process.cwd(),
@@ -132,6 +150,23 @@ try {
   const [cookieA, cookieB] = await Promise.all(tenants.map(login));
   await Promise.all(tenants.map(seedConversation));
   await Promise.all(tenants.map(seedKnowledge));
+  await Promise.all([
+    seedStorageConnection(tenants[0], "google_drive"),
+    seedStorageConnection(tenants[1], "microsoft_sharepoint"),
+  ]);
+
+  const storageA = await readStorageConnections(cookieA);
+  assert.equal(storageA.status, 200);
+  const storageABody = await storageA.json();
+  assert.deepEqual(storageABody.connections.map(connection => connection.provider), ["google"]);
+  assert.equal(storageABody.connections[0].account_email, "storage-" + tenants[0].email);
+  assert.equal(JSON.stringify(storageABody).includes(tenants[1].email), false, "tenant A must not see tenant B's storage account");
+  const storageB = await readStorageConnections(cookieB);
+  assert.equal(storageB.status, 200);
+  const storageBBody = await storageB.json();
+  assert.deepEqual(storageBBody.connections.map(connection => connection.provider), ["google"]);
+  assert.equal(storageBBody.connections[0].account_email, "storage-" + tenants[1].email);
+  assert.equal(JSON.stringify(storageBBody).includes(tenants[0].email), false, "tenant B must not see tenant A's storage account");
 
   const ownA = await readTranscript(cookieA, tenants[0].conversationId);
   assert.equal(ownA.status, 200, "tenant A must read its own conversation");
@@ -160,7 +195,7 @@ try {
   assert.equal(crossKnowledgeAtoB.status, 404, "tenant A must not read tenant B knowledge history");
   const crossKnowledgeBtoA = await readKnowledgeVersions(cookieB, tenants[0].knowledgeId);
   assert.equal(crossKnowledgeBtoA.status, 404, "tenant B must not read tenant A knowledge history");
-  console.log("PASS: tenant-scoped transcripts and knowledge history verified for two hotel workspaces.");
+  console.log("PASS: tenant-scoped transcripts, knowledge history and storage connections verified for two hotel workspaces.");
 } finally {
   if (serverReady) {
     for (const tenant of tenants) {

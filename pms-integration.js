@@ -16,7 +16,7 @@ class PmsIntegrationError extends Error {
 function validateDateRange(input = {}) {
   const checkIn = typeof input.checkIn === "string" ? input.checkIn : "";
   const checkOut = typeof input.checkOut === "string" ? input.checkOut : "";
-  if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(checkIn) || !/^\\d{4}-\\d{2}-\\d{2}$/.test(checkOut)) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(checkIn) || !/^\d{4}-\d{2}-\d{2}$/.test(checkOut)) {
     throw new PmsIntegrationError("INVALID_DATE_RANGE", "Check-in and check-out must be ISO dates.");
   }
   const start = Date.parse(checkIn + "T00:00:00Z");

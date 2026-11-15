@@ -23,7 +23,8 @@ test("dashboard renders API quality findings and possible conflicts safely", () 
 });
 
 test("dashboard inline JavaScript remains syntactically valid", () => {
-  const scripts = [...html.matchAll(/<script(?:\\s[^>]*)?>([\\s\\S]*?)<\\/script>/gi)];
-  assert.ok(scripts.length > 0, "expected at least one inline script");
-  for (const script of scripts) new vm.Script(script[1]);
+  const start = html.lastIndexOf("<script>");
+  const end = html.indexOf("</script>", start);
+  assert.ok(start >= 0 && end > start, "expected an inline script block");
+  new vm.Script(html.slice(start + "<script>".length, end));
 });

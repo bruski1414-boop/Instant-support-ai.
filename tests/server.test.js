@@ -278,6 +278,8 @@ test("AI and staff integrations require live verification before onboarding mark
   assert.match(server, /veyra\.integration\.test/);
   assert.match(server, /verified_at,verified_by/);
   assert.match(server, /handoffVerified=Boolean\(handoffConfigured&&verified\.staff_webhook\)/);
+  assert.match(server, /organization_staff_webhooks WHERE organization_id=\$1/);
+  assert.match(server, /decryptWebhookConfig\(saved\.rows\[0\]\.encrypted_config/);
 });
 
 
@@ -286,7 +288,7 @@ test("hotel setup dashboard exposes AI and staff dispatcher verification actions
   assert.match(dashboard, /id="testAiIntegration"/);
   assert.match(dashboard, /id="testStaffIntegration"/);
   assert.match(dashboard, /api\("\/api\/admin\/integrations\/test-/);
-  assert.match(dashboard, /Signed test event accepted for this hotel/);
+  assert.match(dashboard, /Hotel-specific signed test event accepted/);
 });
 
 
@@ -341,4 +343,22 @@ test("guest chat converts AI provider failures into a persisted staff handoff in
   assert.match(server, /resolvedAnswer=createAiUnavailableAnswer\(\)/);
   assert.match(server, /const \{generateGuestSupportAnswer,createAiUnavailableAnswer\}=require\("\.\/guest-support-engine"\)/);
   assert.match(server, /const flagHuman=resolvedAnswer\.needsHuman/);
+});
+
+
+test("staff webhook configuration is encrypted, tenant-scoped and verified before use", () => {
+  const server = fs.readFileSync("server.js", "utf8");
+  const dashboard = fs.readFileSync("dashboard.html", "utf8");
+  const security = fs.readFileSync("staff-webhook-security.js", "utf8");
+  assert.match(server, /CREATE TABLE IF NOT EXISTS organization_staff_webhooks\(organization_id UUID PRIMARY KEY/);
+  assert.match(server, /app\.put\("\/api\/admin\/integrations\/staff-webhook",requireDb,auth,role\("owner","admin"\)/);
+  assert.match(server, /app\.delete\("\/api\/admin\/integrations\/staff-webhook",requireDb,auth,role\("owner","admin"\)/);
+  assert.match(server, /app\.get\("\/api\/admin\/integrations\/staff-webhook",requireDb,auth,role\("owner","admin"\)/);
+  assert.match(server, /DELETE FROM organization_integration_checks WHERE organization_id=\$1 AND integration='staff_webhook'/);
+  assert.match(server, /postSignedWebhook\(config\.url,config\.secret,event/);
+  assert.match(security, /aes-256-gcm/);
+  assert.match(security, /resolvePublicWebhook/);
+  assert.match(security, /agent:false/);
+  assert.match(dashboard, /id="staffWebhookForm"/);
+  assert.match(dashboard, /id="staffWebhookSecret"/);
 });

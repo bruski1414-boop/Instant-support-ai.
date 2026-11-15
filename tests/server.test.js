@@ -292,9 +292,11 @@ test("failed staff notifications are retried at most twice after the initial att
   const dashboard = fs.readFileSync("dashboard.html", "utf8");
   assert.match(server, /notification_status,notification_attempts FROM escalations/);
   assert.match(server, /shouldRetryStaffNotification\(/);
-  assert.match(server, /notification_attempts=notification_attempts\+1/);
-  assert.match(server, /notification_status='sending'/);
-  assert.match(server, /notification_last_attempt_at<now\(\)-interval '2 minutes'/);
+  // The atomic claim and lease now live in the dedicated dispatcher module.
+  assert.match(notifications, /notification_attempts=notification_attempts\+1/);
+  assert.match(notifications, /notification_status='sending'/);
+  assert.match(notifications, /notification_last_attempt_at<now\(\)-interval '2 minutes'/);
+  assert.match(server, /dispatchStaffNotification\(/);
   assert.match(notifications, /Number\(notificationAttempts\) < 3/);
   assert.match(dashboard, /Attempts: .*notification_attempts/);
   assert.match(dashboard, /notification_last_attempt_at/);

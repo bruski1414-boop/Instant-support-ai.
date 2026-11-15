@@ -29,6 +29,7 @@ test("staff escalation sends a signed event and reports successful delivery", as
   assert.equal(result.delivered, true);
   assert.equal(request.url, input.webhookUrl);
   assert.equal(request.method, "POST");
+  assert.equal(request.redirect, "error", "webhook redirects must be rejected to prevent redirect-based SSRF");
   const expected = crypto.createHmac("sha256", input.webhookSecret).update(request.body).digest("hex");
   assert.equal(request.headers["x-veyra-signature"], expected);
   assert.equal(request.headers["idempotency-key"], input.idempotencyKey);
@@ -217,6 +218,7 @@ test("staff integration test sends a signed, idempotent event", async () => {
   });
   assert.equal(result.verified, true);
   assert.equal(request.url, input.webhookUrl);
+  assert.equal(request.redirect, "error", "integration-test webhook redirects must be rejected");
   const body = JSON.parse(request.body);
   assert.equal(body.event, "veyra.integration.test");
   assert.equal(body.test, true);

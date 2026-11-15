@@ -3,6 +3,7 @@ const assert = require("node:assert/strict");
 const net = require("node:net");
 const { spawn } = require("node:child_process");
 const fs = require("node:fs");
+const { applyExplicitStaffHandoff } = require("../staff-handoff");
 const vm = require("node:vm");
 let child;
 let baseUrl;
@@ -467,10 +468,32 @@ test("a deliberate AI staff handoff is preserved without running answer groundin
   assert.match(server, /if\(retrieval\.matched&&answer\.needsHuman\)\{groundingCheck=\{supported:false,reason:"staff_handoff"/);
 });
 
-test("an explicit request for staff replaces any ordinary AI answer with a clear handoff", () => {
+test("an explicit request for staff replaces an ordinary answer with a clear handoff", () => {
+  const answer = { reply: "Certainly, I can help with that.", needsHuman: false };
+  const result = applyExplicitStaffHandoff(answer, true);
+  assert.equal(result, answer);
+  assert.equal(result.reply, "Of course. I’ll pass your request to the hotel team so a member of staff can assist you.");
+  assert.equal(result.needsHuman, true);
+  assert.equal(result.handoffReason, "Guest explicitly requested staff assistance or raised an issue requiring human review.");
+});
+
+test("explicit staff handoff preserves an existing deliberate handoff", () => {
+  const answer = { reply: "I’ll ask the hotel team to confirm.", needsHuman: true, handoffReason: "Unverified booking detail." };
+  assert.equal(applyExplicitStaffHandoff(answer, true), answer);
+  assert.equal(answer.reply, "I’ll ask the hotel team to confirm.");
+  assert.equal(answer.handoffReason, "Unverified booking detail.");
+});
+
+test("ordinary guest answers are unchanged when staff escalation is not required", () => {
+  const answer = { reply: "Breakfast is served from 6:30 AM.", needsHuman: false };
+  assert.equal(applyExplicitStaffHandoff(answer, false), answer);
+  assert.equal(answer.reply, "Breakfast is served from 6:30 AM.");
+  assert.equal(answer.needsHuman, false);
+});
+
+test("the guest chat route applies the tested staff handoff helper", () => {
   const server = fs.readFileSync("server.js", "utf8");
-  assert.match(server, /if\(flag&&!answer\.needsHuman\)\{answer\.reply="Of course\. I’ll pass your request to the hotel team so a member of staff can assist you\."/);
-  assert.match(server, /answer\.needsHuman=true;answer\.handoffReason="Guest explicitly requested staff assistance or raised an issue requiring human review\."/);
+  assert.match(server, /applyExplicitStaffHandoff\(answer,flag\)/);
 });
 
 

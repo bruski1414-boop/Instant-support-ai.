@@ -226,7 +226,7 @@ test("deterministic safety triggers replace unsafe model-generated automatic rep
   assert.equal(resolved.needsHuman, true);
   assert.match(resolved.reply, /local emergency services now/);
   assert.match(resolved.reply, /Do not wait for a chat reply/);
-  assert.match(resolved.handoffReason, /staff-escalation policy/);
+  assert.match(resolved.handoffReason, /immediate danger/);
 });
 
 test("ordinary questions keep the model answer when no handoff is required", () => {

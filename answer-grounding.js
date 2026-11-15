@@ -12,6 +12,26 @@ function contactFacts(value) {
   return [...new Set([...emails, ...urls].map(item => item.replace(/[),.;!?]+$/, "")))];
 }
 
+const NON_CLAIM_TERMS = new Set([
+  "a","about","after","again","all","also","am","an","and","any","are","as","ask","at","be","because",
+  "been","before","being","best","between","both","but","by","can","cannot","could","day","days","dear",
+  "did","do","does","during","each","either","else","enjoy","even","every","few","find","first","for",
+  "from","get","give","glad","good","great","had","has","have","hello","help","here","how","i","if","in",
+  "into","is","it","its","just","know","let","like","many","may","me","might","more","most","much","must",
+  "near","need","neither","no","not","now","of","off","on","once","one","only","or","other","our","out",
+  "please","provide","regarding","same","see","shall","should","since","so","some","such","than","thank",
+  "thanks","that","the","their","them","then","there","these","they","this","those","through","to","today",
+  "tomorrow","too","under","up","us","very","was","we","well","were","what","when","where","which","while",
+  "who","why","will","with","would","yes","you","your","hotel","team","staff","contact","assist","assistance",
+  "happy","information","question","questions","answer","details","available","availability","served","serving",
+  "offer","offers","offered","offering","please","kindly","currently","simply","certainly","sure"
+]);
+
+function claimTerms(value) {
+  return [...new Set((String(value || "").toLowerCase().match(/[a-z]{3,}/g) || [])
+    .filter(term => !NON_CLAIM_TERMS.has(term)))];
+}
+
 function validateAnswerGrounding(reply, approvedContext, guestQuestion = "") {
   if (typeof reply !== "string" || !reply.trim()) {
     return { supported: false, reason: "empty_reply", unsupportedNumbers: [] };
@@ -20,8 +40,10 @@ function validateAnswerGrounding(reply, approvedContext, guestQuestion = "") {
     return { supported: false, reason: "no_approved_context", unsupportedNumbers: numericFacts(reply) };
   }
 
-  // Numbers and contact details may be repeated from the guest's own question.
-  // New numeric claims, emails and URLs must appear in approved hotel text.
+  // Guest-provided text is never evidence for a hotel claim. It may supply
+  // dates or quantities to repeat, but factual hotel details must exist in
+  // approved hotel content. This deliberately prefers a safe handoff over
+  // accepting a plausible but unsupported amenity or policy claim.
   const allowedNumbers = new Set([
     ...numericFacts(approvedContext),
     ...numericFacts(guestQuestion)
@@ -29,13 +51,18 @@ function validateAnswerGrounding(reply, approvedContext, guestQuestion = "") {
   const unsupportedNumbers = [...new Set(numericFacts(reply).filter(number => !allowedNumbers.has(number)))];
   const allowedContacts = new Set([...contactFacts(approvedContext), ...contactFacts(guestQuestion)]);
   const unsupportedContacts = contactFacts(reply).filter(contact => !allowedContacts.has(contact));
+  const allowedClaimTerms = new Set(claimTerms(approvedContext));
+  const unsupportedClaimTerms = claimTerms(reply).filter(term => !allowedClaimTerms.has(term));
 
-  if (unsupportedNumbers.length || unsupportedContacts.length) {
+  if (unsupportedNumbers.length || unsupportedContacts.length || unsupportedClaimTerms.length) {
+    const reason = unsupportedNumbers.length ? "unsupported_numeric_claim"
+      : unsupportedContacts.length ? "unsupported_contact_detail" : "unsupported_claim_terms";
     return {
       supported: false,
-      reason: unsupportedNumbers.length ? "unsupported_numeric_claim" : "unsupported_contact_detail",
+      reason,
       unsupportedNumbers,
-      ...(unsupportedContacts.length ? { unsupportedContacts } : {})
+      ...(unsupportedContacts.length ? { unsupportedContacts } : {}),
+      ...(unsupportedClaimTerms.length ? { unsupportedClaimTerms } : {})
     };
   }
   return { supported: true, reason: "", unsupportedNumbers: [] };

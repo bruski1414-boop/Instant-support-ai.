@@ -113,7 +113,7 @@ test("webhook encryption and allowlist must both be configured", async () => {
   const db = fakeDb();
   const noKey = createStaffWebhookStore({ db, encryptionKey: "", allowedHosts });
   assert.equal(noKey.encryptionConfigured, false);
-  await assert.rejects(() => noKey.save({ organizationId: "a", userId: "u", input: { webhookUrl: "https://hooks.example.com/a", webhookSecret: "a-secret-with-more-than-24-chars" } }), /encryption/);
+  await assert.rejects(() => noKey.save({ organizationId: "a", userId: "u", input: { webhookUrl: "https://hooks.example.com/a", webhookSecret: "a-secret-with-more-than-24-chars" } }), /encryption/i);
   const noAllowlist = createStaffWebhookStore({ db, encryptionKey: key, allowedHosts: "" });
   assert.equal(noAllowlist.allowedHostsConfigured, false);
   await assert.rejects(() => noAllowlist.save({ organizationId: "a", userId: "u", input: { webhookUrl: "https://hooks.example.com/a", webhookSecret: "a-secret-with-more-than-24-chars" } }), /allowlist/);

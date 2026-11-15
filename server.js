@@ -179,7 +179,7 @@ app.get("/api/admin/onboarding",requireDb,auth,async(q,r,n)=>{try{const [profile
 app.get("/api/admin/integrations/pms",requireDb,auth,role("owner","admin"),async(q,r,n)=>{try{
 const [tests,connections]=await Promise.all([
 db.query("SELECT provider,mode,test_passed,tested_at FROM organization_pms_adapter_tests WHERE organization_id=$1 ORDER BY tested_at DESC",[q.actor.organization_id]),
-db.query("SELECT provider,mode,status,scopes,connected_at,last_tested_at,last_error,updated_at FROM pms_connections WHERE organization_id=$1 ORDER BY provider",[q.actor.organization_id])
+db.query("SELECT provider,mode,status,scopes,connected_at,last_tested_at,(last_error <> '') AS has_error,updated_at FROM pms_connections WHERE organization_id=$1 ORDER BY provider",[q.actor.organization_id])
 ]);
 const installed=new Map(pmsRegistry.list().map(item=>[item.id,item]));
 const productionConnectionConfigured=connections.rows.some(item=>item.status==="connected"&&installed.get(item.provider)?.mode==="production");

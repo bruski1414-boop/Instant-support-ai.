@@ -2,19 +2,16 @@ const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const { spawn } = require("node:child_process");
 const net = require("node:net");
-const http = require("node:http");
 const crypto = require("node:crypto");
 const { Pool } = require("pg");
+const { encryptWebhookConfig } = require("../staff-webhook-security");
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 test("two hotel workspaces remain isolated across live API resources", { skip: !databaseUrl }, async (t) => {
   const pool = new Pool({ connectionString: databaseUrl });
   let child;
   let baseUrl;
-  let webhookServer;
-  let webhookUrl;
-  const webhookEvents = [];
-  const webhookSecret = "integration-test-webhook-secret";
+  const webhookEncryptionKey = crypto.randomBytes(32).toString("base64");
   const password = "test-password-for-hotel-owner";
 
   async function freePort() {
@@ -55,22 +52,8 @@ test("two hotel workspaces remain isolated across live API resources", { skip: !
 
   t.after(async () => {
     if (child && child.exitCode === null) child.kill("SIGTERM");
-    if (webhookServer) await new Promise((resolve) => webhookServer.close(resolve));
     await pool.end();
   });
-
-  webhookServer = http.createServer((req, res) => {
-    let raw = "";
-    req.setEncoding("utf8");
-    req.on("data", (chunk) => { raw += chunk; });
-    req.on("end", () => {
-      webhookEvents.push({ payload: JSON.parse(raw), signature: req.headers["x-veyra-signature"] });
-      res.writeHead(202, { "content-type": "application/json" });
-      res.end(JSON.stringify({ accepted: true }));
-    });
-  });
-  await new Promise((resolve) => webhookServer.listen(0, "127.0.0.1", resolve));
-  webhookUrl = `http://127.0.0.1:${webhookServer.address().port}/staff-handoff`;
 
   const port = await freePort();
   baseUrl = `http://127.0.0.1:${port}`;
@@ -87,8 +70,7 @@ test("two hotel workspaces remain isolated across live API resources", { skip: !
       OPENAI_API_KEY: "",
       BOOTSTRAP_TOKEN: bootstrapToken,
       PLATFORM_PROVISIONING_TOKEN: provisioningToken,
-      STAFF_WEBHOOK_URL: webhookUrl,
-      STAFF_WEBHOOK_SECRET: webhookSecret,
+      STAFF_WEBHOOK_ENCRYPTION_KEY: webhookEncryptionKey,
       GUEST_DATA_STORAGE_ENABLED: "false",
       ALLOWED_ORIGINS: "http://localhost:3000"
     },
@@ -139,6 +121,15 @@ test("two hotel workspaces remain isolated across live API resources", { skip: !
   const betaUser = await pool.query("SELECT id FROM users WHERE organization_id=$1 AND email='owner@beta.test'", [betaOrg.rows[0].id]);
   const alphaId = alpha.rows[0].id;
   const betaId = betaOrg.rows[0].id;
+  await pool.query(
+    "INSERT INTO organization_staff_webhooks(organization_id,encrypted_config,status) VALUES($1,$2,'configured'),($3,$4,'configured')",
+    [
+      alphaId,
+      encryptWebhookConfig({ url: "https://alpha.example.test/veyra", secret: "alpha-signing-secret-for-integration-test" }, webhookEncryptionKey),
+      betaId,
+      encryptWebhookConfig({ url: "https://beta.example.test/veyra", secret: "beta-signing-secret-for-integration-test" }, webhookEncryptionKey)
+    ]
+  );
   const alphaUser = await pool.query("SELECT id FROM users WHERE organization_id=$1 AND email='owner@alpha.test'", [alphaId]);
   const alphaDoc = await pool.query(
     "INSERT INTO knowledge_documents(organization_id,title,category,content,approved,updated_by) VALUES($1,'Alpha breakfast','food','Alpha serves breakfast at 7am.',true,$2) RETURNING id",
@@ -213,62 +204,44 @@ test("two hotel workspaces remain isolated across live API resources", { skip: !
   const alphaAiCheck = await request("/api/admin/integrations/test-ai", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" }, alphaSession);
   assert.equal(alphaAiCheck.status, 503, "missing provider key must be reported rather than pretending AI is verified");
 
-  for (const [session, expectedSlug, expectedId] of [
-    [alphaSession, "hotel-alpha", alphaId],
-    [betaSession, "hotel-beta", betaId]
+  for (const [session, expectedSlug] of [
+    [alphaSession, "hotel-alpha"],
+    [betaSession, "hotel-beta"]
   ]) {
-    const check = await request("/api/admin/integrations/test-staff-webhook", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" }, session);
-    assert.equal(check.status, 200, "each hotel owner should be able to verify the shared signed dispatcher");
-    const body = await check.json();
-    assert.equal(body.verified, true);
-    assert.equal(body.organizationSlug, expectedSlug);
-    const event = webhookEvents.at(-1);
-    assert.equal(event.payload.event, "veyra.integration.test");
-    assert.equal(event.payload.organizationId, expectedId);
-    assert.equal(event.payload.organizationSlug, expectedSlug);
-    assert.equal(event.payload.test, true);
-    assert.equal(event.signature, crypto.createHmac("sha256", webhookSecret).update(JSON.stringify(event.payload)).digest("hex"));
+    const config = await request("/api/admin/integrations/staff-webhook", {}, session);
+    assert.equal(config.status, 200);
+    const body = await config.json();
+    assert.equal(body.configured, true, expectedSlug + " should see only its own configured webhook status");
+    assert.equal(body.encryptionReady, true);
+    assert.equal(JSON.stringify(body).includes("signing-secret"), false, "API must not reveal webhook secrets");
+    assert.equal(JSON.stringify(body).includes("example.test"), false, "API must not reveal private webhook URLs");
   }
-  const verifiedChecks = await pool.query("SELECT organization_id,integration FROM organization_integration_checks WHERE integration='staff_webhook' ORDER BY organization_id");
-  assert.equal(verifiedChecks.rowCount, 2, "staff integration verification must be stored separately for each hotel");
+
+  const rejectedLocalWebhook = await request("/api/admin/integrations/staff-webhook", {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ url: "http://127.0.0.1:8080/private", secret: "alpha-signing-secret-for-integration-test" })
+  }, alphaSession);
+  assert.equal(rejectedLocalWebhook.status, 400, "local and non-HTTPS webhook targets must be rejected");
+
+  const crossTenantRemove = await request("/api/admin/integrations/staff-webhook", {
+    method: "DELETE",
+    headers: { "content-type": "application/json" },
+    body: "{}"
+  }, alphaSession);
+  assert.equal(crossTenantRemove.status, 200);
+  const alphaWebhookAfter = await request("/api/admin/integrations/staff-webhook", {}, alphaSession);
+  const betaWebhookAfter = await request("/api/admin/integrations/staff-webhook", {}, betaSession);
+  assert.equal((await alphaWebhookAfter.json()).configured, false, "Hotel Alpha should remove only its own webhook");
+  assert.equal((await betaWebhookAfter.json()).configured, true, "Hotel Beta's webhook must remain untouched");
 
   for (const session of [alphaSession, betaSession]) {
     const onboarding = await request("/api/admin/onboarding", {}, session);
     assert.equal(onboarding.status, 200);
     const state = await onboarding.json();
-    assert.equal(state.checks.find((item) => item.key === "handoff").done, true);
+    assert.equal(state.checks.find((item) => item.key === "handoff").done, false, "a configured endpoint is not verified until its signed test succeeds");
     assert.equal(state.checks.find((item) => item.key === "ai").done, false);
   }
-
-  for (const [session, escalationId, expectedOrganizationId, expectedSlug] of [
-    [alphaSession, alphaEscalation.rows[0].id, alphaId, "hotel-alpha"],
-    [betaSession, betaEscalation.rows[0].id, betaId, "hotel-beta"]
-  ]) {
-    const response = await request(`/api/admin/escalations/${escalationId}/notify`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: "{}"
-    }, session);
-    assert.equal(response.status, 200, "each hotel should be able to retry its own staff handoff");
-    const body = await response.json();
-    assert.equal(body.delivered, true);
-    assert.equal(body.notificationStatus, "delivered");
-    const event = webhookEvents.at(-1);
-    assert.equal(event.payload.organizationId, expectedOrganizationId);
-    assert.equal(event.payload.organizationSlug, expectedSlug);
-    assert.equal(event.payload.event, "veyra.escalation.created");
-    assert.equal(
-      event.signature,
-      crypto.createHmac("sha256", webhookSecret).update(JSON.stringify(event.payload)).digest("hex"),
-      "handoff webhook must be signed"
-    );
-  }
-
-  const alphaRetryState = await pool.query("SELECT notification_status,notification_attempts FROM escalations WHERE id=$1", [alphaEscalation.rows[0].id]);
-  const betaRetryState = await pool.query("SELECT notification_status,notification_attempts FROM escalations WHERE id=$1", [betaEscalation.rows[0].id]);
-  assert.deepEqual(alphaRetryState.rows[0], { notification_status: "delivered", notification_attempts: 1 });
-  assert.deepEqual(betaRetryState.rows[0], { notification_status: "delivered", notification_attempts: 1 });
-  assert.equal(webhookEvents.length, 4, "each hotel's test event and escalation should reach the dispatcher exactly once");
 
   for (const [session, ownTitle, otherTitle, ownUrl, otherUrl, ownEmail, otherEmail, ownEvent, otherEvent, ownStorage, otherStorage] of [
     [alphaSession, "Alpha breakfast", "Beta breakfast", "https://alpha.test", "https://beta.test", "owner@alpha.test", "owner@beta.test", "alpha.private_event", "beta.private_event", "google", "microsoft"],

@@ -251,11 +251,15 @@ try {
     method: "DELETE",
     headers: { cookie: cookieA, "X-CSRF-Token": tenants[0].csrfToken },
   });
-  assert.equal(ownOfferDelete.status, 200, "tenant A must be able to delete its own offer");
-  const offerADeleted = await pool.query("SELECT id FROM hotel_offers WHERE id=$1 AND organization_id=(SELECT id FROM organizations WHERE slug=$2)", [tenants[0].offerId, tenants[0].slug]);
-  const offerBPreserved = await pool.query("SELECT id FROM hotel_offers WHERE id=$1 AND organization_id=(SELECT id FROM organizations WHERE slug=$2)", [tenants[1].offerId, tenants[1].slug]);
-  assert.equal(offerADeleted.rowCount, 0, "tenant A's offer must be deleted");
-  assert.equal(offerBPreserved.rowCount, 1, "tenant A deletion must not affect tenant B's offer");
+  assert.equal(ownOfferDelete.status, 200, "tenant A must be able to archive its own offer");
+  const offerAArchived = await pool.query("SELECT id,status FROM hotel_offers WHERE id=$1 AND organization_id=(SELECT id FROM organizations WHERE slug=$2)", [tenants[0].offerId, tenants[0].slug]);
+  const offerBPreserved = await pool.query("SELECT id,status FROM hotel_offers WHERE id=$1 AND organization_id=(SELECT id FROM organizations WHERE slug=$2)", [tenants[1].offerId, tenants[1].slug]);
+  assert.equal(offerAArchived.rowCount, 1, "tenant A's offer history must be preserved");
+  assert.equal(offerAArchived.rows[0].status, "paused", "archived offer must no longer be active");
+  assert.equal(offerBPreserved.rowCount, 1, "tenant A archive must not affect tenant B's offer");
+  const preservedAttribution = await pool.query("SELECT status,amount_minor FROM hotel_offer_attributions WHERE id=$1", [tenants[0].attributionId]);
+  assert.equal(preservedAttribution.rowCount, 1, "archiving an offer must preserve its revenue attribution");
+  assert.equal(preservedAttribution.rows[0].status, "converted", "historical confirmed sale must remain intact");
 
   const storageA = await readStorageConnections(cookieA);
   assert.equal(storageA.status, 200);

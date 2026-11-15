@@ -49,8 +49,13 @@ function normalizeGuestSupportAnswer(value) {
   };
 }
 
+function requiresHumanHandoff(message, normalizedAnswer) {
+  return requiresStaffEscalation(message) || normalizedAnswer?.needsHuman === true;
+}
+
 module.exports = {
   requiresStaffEscalation,
+  requiresHumanHandoff,
   buildGuestSupportSystemPrompt,
   normalizeGuestSupportAnswer,
 };

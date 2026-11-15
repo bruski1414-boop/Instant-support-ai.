@@ -191,3 +191,19 @@ test("unconfigured webhook attempts do not consume the delivery retry budget", a
   assert.equal(result.status, "not_configured");
   assert.equal(db.state.attempts, 0);
 });
+
+
+test("staff webhook timeout is treated as a failed delivery", async () => {
+  const result = await deliverStaffEscalation({
+    ...input,
+    timeoutMs: 5,
+    fetchImpl: async (_url, options) => new Promise((resolve, reject) => {
+      options.signal.addEventListener("abort", () => {
+        const error = new Error("request aborted");
+        error.name = "AbortError";
+        reject(error);
+      }, { once: true });
+    })
+  });
+  assert.deepEqual(result, { configured: true, delivered: false, status: "failed" });
+});

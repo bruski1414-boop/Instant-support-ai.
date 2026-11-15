@@ -104,7 +104,8 @@ async function seedKnowledge(tenant) {
   tenant.knowledgeId = inserted.rows[0].id;
   tenant.privateKnowledge = privateContent;
   tenant.approvedKnowledge = "APPROVED KNOWLEDGE FOR " + tenant.name;
-  await pool.query("INSERT INTO knowledge_documents(organization_id,title,category,content,approved) VALUES($1,$2,'general',$3,true)", [org.rows[0].id, "Approved policy " + tenant.name, tenant.approvedKnowledge]);
+  const approved = await pool.query("INSERT INTO knowledge_documents(organization_id,title,category,content,approved) VALUES($1,$2,'general',$3,true) RETURNING id", [org.rows[0].id, "Approved policy " + tenant.name, tenant.approvedKnowledge]);
+  tenant.approvedKnowledgeId = approved.rows[0].id;
   await pool.query("INSERT INTO knowledge_documents(organization_id,title,category,content,approved,review_due_at) VALUES($1,$2,'general',$3,true,CURRENT_DATE - INTERVAL '1 day')", [org.rows[0].id, "Expired policy " + tenant.name, "EXPIRED KNOWLEDGE FOR " + tenant.name]);
   await pool.query("INSERT INTO knowledge_document_versions(organization_id,document_id,title,category,content,approved,change_type) VALUES($1,$2,$3,'general',$4,false,'created')", [org.rows[0].id, tenant.knowledgeId, title, privateContent]);
 }
@@ -227,7 +228,41 @@ try {
   assert.equal(JSON.stringify(approvedA.rows).includes("EXPIRED KNOWLEDGE"), false, "expired tenant A knowledge must never enter guest context");
   assert.equal(JSON.stringify(approvedA.rows).includes(tenants[1].approvedKnowledge), false, "tenant A guest context must never include tenant B knowledge");
   assert.equal(JSON.stringify(approvedB.rows).includes(tenants[0].approvedKnowledge), false, "tenant B guest context must never include tenant A knowledge");
-  console.log("PASS: tenant-scoped transcripts, knowledge history, approved guest context and storage connections verified for two hotel workspaces.");
+
+  const crossEdit = await fetch(baseUrl + "/api/admin/knowledge/" + tenants[1].approvedKnowledgeId, {
+    method: "PATCH",
+    headers: { cookie: cookieA, "X-CSRF-Token": tenants[0].csrfToken, "content-type": "application/json" },
+    body: JSON.stringify({ content: "Unauthorized cross-hotel edit attempt" }),
+  });
+  assert.equal(crossEdit.status, 404, "tenant A must not edit tenant B's approved knowledge");
+  const ownEdit = await fetch(baseUrl + "/api/admin/knowledge/" + tenants[0].approvedKnowledgeId, {
+    method: "PATCH",
+    headers: { cookie: cookieA, "X-CSRF-Token": tenants[0].csrfToken, "content-type": "application/json" },
+    body: JSON.stringify({ content: "Updated policy content requiring fresh approval" }),
+  });
+  assert.equal(ownEdit.status, 200, "tenant A must be able to update its own knowledge");
+  const ownEditBody = await ownEdit.json();
+  assert.equal(ownEditBody.document.approved, false, "editing approved content must automatically revoke approval");
+  const afterEditA = await loadApprovedKnowledge(pool, orgA);
+  assert.equal(afterEditA.rows.length, 0, "edited content must not return to guest context before reapproval");
+  const afterEditB = await loadApprovedKnowledge(pool, orgB);
+  assert.equal(afterEditB.rows.length, 1, "editing tenant A content must not affect tenant B guest context");
+
+  const crossDelete = await fetch(baseUrl + "/api/admin/knowledge/" + tenants[1].knowledgeId, {
+    method: "DELETE",
+    headers: { cookie: cookieA, "X-CSRF-Token": tenants[0].csrfToken },
+  });
+  assert.equal(crossDelete.status, 404, "tenant A must not delete tenant B's knowledge");
+  const ownDelete = await fetch(baseUrl + "/api/admin/knowledge/" + tenants[0].knowledgeId, {
+    method: "DELETE",
+    headers: { cookie: cookieA, "X-CSRF-Token": tenants[0].csrfToken },
+  });
+  assert.equal(ownDelete.status, 200, "tenant A must be able to delete its own knowledge");
+  const deletedA = await pool.query("SELECT id FROM knowledge_documents WHERE id=$1 AND organization_id=$2", [tenants[0].knowledgeId, orgA]);
+  const preservedB = await pool.query("SELECT id FROM knowledge_documents WHERE id=$1 AND organization_id=$2", [tenants[1].knowledgeId, orgB]);
+  assert.equal(deletedA.rowCount, 0, "tenant A's selected document must be deleted");
+  assert.equal(preservedB.rowCount, 1, "tenant A deletion must not affect tenant B's document");
+  console.log("PASS: tenant-scoped transcripts, knowledge read/edit/delete, approval invalidation, approved guest context and storage connections verified for two hotel workspaces.");
 } finally {
   if (serverReady) {
     for (const tenant of tenants) {

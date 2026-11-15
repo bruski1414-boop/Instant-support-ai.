@@ -59,4 +59,17 @@ function analyzeKnowledgeQuality(documents, today = new Date().toISOString().sli
   };
 }
 
-module.exports = { analyzeKnowledgeQuality };
+
+function getGuestEligibleKnowledge(documents, today = new Date().toISOString().slice(0, 10)) {
+  if (!Array.isArray(documents)) throw new Error("Knowledge documents must be a list.");
+  const approvedAndCurrent = documents.filter(doc =>
+    doc && doc.approved === true && (!dateOnly(doc.review_due_at) || dateOnly(doc.review_due_at) >= today)
+  );
+  const quality = analyzeKnowledgeQuality(approvedAndCurrent, today);
+  const conflictIds = new Set(
+    quality.possibleConflicts.flatMap(conflict => conflict.documents.map(document => document.id).filter(Boolean))
+  );
+  return approvedAndCurrent.filter(doc => !doc.id || !conflictIds.has(doc.id));
+}
+
+module.exports = { analyzeKnowledgeQuality, getGuestEligibleKnowledge };

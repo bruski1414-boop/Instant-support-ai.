@@ -79,7 +79,7 @@ function buildOfferContext(offers) {
       name: offer.name,
       description: offer.description,
       category: offer.category,
-      price_minor_units: offer.amountMinor,
+      price_major_units: Number((offer.amountMinor / 100).toFixed(2)),
       currency: offer.currency,
       availability_verified_at: offer.availabilityVerifiedAt,
       offer_expires_at: offer.expiresAt,

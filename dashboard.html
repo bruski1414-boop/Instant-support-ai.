@@ -40,6 +40,7 @@ main{padding:28px clamp(16px,4vw,48px);max-width:1450px;width:100%;margin:auto}.
   <button data-panel="conversations">☷ Conversations</button>
   <button data-panel="knowledge">✧ Knowledge base</button>
   <button data-panel="offers" id="offersNav">✦ Revenue offers</button>
+  <button data-panel="revenue" id="revenueNav">€ Revenue tracking</button>
   <button data-panel="escalations">↗ Staff handoffs</button>
   <button data-panel="team" id="teamNav">♙ Team access</button>
  </nav>
@@ -178,6 +179,19 @@ main{padding:28px clamp(16px,4vw,48px);max-width:1450px;width:100%;margin:auto}.
   <div class="sectionrow"><h2>Recent security activity</h2><span class="muted">Latest 100 workspace events</span></div>
   <div id="auditList" class="card tablewrap"><div class="empty">Loading activity…</div></div>
  </section>
+
+ <section id="panel-revenue" class="panel">
+  <div class="sectionrow"><h2>Revenue attribution</h2><span class="muted">Only staff-confirmed sales count as generated revenue</span></div>
+  <div class="grid">
+   <div class="card"><div class="metriclabel">Guest offer enquiries</div><div class="metric" id="revenueEnquiries">—</div></div>
+   <div class="card"><div class="metriclabel">Confirmed sales</div><div class="metric" id="revenueConversions">—</div></div>
+   <div class="card"><div class="metriclabel">Confirmed revenue</div><div class="metric" id="revenueTotal">—</div></div>
+  </div>
+  <p class="muted" style="font-size:12px">Revenue is grouped by currency. Enquiries are recorded when a guest asks about an offer category and a matching verified offer exists. Staff must confirm the actual sale amount; recommendations and enquiries are not counted as revenue.</p>
+  <div id="revenueCurrencyTotals" class="card" style="margin:12px 0"></div>
+  <div class="sectionrow"><h2>Offer enquiries awaiting review</h2><span class="muted">Staff can confirm or close an enquiry</span></div>
+  <div id="attributionList" style="display:grid;gap:10px"></div>
+ </section>
  <section id="panel-escalations" class="panel">
   <div class="sectionrow"><h2>Staff handoff queue</h2><span class="muted">Urgent, sensitive or uncertain requests</span></div>
   <div class="card tablewrap"><table class="table"><thead><tr><th>REASON</th><th>STATUS</th><th>NOTIFICATION</th><th>CREATED</th><th>ACTION</th></tr></thead><tbody id="escalationRows"></tbody></table></div>
@@ -209,7 +223,7 @@ function switchPanel(name){
  document.querySelectorAll(".panel").forEach(x=>x.classList.remove("active"));
  $("panel-"+name).classList.add("active");
  document.querySelectorAll("[data-panel]").forEach(x=>x.classList.toggle("active",x.dataset.panel===name));
- const labels={storage:["HOTEL STORAGE","Hotel storage","Connect hotel document repositories and choose source documents."],setup:["HOTEL SETUP","Hotel setup","Configure the hotel profile and review the real pre-pilot requirements."],team:["TEAM ACCESS","Team access","Invite employees and manage pending invitations."],overview:["OVERVIEW","Support overview","A live view of conversations and staff attention."],conversations:["CONVERSATIONS","Recent conversations","Review the latest guest interactions."],knowledge:["KNOWLEDGE BASE","Hotel knowledge","Control the facts the assistant is allowed to use."],offers:["REVENUE OFFERS","Revenue offers","Manage hotel-approved extras and verified availability."],escalations:["STAFF HANDOFFS","Staff handoff queue","Requests that need a member of your team."]};
+ const labels={storage:["HOTEL STORAGE","Hotel storage","Connect hotel document repositories and choose source documents."],setup:["HOTEL SETUP","Hotel setup","Configure the hotel profile and review the real pre-pilot requirements."],team:["TEAM ACCESS","Team access","Invite employees and manage pending invitations."],overview:["OVERVIEW","Support overview","A live view of conversations and staff attention."],conversations:["CONVERSATIONS","Recent conversations","Review the latest guest interactions."],knowledge:["KNOWLEDGE BASE","Hotel knowledge","Control the facts the assistant is allowed to use."],offers:["REVENUE OFFERS","Revenue offers","Manage hotel-approved extras and verified availability."],revenue:["REVENUE TRACKING","Revenue attribution","Review guest enquiries and confirm actual completed sales."],escalations:["STAFF HANDOFFS","Staff handoff queue","Requests that need a member of your team."]};
  $("crumb").textContent="WORKSPACE / "+labels[name][0];$("heading").textContent=labels[name][1];$("subheading").textContent=labels[name][2];
  loadPanel(name);
 }
@@ -237,6 +251,21 @@ async function loadOffers(){
   return '<article class="card"><div style="display:flex;justify-content:space-between;gap:12px;align-items:start;flex-wrap:wrap"><div><strong>'+safe(x.name)+'</strong><div class="muted" style="font-size:11px">'+safe(x.category)+' · '+price+' · Expires '+date(x.expires_at)+'</div></div>'+statusTag(x.status==="active"?(fresh?"active · verified":"active · not currently eligible"):"paused")+'</div><p style="white-space:pre-wrap;color:#bdc9d8">'+safe(x.description)+'</p><div class="muted" style="font-size:11px">Availability: '+status+(x.availability_verified_at?' · checked '+date(x.availability_verified_at):'')+'</div><div class="actions">'+(x.status==="active"&&new Date(x.expires_at)>new Date()?' <button class="btn" data-action="verify-offer" data-id="'+safe(x.id)+'">Reconfirm availability</button>':'')+'<button class="btn danger" data-action="delete-offer" data-id="'+safe(x.id)+'">Delete offer</button></div></article>';
  }).join("")||'<div class="card empty">No offers yet. Add a hotel-approved offer above.</div>';
 }
+
+function moneyMinor(amount,currency){return (Number(amount||0)/100).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})+" "+safe(currency||"");}
+async function loadRevenueAttributions(){
+ const d=await api("/api/admin/offer-attributions");
+ const rows=d.attributions||[];
+ const enquiries=rows.filter(x=>x.status==="enquiry").length;
+ const converted=rows.filter(x=>x.status==="converted");
+ $("revenueEnquiries").textContent=String(enquiries);
+ $("revenueConversions").textContent=String(converted.length);
+ const currencyGroups={};
+ for(const x of converted){const c=x.currency||"UNKNOWN";currencyGroups[c]=(currencyGroups[c]||0)+Number(x.amount_minor||0);}
+ $("revenueTotal").textContent=Object.keys(currencyGroups).length===1?moneyMinor(Object.values(currencyGroups)[0],Object.keys(currencyGroups)[0]):"See currencies below";
+ $("revenueCurrencyTotals").innerHTML=Object.keys(currencyGroups).length?Object.entries(currencyGroups).map(([c,v])=>'<div style="display:flex;justify-content:space-between;padding:7px 0"><span>'+safe(c)+'</span><strong>'+moneyMinor(v,c)+'</strong></div>').join(""):'<div class="empty">No staff-confirmed revenue yet.</div>';
+ $("attributionList").innerHTML=rows.map(x=>'<article class="card"><div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap"><strong>'+safe(x.offer_name)+'</strong>'+statusTag(x.status)+'</div><div class="muted" style="font-size:11px;margin-top:5px">'+safe(x.category)+' · Enquiry '+date(x.created_at)+' · '+safe(x.conversation_id)+'</div>'+(x.status==="converted"?'<p><strong>Confirmed sale: '+moneyMinor(x.amount_minor,x.currency)+'</strong></p>':'')+(x.notes?'<p class="muted">'+safe(x.notes)+'</p>':'')+(x.status==="enquiry"?'<div class="actions" style="margin-top:12px"><button class="btn primary" data-attribution-action="converted" data-id="'+safe(x.id)+'" data-currency="'+safe(x.offer_currency)+'">Confirm completed sale</button><button class="btn" data-attribution-action="not_converted" data-id="'+safe(x.id)+'">Close · no sale</button></div>':'')+'</article>').join("")||'<div class="card empty">No offer enquiries recorded yet. They will appear when guest chat is enabled and a guest asks about a verified offer.</div>';
+}
 async function loadEscalations(){
  const d=await api("/api/admin/escalations");
  const rows=(d.escalations||[]).map(x=>{
@@ -252,11 +281,11 @@ async function loadEscalations(){
  $("escalationRows").innerHTML=rows||'<tr><td colspan="5" class="empty">No staff handoffs yet.</td></tr>';
 }
 async function loadPanel(name){
- try{if(name==="overview"||name==="conversations")await loadOverview();if(name==="knowledge")await loadKnowledge();if(name==="offers")await loadOffers();if(name==="escalations")await loadEscalations();if(name==="team")await loadInvitations();if(name==="setup")await loadSetup();if(name==="storage")await loadStorage();$("globalNotice").classList.add("hidden");}
+ try{if(name==="overview"||name==="conversations")await loadOverview();if(name==="knowledge")await loadKnowledge();if(name==="offers")await loadOffers();if(name==="revenue")await loadRevenueAttributions();if(name==="escalations")await loadEscalations();if(name==="team")await loadInvitations();if(name==="setup")await loadSetup();if(name==="storage")await loadStorage();$("globalNotice").classList.add("hidden");}
  catch(e){notice(e.message,"error");}
 }
 async function enterWorkspace(){
- try{const c=await api("/api/auth/csrf");csrfToken=c.csrfToken;const d=await api("/api/auth/me");currentRole=d.user.role;$("teamNav").classList.toggle("hidden",!["owner","admin"].includes(currentRole));$("offersNav").classList.toggle("hidden",!["owner","admin"].includes(currentRole));$("storageNav").classList.toggle("hidden",!["owner","admin"].includes(currentRole));$("settingsForm").classList.toggle("hidden",!["owner","admin"].includes(currentRole));$("orgName").textContent=d.organization.name;$("userRole").textContent=d.user.role+" · "+d.user.email;$("login").classList.add("hidden");$("app").classList.remove("hidden");switchPanel("overview");}
+ try{const c=await api("/api/auth/csrf");csrfToken=c.csrfToken;const d=await api("/api/auth/me");currentRole=d.user.role;$("teamNav").classList.toggle("hidden",!["owner","admin"].includes(currentRole));$("offersNav").classList.toggle("hidden",!["owner","admin"].includes(currentRole));$("revenueNav").classList.toggle("hidden",!["owner","admin","staff"].includes(currentRole));$("storageNav").classList.toggle("hidden",!["owner","admin"].includes(currentRole));$("settingsForm").classList.toggle("hidden",!["owner","admin"].includes(currentRole));$("orgName").textContent=d.organization.name;$("userRole").textContent=d.user.role+" · "+d.user.email;$("login").classList.add("hidden");$("app").classList.remove("hidden");switchPanel("overview");}
  catch(e){$("login").classList.remove("hidden");$("app").classList.add("hidden");}
 }
 $("loginForm").addEventListener("submit",async e=>{e.preventDefault();try{const d=await api("/api/auth/login",{method:"POST",body:JSON.stringify({organizationSlug:$("workspaceSlug").value.trim().toLowerCase(),email:$("email").value,password:$("password").value})});csrfToken=d.csrfToken;await enterWorkspace();}catch(err){loginError(err.message);}});
@@ -378,6 +407,8 @@ $("memberList").addEventListener("click",async e=>{const b=e.target.closest('but
 $("invitationList").addEventListener("click",async e=>{const b=e.target.closest('button[data-action="revoke-invitation"]');if(!b)return;if(!confirm("Revoke this unused invitation?"))return;b.disabled=true;try{await api("/api/admin/invitations/"+encodeURIComponent(b.dataset.id),{method:"DELETE",body:"{}"});showToast("Invitation revoked.");await loadInvitations();}catch(err){notice(err.message,"error");b.disabled=false;}});
 
 $("offerForm").addEventListener("submit",async e=>{e.preventDefault();try{const price=Number($("offerPrice").value);if(!Number.isFinite(price)||price<0)throw new Error("Enter a valid price.");const expiry=new Date($("offerExpiry").value);if(!Number.isFinite(expiry.getTime())||expiry<=new Date())throw new Error("Choose a future expiry date.");await api("/api/admin/offers",{method:"POST",body:JSON.stringify({name:$("offerName").value,description:$("offerDescription").value,category:$("offerCategory").value,amount_minor:Math.round(price*100),currency:$("offerCurrency").value,status:$("offerStatus").value,verify_availability:$("offerVerify").checked,expires_at:expiry.toISOString()})});$("offerForm").reset();$("offerCurrency").value="THB";showToast("Offer saved. It will only be recommended when availability verification is fresh.");await loadOffers();}catch(err){notice(err.message,"error");}});
+
+$("attributionList").addEventListener("click",async e=>{const b=e.target.closest("button[data-attribution-action]");if(!b)return;const action=b.dataset.attributionAction;let payload={status:action,notes:""};if(action==="converted"){const raw=prompt("Enter the actual completed sale amount (not the offer's advertised price):");if(raw===null)return;const amount=Number(raw);if(!Number.isFinite(amount)||amount<0||!Number.isSafeInteger(Math.round(amount*100))){notice("Enter a valid completed sale amount.","error");return;}const currency=(prompt("Currency code (e.g. THB, EUR, USD):",b.dataset.currency||"THB")||"").trim().toUpperCase();if(!/^[A-Z]{3}$/.test(currency)){notice("Enter a valid three-letter currency code.","error");return;}payload.amount_minor=Math.round(amount*100);payload.currency=currency;}if(!confirm(action==="converted"?"Confirm this was a completed sale and record the actual amount?":"Close this enquiry as not converted?"))return;b.disabled=true;try{await api("/api/admin/offer-attributions/"+encodeURIComponent(b.dataset.id),{method:"PATCH",body:JSON.stringify(payload)});showToast(action==="converted"?"Sale recorded as staff-confirmed revenue.":"Enquiry closed without revenue.");await loadRevenueAttributions();}catch(err){notice(err.message,"error");b.disabled=false;}});
 $("offerList").addEventListener("click",async e=>{const b=e.target.closest("button[data-action]");if(!b)return;b.disabled=true;try{if(b.dataset.action==="verify-offer"){await api("/api/admin/offers/"+encodeURIComponent(b.dataset.id)+"/verify",{method:"POST",body:"{}"});showToast("Availability rechecked and verification refreshed.");}else if(b.dataset.action==="delete-offer"){if(!confirm("Delete this hotel offer?")){b.disabled=false;return;}await api("/api/admin/offers/"+encodeURIComponent(b.dataset.id),{method:"DELETE",body:"{}"});showToast("Offer deleted.");}await loadOffers();}catch(err){notice(err.message,"error");b.disabled=false;}});
 $("knowledgeForm").addEventListener("submit",async e=>{e.preventDefault();try{await api("/api/admin/knowledge",{method:"POST",body:JSON.stringify({title:$("kTitle").value,category:$("kCategory").value,content:$("kContent").value,source_reference:$("kSource").value,review_due_at:$("kReviewDue").value||null,approved:$("kApproved").checked})});$("knowledgeForm").reset();showToast("Knowledge saved.");await loadKnowledge();}catch(err){notice(err.message,"error");}});
 $("knowledgeList").addEventListener("click",async e=>{const b=e.target.closest("button[data-action]");if(!b)return;try{if(b.dataset.action==="history-knowledge"){const d=await api("/api/admin/knowledge/"+encodeURIComponent(b.dataset.id)+"/versions");const panel=b.closest("article").querySelector(".knowledgeHistory");panel.style.display="grid";panel.style.gap="8px";panel.innerHTML=(d.versions||[]).map(v=>'<div class="card"><div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap"><strong>'+safe(v.title)+'</strong>'+statusTag(v.approved?"approved":"not approved")+'</div><small class="muted">'+safe(v.change_type)+' · '+date(v.created_at)+' · Source: '+safe(v.source_reference||'not recorded')+' · Review due: '+safe(v.review_due_at||'not set')+'</small><p style="white-space:pre-wrap;margin:8px 0">'+safe(v.content)+'</p></div>').join("")||'<p class="muted">No saved versions.</p>';return;}if(b.dataset.action==="toggle-knowledge"){await api("/api/admin/knowledge/"+encodeURIComponent(b.dataset.id),{method:"PATCH",body:JSON.stringify({approved:b.dataset.approved==="true"})});showToast("Knowledge approval updated.");}else if(b.dataset.action==="delete-knowledge"){if(!confirm("Delete this knowledge document?"))return;await api("/api/admin/knowledge/"+encodeURIComponent(b.dataset.id),{method:"DELETE",body:"{}"});showToast("Knowledge deleted.");}await loadKnowledge();}catch(err){notice(err.message,"error");}});

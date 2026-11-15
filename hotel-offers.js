@@ -4,14 +4,14 @@ const MAX_AVAILABILITY_AGE_MS = 15 * 60 * 1000;
 const MAX_RECOMMENDATIONS = 3;
 
 const INTENT_KEYWORDS = {
-  dining: /\\b(food|eat|dinner|lunch|breakfast|restaurant|meal|drink|bar)\\b/i,
-  spa: /\\b(spa|massage|wellness|facial|treatment|relax)\\b/i,
-  transport: /\\b(airport|transfer|taxi|transport|pickup|drop.?off|car)\\b/i,
-  room_upgrade: /\\b(upgrade|larger room|suite|better room|sea view|ocean view)\\b/i,
-  experience: /\\b(activity|excursion|tour|experience|boat|diving|snorkel|trip)\\b/i,
+  dining: /\b(food|eat|dinner|lunch|breakfast|restaurant|meal|drink|bar)\b/i,
+  spa: /\b(spa|massage|wellness|facial|treatment|relax)\b/i,
+  transport: /\b(airport|transfer|taxi|transport|pickup|drop.?off|car)\b/i,
+  room_upgrade: /\b(upgrade|larger room|suite|better room|sea view|ocean view)\b/i,
+  experience: /\b(activity|excursion|tour|experience|boat|diving|snorkel|trip)\b/i,
 };
 
-const SENSITIVE_REQUEST = /\\b(emergency|fire|smoke|gas leak|allergy|allergic|injury|hurt|complaint|refund|chargeback|payment dispute|cancel|cancellation|booking change|change my reservation|medical|unsafe|harass|stolen)\\b/i;
+const SENSITIVE_REQUEST = /\b(emergency|fire|smoke|gas leak|allergy|allergic|injury|hurt|complaint|refund|chargeback|payment dispute|cancel|cancellation|booking change|change my reservation|medical|unsafe|harass|stolen)\b/i;
 
 function validDate(value) {
   if (typeof value !== "string" || !value.trim()) return null;
@@ -84,7 +84,7 @@ function buildOfferContext(offers) {
       availability_verified_at: offer.availabilityVerifiedAt,
       offer_expires_at: offer.expiresAt,
     })
-  ).join("\\n");
+  ).join("\n");
 }
 
 module.exports = {

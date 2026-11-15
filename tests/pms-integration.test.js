@@ -172,3 +172,46 @@ test("HMAC webhook verifier binds the original body to a fresh timestamp", () =>
   assert.equal(verify({ headers, rawBody, secret: "short", receivedAt: now }), false);
   assert.throws(() => createHmacSha256Verifier({ maxSkewSeconds: 3600 }), error => error.code === "INVALID_VERIFIER_CONFIG");
 });
+
+
+test("production adapters must validate hotel credentials and receive them only in server-side context", async () => {
+  const seen = [];
+  const adapter = {
+    id: "credentialtest",
+    name: "Credential test provider",
+    mode: "production",
+    capabilities: {},
+    async validateCredentials(input) {
+      if (!input || typeof input.clientId !== "string" || typeof input.clientSecret !== "string") {
+        throw new Error("invalid credentials");
+      }
+      return {
+        credentials: { clientId: input.clientId, clientSecret: input.clientSecret },
+        scopes: ["availability:read", "reservation:read", "availability:read"],
+      };
+    },
+    async testConnection(context) {
+      seen.push(context.credentials);
+      return { ok: context.credentials.clientId === "hotel-client" };
+    },
+  };
+  const registry = createPmsRegistry([adapter]);
+  const validated = await registry.validateCredentials("credentialtest", {
+    clientId: "hotel-client", clientSecret: "never-return-this",
+  });
+  assert.deepEqual(validated.scopes, ["availability:read", "reservation:read"]);
+  assert.equal(validated.credentials.clientSecret, "never-return-this");
+  const result = await registry.testConnection("credentialtest", { credentials: validated.credentials });
+  assert.equal(result.productionReady, true);
+  assert.deepEqual(seen, [validated.credentials]);
+  assert.throws(() => createPmsRegistry([{
+    id: "unsafeproduction", name: "Unsafe", capabilities: {},
+    async testConnection() { return { ok: true }; },
+  }]), error => error.code === "INVALID_ADAPTER");
+});
+
+test("sandbox adapters cannot accept arbitrary hotel credentials", async () => {
+  const registry = createPmsRegistry([createSandboxAdapter()]);
+  await assert.rejects(() => registry.validateCredentials("sandbox", { clientSecret: "secret" }),
+    error => error.code === "CREDENTIAL_VALIDATION_UNAVAILABLE");
+});

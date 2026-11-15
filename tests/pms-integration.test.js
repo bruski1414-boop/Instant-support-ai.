@@ -2,6 +2,7 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const crypto = require("node:crypto");
 const {
   PmsIntegrationError,
   validateDateRange,
@@ -9,6 +10,7 @@ const {
   normalizeBookingRequest,
   normalizeBooking,
   normalizeWebhookEvent,
+  createHmacSha256Verifier,
   recordWebhookEvent,
   createPmsRegistry,
   createSandboxAdapter,
@@ -144,4 +146,29 @@ test("webhook event inbox is idempotent and tenant-scoped", async () => {
   assert.deepEqual(first, { accepted: true, duplicate: false, eventId: "evt_once" });
   assert.deepEqual(duplicate, { accepted: false, duplicate: true, eventId: "evt_once" });
   assert.deepEqual(otherTenant, { accepted: true, duplicate: false, eventId: "evt_once" });
+});
+
+
+test("HMAC webhook verifier binds the original body to a fresh timestamp", () => {
+  const secret = "this-is-a-long-test-secret";
+  const now = new Date("2027-01-10T12:00:00.000Z");
+  const timestamp = String(Math.floor(now.getTime() / 1000));
+  const rawBody = Buffer.from('{"event":"reservation.confirmed"}');
+  const digest = crypto.createHmac("sha256", secret)
+    .update(Buffer.concat([Buffer.from(timestamp + "."), rawBody]))
+    .digest("hex");
+  const verify = createHmacSha256Verifier({
+    signatureHeader: "x-provider-signature",
+    timestampHeader: "x-provider-timestamp",
+    signaturePrefix: "sha256=",
+  });
+  const headers = {
+    "x-provider-signature": "sha256=" + digest,
+    "x-provider-timestamp": timestamp,
+  };
+  assert.equal(verify({ headers, rawBody, secret, receivedAt: now }), true);
+  assert.equal(verify({ headers, rawBody: Buffer.from('{"event":"different"}'), secret, receivedAt: now }), false);
+  assert.equal(verify({ headers, rawBody, secret, receivedAt: new Date(now.getTime() + 10 * 60 * 1000) }), false);
+  assert.equal(verify({ headers, rawBody, secret: "short", receivedAt: now }), false);
+  assert.throws(() => createHmacSha256Verifier({ maxSkewSeconds: 3600 }), error => error.code === "INVALID_VERIFIER_CONFIG");
 });

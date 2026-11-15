@@ -61,4 +61,12 @@ async function generateGuestSupportAnswer({
   );
 }
 
-module.exports = { generateGuestSupportAnswer };
+function createAiUnavailableAnswer() {
+  return {
+    reply: "I am unable to verify a response right now. Please contact the front desk directly so the team can assist you.",
+    needsHuman: true,
+    handoffReason: "AI provider unavailable or timed out; staff response required.",
+  };
+}
+
+module.exports = { generateGuestSupportAnswer, createAiUnavailableAnswer };

@@ -185,6 +185,18 @@ try {
   const offersBBody = await offersBResponse.json();
   assert.equal(offersBBody.offers.length, 1);
   assert.equal(offersBBody.offers[0].id, tenants[1].offerId);
+  const crossOfferVerify = await fetch(baseUrl + "/api/admin/offers/" + tenants[1].offerId + "/verify", {
+    method: "POST",
+    headers: { cookie: cookieA, "X-CSRF-Token": tenants[0].csrfToken, "content-type": "application/json" },
+    body: "{}",
+  });
+  assert.equal(crossOfferVerify.status, 404, "tenant A must not refresh availability for tenant B's offer");
+  const ownOfferVerify = await fetch(baseUrl + "/api/admin/offers/" + tenants[0].offerId + "/verify", {
+    method: "POST",
+    headers: { cookie: cookieA, "X-CSRF-Token": tenants[0].csrfToken, "content-type": "application/json" },
+    body: "{}",
+  });
+  assert.equal(ownOfferVerify.status, 200, "tenant A must be able to refresh availability for its own active offer");
   const crossOfferEdit = await fetch(baseUrl + "/api/admin/offers/" + tenants[1].offerId, {
     method: "PATCH",
     headers: { cookie: cookieA, "X-CSRF-Token": tenants[0].csrfToken, "content-type": "application/json" },

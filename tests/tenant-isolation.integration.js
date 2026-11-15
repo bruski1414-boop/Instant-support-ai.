@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import pg from "pg";
 import knowledgeLoader from "../hotel-knowledge.js";
 const { loadApprovedKnowledge } = knowledgeLoader;
+const { recordWebhookEvent } = require("../pms-integration.js");
 const { Pool } = pg;
 
 if (process.env.CI !== "true" || process.env.VEYRA_TENANT_TEST_DATABASE !== "true") {
@@ -336,6 +337,26 @@ try {
 
   const orgA = (await pool.query("SELECT id FROM organizations WHERE slug=$1", [tenants[0].slug])).rows[0].id;
   const orgB = (await pool.query("SELECT id FROM organizations WHERE slug=$1", [tenants[1].slug])).rows[0].id;
+  const webhookReceivedAt = new Date();
+  const webhookEvent = {
+    eventId: "tenant-isolation-event-" + tag,
+    eventType: "reservation.confirmed",
+    occurredAt: new Date(webhookReceivedAt.getTime() - 60_000).toISOString(),
+    data: { reservationReference: "synthetic-" + tag },
+  };
+  const webhookAFirst = await recordWebhookEvent(pool, orgA, "test-provider", webhookEvent, webhookReceivedAt);
+  const webhookADuplicate = await recordWebhookEvent(pool, orgA, "test-provider", webhookEvent, webhookReceivedAt);
+  const webhookBFirst = await recordWebhookEvent(pool, orgB, "test-provider", webhookEvent, webhookReceivedAt);
+  assert.equal(webhookAFirst.accepted, true, "tenant A's first provider event must be accepted");
+  assert.equal(webhookADuplicate.duplicate, true, "repeated provider event must be idempotently rejected for tenant A");
+  assert.equal(webhookBFirst.accepted, true, "the same provider event ID is independent in tenant B");
+  const webhookRows = await pool.query(
+    "SELECT organization_id,provider,external_event_id,payload_sha256 FROM pms_webhook_events WHERE external_event_id=$1 ORDER BY organization_id",
+    [webhookEvent.eventId],
+  );
+  assert.equal(webhookRows.rowCount, 2, "the event inbox must keep one record per tenant, not one global record");
+  assert.notEqual(webhookRows.rows[0].organization_id, webhookRows.rows[1].organization_id);
+  assert.equal(webhookRows.rows.every(row => /^[a-f0-9]{64}$/.test(row.payload_sha256)), true);
   const approvedA = await loadApprovedKnowledge(pool, orgA);
   const approvedB = await loadApprovedKnowledge(pool, orgB);
   assert.equal(approvedA.rows.length, 1, "tenant A guest context must include only its current approved document");

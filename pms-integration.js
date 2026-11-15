@@ -1,5 +1,7 @@
 "use strict";
 
+const crypto = require("node:crypto");
+
 const PROVIDER_KEY = /^[a-z][a-z0-9_-]{1,39}$/;
 const BOOKING_STATUSES = new Set(["confirmed","pending","cancelled","modified","checked_in","checked_out"]);
 const CURRENCIES = /^[A-Z]{3}$/;
@@ -71,6 +73,46 @@ function normalizeBooking(value) {
   return { bookingId, status };
 }
 
+function normalizeWebhookEvent(value, now = new Date()) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new PmsIntegrationError("INVALID_WEBHOOK_EVENT", "Provider webhook event must be an object.");
+  }
+  const eventId = typeof value.eventId === "string" ? value.eventId.trim() : "";
+  const eventType = typeof value.eventType === "string" ? value.eventType.trim().toLowerCase() : "";
+  const occurredAt = typeof value.occurredAt === "string" ? value.occurredAt : "";
+  const data = value.data;
+  const timestamp = Date.parse(occurredAt);
+  const current = now instanceof Date ? now.getTime() : Date.parse(now);
+  if (!eventId || eventId.length > 200 || !/^[a-z0-9][a-z0-9._-]{0,99}$/.test(eventType) ||
+      !Number.isFinite(timestamp) || !Number.isFinite(current) || timestamp > current + 5 * 60 * 1000 ||
+      timestamp < current - 30 * 24 * 60 * 60 * 1000 ||
+      !data || typeof data !== "object" || Array.isArray(data)) {
+    throw new PmsIntegrationError("INVALID_WEBHOOK_EVENT", "Provider webhook event fields are invalid or outside the accepted time window.");
+  }
+  let serialized;
+  try { serialized = JSON.stringify(data); } catch {
+    throw new PmsIntegrationError("INVALID_WEBHOOK_EVENT", "Provider webhook event data is not serializable.");
+  }
+  if (Buffer.byteLength(serialized, "utf8") > 16 * 1024) {
+    throw new PmsIntegrationError("WEBHOOK_EVENT_TOO_LARGE", "Provider webhook event data exceeds the 16 KB limit.", 413);
+  }
+  return { eventId, eventType, occurredAt: new Date(timestamp).toISOString(), data };
+}
+
+async function recordWebhookEvent(db, organizationId, provider, event, receivedAt = new Date()) {
+  if (!db || typeof db.query !== "function" || typeof organizationId !== "string" || !organizationId ||
+      !PROVIDER_KEY.test(provider || "")) {
+    throw new PmsIntegrationError("INVALID_WEBHOOK_CONTEXT", "Webhook event context is incomplete.");
+  }
+  const normalized = normalizeWebhookEvent(event);
+  const payloadHash = crypto.createHash("sha256").update(JSON.stringify(normalized)).digest("hex");
+  const result = await db.query(
+    "INSERT INTO pms_webhook_events(organization_id,provider,external_event_id,event_type,payload_sha256,received_at,status) VALUES($1,$2,$3,$4,$5,$6,'received') ON CONFLICT(organization_id,provider,external_event_id) DO NOTHING RETURNING id",
+    [organizationId, provider, normalized.eventId, normalized.eventType, payloadHash, receivedAt],
+  );
+  return { accepted: result.rowCount === 1, duplicate: result.rowCount !== 1, eventId: normalized.eventId };
+}
+
 function createPmsRegistry(adapters = []) {
   const registered = new Map();
   function register(adapter) {
@@ -126,6 +168,16 @@ function createPmsRegistry(adapters = []) {
       const request = normalizeBookingRequest(input);
       return normalizeBooking(await adapter.createBooking(request));
     },
+    verifyWebhook: async (provider, input) => {
+      const adapter = get(provider);
+      if (!adapter.capabilities.webhooks) throw new PmsIntegrationError("CAPABILITY_UNAVAILABLE", "This provider adapter does not support webhooks.", 409);
+      if (!input || !Buffer.isBuffer(input.rawBody) || !input.headers || typeof input.secret !== "string" || input.secret.length < 16) {
+        throw new PmsIntegrationError("INVALID_WEBHOOK_CONTEXT", "Webhook verification requires the original request body, headers and configured provider secret.");
+      }
+      const verification = await adapter.verifyWebhook({ headers: input.headers, rawBody: input.rawBody, secret: input.secret, receivedAt: input.receivedAt || new Date() });
+      if (!verification || verification.verified !== true) throw new PmsIntegrationError("INVALID_WEBHOOK_SIGNATURE", "Provider webhook signature could not be verified.", 401);
+      return normalizeWebhookEvent(verification.event, input.receivedAt || new Date());
+    },
   });
 }
 
@@ -146,6 +198,8 @@ module.exports = {
   normalizeAvailability,
   normalizeBookingRequest,
   normalizeBooking,
+  normalizeWebhookEvent,
+  recordWebhookEvent,
   createPmsRegistry,
   createSandboxAdapter,
 };

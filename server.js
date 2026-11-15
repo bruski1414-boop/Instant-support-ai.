@@ -22,7 +22,7 @@ const {isValidDateOnly,isOptionalBoolean}=require("./knowledge-validation");
 const {analyzeKnowledgeQuality,getGuestEligibleKnowledge}=require("./knowledge-quality");
 const {normalizeRevenueEvent,normalizeRevenueAdjustment}=require("./revenue-attribution");
 const {normalizeGuestConversationAccess,normalizeStaffReply,canReplyToConversation}=require("./guest-messaging");
-const {deliverStaffEscalation,shouldRetryStaffNotification}=require("./staff-notifications");
+const {deliverStaffEscalation,shouldRetryStaffNotification,dispatchStaffNotification}=require("./staff-notifications");
 const app=express();
 const PORT=Number(process.env.PORT||3000);
 const MODEL=process.env.OPENAI_MODEL||"gpt-4.1-mini";
@@ -130,23 +130,11 @@ async function notify(org,cid,reason,eid){
   webhookSecret:process.env.STAFF_WEBHOOK_SECRET
  });
 }
-// Atomically claim a notification before calling the external webhook. The
-// two-minute lease permits recovery if the process dies while status is sending.
 async function dispatchEscalationNotification({org,cid,reason,eid,organizationId,maxAttempts=5}){
- const claim=await db.query(
-  "UPDATE escalations SET notification_status='sending',notification_attempts=notification_attempts+1,notification_last_attempt_at=now() WHERE id=$1 AND organization_id=$2 AND status<>'resolved' AND notification_status<>'delivered' AND notification_attempts<$3 AND (notification_status<>'sending' OR notification_last_attempt_at<now()-interval '2 minutes') RETURNING id",
-  [eid,organizationId,maxAttempts]
- );
- if(!claim.rowCount){
-  const current=await db.query("SELECT notification_status,notification_attempts FROM escalations WHERE id=$1 AND organization_id=$2",[eid,organizationId]);
-  return {claimed:false,status:current.rows[0]?.notification_status||"not_configured",configured:current.rows[0]?.notification_status!=="not_configured",delivered:current.rows[0]?.notification_status==="delivered"};
- }
- const result=await notify(org,cid,reason,eid);
- await db.query(
-  "UPDATE escalations SET notification_status=$1,notification_attempts=notification_attempts-CASE WHEN $2 THEN 0 ELSE 1 END WHERE id=$3 AND organization_id=$4 AND notification_status='sending'",
-  [result.status,result.configured,eid,organizationId]
- );
- return {...result,claimed:true};
+ return dispatchStaffNotification({
+  db,organizationId,escalationId:eid,maxAttempts,
+  deliver:()=>notify(org,cid,reason,eid)
+ });
 }
 async function readinessSnapshot(){let database="not-configured";if(db){try{await db.query("SELECT 1");database="connected";}catch{database="unavailable";}}const guestDataStorage=process.env.GUEST_DATA_STORAGE_ENABLED==="true",humanHandoff=Boolean(process.env.STAFF_WEBHOOK_URL&&process.env.STAFF_WEBHOOK_SECRET);const gate=buildPilotReadiness({databaseConnected:database==="connected",aiConfigured:Boolean(ai),guestDataStorageEnabled:guestDataStorage,staffWebhookConfigured:humanHandoff,durableBackupsVerified:process.env.DURABLE_BACKUPS_VERIFIED==="true",tenantIsolationTestsPassed:process.env.TENANT_ISOLATION_TESTS_PASSED==="true",providerOAuthTested:process.env.PROVIDER_OAUTH_TESTED==="true",hotelPrivacyApproved:process.env.HOTEL_PRIVACY_APPROVED==="true",staffHandoffTested:process.env.STAFF_HANDOFF_TESTED==="true",pilotReleaseApproved:process.env.PILOT_RELEASE_APPROVED==="true"});return{service:"Veyra AI",mode:ai?"ai-configured":"demo-no-api-key",model:ai?MODEL:null,database,multiTenant:database==="connected"&&gate.checks.tenantIsolationTestsPassed,guestDataStorage,humanHandoff:humanHandoff?"webhook-configured":"not-configured",readyForPilot:gate.readyForPilot,checks:gate.checks};}
 app.get("/api/health",async(_q,r)=>{const state=await readinessSnapshot();r.status(200).json({status:state.readyForPilot?"ready":"degraded",...state});});

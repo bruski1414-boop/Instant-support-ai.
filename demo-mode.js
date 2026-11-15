@@ -90,7 +90,7 @@ function respondToDemoMessage(input, stay = {}) {
     return handoff("A hotel team member needs to handle that request in the booking system. In this demo, the handoff is shown on screen only; no real staff member is notified.", "Booking or payment action requires hotel staff.");
   }
 
-  if (/\b(room|rooms|availability|available|vacancy)\b/.test(text) && /\b(check|available|availability|have|need|looking)\b/.test(text)) {
+  if (/\b(room|rooms|availability|vacancy)\b/.test(text) && /\b(check|available|availability|have|need|looking)\b/.test(text)) {
     const arrival = parseDate(stay.arrivalDate);
     const departure = parseDate(stay.departureDate);
     const sampleStart = parseDate(SAMPLE_STAY.arrivalDate);

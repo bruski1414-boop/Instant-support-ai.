@@ -224,8 +224,8 @@ test("deterministic safety triggers replace unsafe model-generated automatic rep
     handoffReason: "",
   });
   assert.equal(resolved.needsHuman, true);
-  assert.match(resolved.reply, /hotel team/);
-  assert.match(resolved.reply, /front desk directly/);
+  assert.match(resolved.reply, /local emergency services now/);
+  assert.match(resolved.reply, /Do not wait for a chat reply/);
   assert.match(resolved.handoffReason, /staff-escalation policy/);
 });
 

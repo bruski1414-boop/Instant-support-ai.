@@ -19,7 +19,7 @@ const NON_CLAIM_TERMS = new Set([
   "from","get","give","glad","good","great","had","has","have","hello","help","here","how","i","if","in",
   "into","is","it","its","just","know","let","like","many","may","me","might","more","most","much","must",
   "near","need","neither","no","not","now","of","off","on","once","one","only","or","other","our","out",
-  "please","provide","regarding","same","see","shall","should","since","so","some","such","than","thank",
+  "please","provide","regarding","requested","requests","dates","date","january","february","march","april","may","june","july","august","september","october","november","december","same","see","shall","should","since","so","some","such","than","thank",
   "thanks","that","the","their","them","then","there","these","they","this","those","through","to","today",
   "tomorrow","too","under","up","us","very","was","we","well","were","what","when","where","which","while",
   "who","why","will","with","would","yes","you","your","hotel","team","staff","contact","assist","assistance",

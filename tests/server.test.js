@@ -334,3 +334,11 @@ test("staff handoff dashboard makes failed and unconfigured notifications requir
   assert.match(dashboard, /notification_last_attempt_at/);
   assert.match(dashboard, /notification==="failed"&&!exhausted/);
 });
+
+test("guest chat converts AI provider failures into a persisted staff handoff instead of losing the request", () => {
+  const server = fs.readFileSync("server.js", "utf8");
+  assert.match(server, /catch\(error\)\{console\.error\("Guest support AI request failed:"/);
+  assert.match(server, /unable to verify a response right now/);
+  assert.match(server, /AI provider unavailable or timed out; staff response required/);
+  assert.match(server, /const flagHuman=resolvedAnswer\.needsHuman/);
+});

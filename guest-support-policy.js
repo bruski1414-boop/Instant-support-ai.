@@ -57,10 +57,15 @@ function resolveGuestSupportAnswer(message, normalizedAnswer) {
   const deterministicHandoff = requiresStaffEscalation(message);
   const needsHuman = deterministicHandoff || normalizedAnswer?.needsHuman === true;
   if (deterministicHandoff) {
+    const immediateDanger = /\\b(fire|smoke|gas leak|cannot breathe|can.t breathe|unconscious|not breathing)\\b/i.test(String(message || ""));
     return {
-      reply: "This request needs help from the hotel team. Please contact the front desk directly while they review it.",
+      reply: immediateDanger
+        ? "Please move away from the immediate danger and contact local emergency services now. Alert hotel staff as soon as it is safe. Do not wait for a chat reply."
+        : "This request needs help from the hotel team. Please contact the front desk directly so they can assist you.",
       needsHuman: true,
-      handoffReason: "Guest message matched a staff-escalation policy.",
+      handoffReason: immediateDanger
+        ? "Potential immediate danger reported; urgent staff and emergency response required."
+        : "Guest message matched a staff-escalation policy.",
     };
   }
   return {

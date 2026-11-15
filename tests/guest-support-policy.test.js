@@ -139,3 +139,33 @@ test("normalization never converts a staff-required answer into an automatic ans
   assert.equal(answer.needsHuman, true);
   assert.equal(answer.handoffReason, "Manager review required.");
 });
+
+
+test("conflicting or outdated approved facts require staff review", () => {
+  const prompt = buildGuestSupportSystemPrompt(
+    "Aster House",
+    "Breakfast starts at 7:00.\nBreakfast starts at 7:30."
+  );
+  assert.match(prompt, /conflicting, ambiguous, incomplete, or apparently outdated facts/);
+  assert.match(prompt, /do not choose between them/);
+  assert.match(prompt, /request hotel staff review/);
+});
+
+test("fictional hotel knowledge QA fixture stays bounded to approved facts", () => {
+  const approvedFacts = [
+    "Breakfast is served from 7:00 to 10:00.",
+    "The swimming pool is open from 8:00 to 20:00.",
+    "The hotel Wi-Fi network is Aster-Guest.",
+  ];
+  const prompt = buildGuestSupportSystemPrompt("Aster House", approvedFacts.join("\\n"));
+
+  for (const fact of approvedFacts) {
+    assert.ok(prompt.includes(fact), `approved fixture fact missing from prompt: ${fact}`);
+  }
+  assert.match(prompt, /If the answer is not explicitly supported/);
+  assert.match(prompt, /Never invent rates, availability, bookings, refunds, policies, facilities, opening hours, or completed actions/);
+  assert.equal(requiresStaffEscalation("What time does breakfast start?"), false);
+  assert.equal(requiresStaffEscalation("Can you confirm a room upgrade?"), false);
+  assert.equal(requiresStaffEscalation("I have a food allergy."), true);
+  assert.equal(requiresStaffEscalation("Please refund my booking."), true);
+});

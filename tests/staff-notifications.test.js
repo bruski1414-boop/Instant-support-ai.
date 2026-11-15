@@ -302,6 +302,8 @@ test("background retry scans only eligible unresolved failures and dispatches ea
   assert.equal(result.scanned, 2);
   assert.deepEqual(dispatched, ["e-1", "e-2"]);
   assert.match(calls[0].sql, /e.status<>'resolved'/);
+  assert.match(calls[0].sql, /JOIN organization_staff_webhooks w ON w.organization_id=e.organization_id AND w.status='verified'/);
+  assert.match(calls[0].sql, /notification_status IN \('failed','not_configured'\)/);
   assert.match(calls[0].sql, /notification_attempts<5/);
   assert.match(calls[0].sql, /interval '5 minutes'/);
   assert.match(calls[0].sql, /interval '2 minutes'/);

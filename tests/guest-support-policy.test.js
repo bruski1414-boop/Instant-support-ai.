@@ -18,6 +18,13 @@ test("sensitive, urgent and operational requests are routed to staff", () => {
     "I need to speak to a manager.",
     "My child is missing.",
     "I feel unsafe in my room.",
+    "There is smoke coming from the hallway.",
+    "My room is flooding.",
+    "I think there is a gas leak.",
+    "Someone has stolen my bag.",
+    "I cannot breathe properly.",
+    "I need to report an assault.",
+    "Please cancel my stay.",
   ];
 
   for (const message of messages) {

@@ -9,7 +9,7 @@ const {promisify}=require("node:util");
 const {Pool}=require("pg");
 const {createStorageRouter}=require("./storage-integrations");
 const {requiresStaffEscalation}=require("./guest-support-policy");
-const {generateGuestSupportAnswer}=require("./guest-support-engine");
+const {generateGuestSupportAnswer,createAiUnavailableAnswer}=require("./guest-support-engine");
 const {buildPilotReadiness}=require("./pilot-readiness");
 const {deliverStaffEscalation}=require("./staff-notifications");
 const app=express();
@@ -213,7 +213,7 @@ app.post("/api/public/:slug/chat",async(q,r,n)=>{
  let conversationId=null,history=[];
  if(requestedConversation){const existing=await db.query("SELECT id FROM conversations WHERE id=$1 AND organization_id=$2 AND guest_token_hash=$3",[requestedConversation,org.id,hash(requestedToken)]);if(!existing.rowCount)return r.status(404).json({error:"Conversation not found."});conversationId=existing.rows[0].id;const previous=await db.query("SELECT m.role,m.content FROM messages m JOIN conversations c ON c.id=m.conversation_id WHERE m.conversation_id=$1 AND c.organization_id=$2 AND m.role IN ('guest','assistant') ORDER BY m.created_at DESC LIMIT 8",[conversationId,org.id]);history=previous.rows.reverse().map(m=>({role:m.role==="guest"?"user":"assistant",content:String(m.content).slice(0,1500)}));}
  const guestToken=requestedConversation?requestedToken:crypto.randomBytes(32).toString("base64url");
- let resolvedAnswer;try{resolvedAnswer=await generateGuestSupportAnswer({ai,model:MODEL,hotelName:org.name,approvedKnowledge:knowledge,history,message:msg.trim()});}catch(error){console.error("Guest support AI request failed:",error.message);resolvedAnswer={reply:"I am unable to verify a response right now. Please contact the front desk directly so the team can assist you.",needsHuman:true,handoffReason:"AI provider unavailable or timed out; staff response required."};}
+ let resolvedAnswer;try{resolvedAnswer=await generateGuestSupportAnswer({ai,model:MODEL,hotelName:org.name,approvedKnowledge:knowledge,history,message:msg.trim()});}catch(error){console.error("Guest support AI request failed:",error.message);resolvedAnswer=createAiUnavailableAnswer();}
  const reply=resolvedAnswer.reply;const flagHuman=resolvedAnswer.needsHuman;
  const c=await db.connect();let cid=conversationId,eid,createdEscalation=false,existingNotificationStatus="not_configured";try{await c.query("BEGIN");if(!cid){const x=await c.query("INSERT INTO conversations(organization_id,channel,status,guest_token_hash) VALUES($1,'website',$2,$3) RETURNING id",[org.id,flagHuman?"escalated":"open",hash(guestToken)]);cid=x.rows[0].id;}else{const locked=await c.query("SELECT id FROM conversations WHERE id=$1 AND organization_id=$2 AND guest_token_hash=$3 FOR UPDATE",[cid,org.id,hash(guestToken)]);if(!locked.rowCount){await c.query("ROLLBACK");return r.status(404).json({error:"Conversation not found."});}}
  await c.query("INSERT INTO messages(conversation_id,role,content) VALUES($1,'guest',$2),($1,'assistant',$3)",[cid,msg.trim(),reply]);await c.query("UPDATE conversations SET last_message_at=now(),status=CASE WHEN $2 THEN 'escalated' WHEN status='resolved' THEN 'open' ELSE status END WHERE id=$1 AND organization_id=$3",[cid,flagHuman,org.id]);

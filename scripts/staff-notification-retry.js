@@ -19,6 +19,12 @@ async function main() {
     allowedHosts: process.env.STAFF_WEBHOOK_ALLOWED_HOSTS
   });
   try {
+    if (!webhookStore.encryptionConfigured) {
+      throw new Error("STAFF_WEBHOOK_ENCRYPTION_KEY is required for notification retries.");
+    }
+    if (!webhookStore.allowedHostsConfigured) {
+      throw new Error("STAFF_WEBHOOK_ALLOWED_HOSTS must contain an approved host for notification retries.");
+    }
     const result = await retryPendingStaffNotifications({
       db,
       batchSize: 50,

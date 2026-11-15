@@ -18,6 +18,7 @@ test("date ranges require valid ISO dates and a positive stay", () => {
   });
   assert.throws(() => validateDateRange({ checkIn: "2027-01-12", checkOut: "2027-01-10" }), PmsIntegrationError);
   assert.throws(() => validateDateRange({ checkIn: "not-a-date", checkOut: "2027-01-10" }), PmsIntegrationError);
+  assert.throws(() => validateDateRange({ checkIn: "2027-02-30", checkOut: "2027-03-03" }), PmsIntegrationError);
 });
 
 test("availability normalizer accepts only bounded, typed provider fields", () => {

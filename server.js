@@ -207,7 +207,7 @@ const encrypted=pmsCredentialVault.encrypt(validated.credentials);
 await db.query("INSERT INTO pms_connections(organization_id,provider,mode,status,encrypted_credentials,scopes,connected_by,connected_at,last_tested_at,last_error,updated_at) VALUES($1,$2,$3,'pending_authorization',$4,$5,$6,now(),NULL,'',now()) ON CONFLICT(organization_id,provider) DO UPDATE SET mode=EXCLUDED.mode,status='pending_authorization',encrypted_credentials=EXCLUDED.encrypted_credentials,scopes=EXCLUDED.scopes,connected_by=EXCLUDED.connected_by,connected_at=now(),last_tested_at=NULL,last_error='',updated_at=now()",[q.actor.organization_id,q.params.provider,adapter.mode,encrypted,validated.scopes,q.actor.user_id]);
 await audit(q.actor,"integration.pms_connection_configured","pms_connection",q.params.provider);
 r.status(201).json({provider:q.params.provider,mode:adapter.mode,status:"pending_authorization",scopes:validated.scopes,credentialsStored:true});
-}catch(e){if(e instanceof PmsIntegrationError)return r.status(e.status).json({verified:false,code:e.code,error:e.message});n(e);}});
+}catch(e){if(e instanceof PmsIntegrationError)return r.status(e.status).json({verified:false,code:e.code,error:e.message});console.error("PMS credential validation failed for configured provider.");return r.status(400).json({error:"The provider rejected the connection details or they could not be stored safely."});}});
 app.post("/api/admin/integrations/pms/:provider/test",requireDb,auth,role("owner","admin"),integrationTestLimiter,async(q,r,n)=>{let storedConnection=false;try{
 const adapter=pmsRegistry.list().find(item=>item.id===q.params.provider);
 if(!adapter)return r.status(404).json({verified:false,error:"PMS provider adapter is not installed."});

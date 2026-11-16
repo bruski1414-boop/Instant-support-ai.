@@ -2,11 +2,25 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { generateStructuredGuestAnswer, SAFE_FALLBACK } = require("../ai-provider");
+const { generateStructuredGuestAnswer, SAFE_FALLBACK, AI_REQUEST_TIMEOUT_MS } = require("../ai-provider");
 
 function clientReturning(content) {
   return { chat: { completions: { create: async () => ({ choices: [{ message: { content } }] }) } } };
 }
+
+
+test("guest AI requests use a bounded timeout and do not add hidden provider retries", async () => {
+  let options;
+  const client = { chat: { completions: { create: async (_params, requestOptions) => {
+    options = requestOptions;
+    return { choices: [{ message: { content: JSON.stringify({ reply: "Welcome.", needsHuman: false, handoffReason: "" }) } }] };
+  } } } };
+  const answer = await generateStructuredGuestAnswer({ client, model: "test-model", messages: [] });
+  assert.equal(answer.reply, "Welcome.");
+  assert.equal(options.timeout, AI_REQUEST_TIMEOUT_MS);
+  assert.equal(options.maxRetries, 0);
+  assert.equal(AI_REQUEST_TIMEOUT_MS, 15000);
+});
 
 test("returns a structurally valid AI guest answer", async () => {
   const answer = await generateStructuredGuestAnswer({

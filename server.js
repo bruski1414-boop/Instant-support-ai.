@@ -10,6 +10,7 @@ const {Pool}=require("pg");
 const {createStorageRouter}=require("./storage-integrations");
 const {requiresStaffEscalation}=require("./guest-support-policy");
 const {generateGuestSupportAnswer,createAiUnavailableAnswer}=require("./guest-support-engine");
+const {generateDemoHotelAnswer}=require("./demo-hotel");
 const {loadApprovedKnowledge}=require("./hotel-knowledge");
 const {selectRelevantOffers,buildOfferContext}=require("./hotel-offers");
 const {buildPilotReadiness}=require("./pilot-readiness");
@@ -40,11 +41,13 @@ const setupLimiter=rateLimit({windowMs:3600000,limit:5,standardHeaders:"draft-7"
 const platformProvisionLimiter=rateLimit({windowMs:3600000,limit:10,standardHeaders:"draft-7",legacyHeaders:false});
 const integrationTestLimiter=rateLimit({windowMs:3600000,limit:5,standardHeaders:"draft-7",legacyHeaders:false});
 const publicChatLimiter=rateLimit({windowMs:300000,limit:10,standardHeaders:"draft-7",legacyHeaders:false});
+const demoChatLimiter=rateLimit({windowMs:300000,limit:10,standardHeaders:"draft-7",legacyHeaders:false});
 const invitationAcceptLimiter=rateLimit({windowMs:3600000,limit:5,standardHeaders:"draft-7",legacyHeaders:false});
 app.use("/api/invitations/accept",invitationAcceptLimiter);
 app.use("/api/setup/organization",setupLimiter);
 app.use("/api/platform/organizations",platformProvisionLimiter);
 app.use("/api/public/",publicChatLimiter);
+app.use("/api/demo/chat",demoChatLimiter);
 const schema=[
 "CREATE EXTENSION IF NOT EXISTS pgcrypto",
 "CREATE TABLE IF NOT EXISTS organizations(id UUID PRIMARY KEY DEFAULT gen_random_uuid(),name TEXT NOT NULL,slug TEXT NOT NULL UNIQUE,status TEXT NOT NULL DEFAULT 'trial' CHECK(status IN ('trial','active','suspended')),created_at TIMESTAMPTZ NOT NULL DEFAULT now())",
@@ -294,6 +297,18 @@ app.post("/api/admin/escalations/:id/notify",requireDb,auth,role("owner","admin"
 app.patch("/api/admin/escalations/:id",requireDb,auth,role("owner","admin","staff"),async(q,r,n)=>{try{const s=q.body?.status;if(!["open","claimed","resolved"].includes(s))return r.status(400).json({error:"Invalid status."});
  const x=await db.query("UPDATE escalations SET status=$1,assigned_to=CASE WHEN $1='claimed' THEN $2 WHEN $1='open' THEN NULL ELSE assigned_to END,resolved_at=CASE WHEN $1='resolved' THEN now() ELSE NULL END WHERE id=$3 AND organization_id=$4 RETURNING id,status,assigned_to,resolved_at",[s,q.actor.user_id,q.params.id,q.actor.organization_id]);if(!x.rowCount)return r.status(404).json({error:"Escalation not found."});
  await db.query("UPDATE conversations SET status=$1 WHERE organization_id=$3 AND id=(SELECT conversation_id FROM escalations WHERE id=$2 AND organization_id=$3)",[s==="resolved"?"resolved":"escalated",q.params.id,q.actor.organization_id]);await audit(q.actor,"escalation."+s,"escalation",q.params.id);r.json({escalation:x.rows[0]});}catch(e){n(e);}});
+app.post("/api/demo/chat",async(q,r)=>{
+ try{
+  const msg=q.body?.message;
+  if(typeof msg!=="string"||!msg.trim()||msg.length>4000)return r.status(400).json({error:"Enter a message under 4,000 characters."});
+  if(!ai)return r.status(503).json({error:"Live AI is not configured. The sample demo can still use its offline responses."});
+  const result=await generateDemoHotelAnswer({ai,model:MODEL,message:msg.trim(),history:q.body?.history});
+  r.json({reply:result.reply,needsHuman:result.needsHuman,handoffReason:result.handoffReason,mode:"demo-ai",demo:true,persisted:false,staffNotificationSent:false});
+ }catch(e){
+  console.error("Demo AI request failed:",e.message);
+  r.status(502).json({error:"The live demo assistant is temporarily unavailable. Please try the sample response instead."});
+ }
+});
 app.post("/api/public/:slug/chat",async(q,r,n)=>{
  try{if(!db)return r.status(503).json({error:"Hotel platform is not configured."});const releaseGate=await readinessSnapshot();if(!releaseGate.readyForPilot)return r.status(503).json({error:"Hotel pilot release gates are not all verified. Please contact hotel staff.",readyForPilot:false});const msg=q.body?.message;if(typeof msg!=="string"||!msg.trim()||msg.length>4000)return r.status(400).json({error:"Enter a message under 4,000 characters."});
  const orgR=await db.query("SELECT id,name,slug,status FROM organizations WHERE slug=$1",[q.params.slug]);if(!orgR.rowCount||orgR.rows[0].status==="suspended")return r.status(404).json({error:"Assistant unavailable."});const org=orgR.rows[0];

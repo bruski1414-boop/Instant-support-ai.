@@ -5,7 +5,7 @@ const RESERVATION_STATES = new Set([
 ]);
 
 function utc(value, name) {
-  if (typeof value !== "string" || !/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?Z$/.test(value) ||
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?Z$/.test(value) ||
       !Number.isFinite(Date.parse(value))) {
     throw new Error(name + " is not a valid UTC timestamp.");
   }

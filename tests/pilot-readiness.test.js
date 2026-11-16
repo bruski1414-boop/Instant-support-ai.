@@ -4,7 +4,9 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const {
   REQUIRED_PILOT_CHECKS,
+  FAQ_PILOT_REQUIRED_CHECKS,
   buildPilotReadiness,
+  buildFaqPilotReadiness,
 } = require("../pilot-readiness");
 
 test("pilot readiness fails closed when no evidence is supplied", () => {
@@ -51,4 +53,28 @@ test("truthy values and unrelated fields cannot satisfy a pilot release gate", (
     buildPilotReadiness({ ...withoutHandoff, unrelatedApproval: true }).readyForPilot,
     false
   );
+});
+
+
+test("FAQ-only pilot excludes optional provider OAuth but retains critical release gates", () => {
+  const evidence = Object.fromEntries(REQUIRED_PILOT_CHECKS.map((key) => [key, true]));
+  evidence.providerOAuthTested = false;
+  assert.equal(buildFaqPilotReadiness(evidence).readyForPilot, true);
+  assert.equal(buildPilotReadiness(evidence).readyForPilot, false);
+  assert.equal(FAQ_PILOT_REQUIRED_CHECKS.includes("providerOAuthTested"), false);
+});
+
+test("FAQ-only pilot still blocks without durable backups, tenant isolation, privacy or staff handoff", () => {
+  const evidence = Object.fromEntries(REQUIRED_PILOT_CHECKS.map((key) => [key, true]));
+  for (const missing of ["durableBackupsVerified", "tenantIsolationTestsPassed", "hotelPrivacyApproved", "staffHandoffTested", "pilotReleaseApproved"]) {
+    const incomplete = { ...evidence, [missing]: false };
+    assert.equal(buildFaqPilotReadiness(incomplete).readyForPilot, false, missing);
+  }
+});
+
+test("full platform readiness continues to require provider OAuth", () => {
+  const evidence = Object.fromEntries(REQUIRED_PILOT_CHECKS.map((key) => [key, true]));
+  evidence.providerOAuthTested = false;
+  assert.equal(buildPilotReadiness(evidence).checks.providerOAuthTested, false);
+  assert.equal(buildFaqPilotReadiness(evidence).readyForPilot, true);
 });

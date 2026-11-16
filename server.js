@@ -17,6 +17,7 @@ const {PmsIntegrationError,createPmsRegistry,createSandboxAdapter}=require("./pm
 const {createPmsCredentialVault}=require("./pms-credential-vault");
 const {deliverStaffEscalation}=require("./staff-notifications");
 const {encryptWebhookConfig,decryptWebhookConfig,resolvePublicWebhook,postSignedWebhook}=require("./staff-webhook-security");
+const {configureRenderProxyTrust}=require("./render-proxy");
 const app=express();
 const PORT=Number(process.env.PORT||3000);
 const MODEL=process.env.OPENAI_MODEL||"gpt-4.1-mini";
@@ -28,7 +29,7 @@ const pmsCredentialVault=createPmsCredentialVault();
 const scrypt=promisify(crypto.scrypt);
 const prod=process.env.NODE_ENV==="production";
 const cookie=prod?"__Host-veyra_session":"veyra_session";
-app.set("trust proxy",1); // Render terminates TLS and forwards requests through one trusted proxy hop.
+configureRenderProxyTrust(app);
 app.disable("x-powered-by");
 app.use((_q,r,n)=>{r.setHeader("X-Content-Type-Options","nosniff");r.setHeader("X-Frame-Options","DENY");r.setHeader("Referrer-Policy","strict-origin-when-cross-origin");r.setHeader("Permissions-Policy","camera=(),microphone=(),geolocation=()");n();});
 app.use(cors((req,cb)=>{const o=req.get("Origin");const common={credentials:true,allowedHeaders:["Content-Type","X-CSRF-Token","X-Bootstrap-Token","X-Platform-Provisioning-Token"],methods:["GET","POST","PATCH","DELETE","OPTIONS"]};if(!o||origins.includes(o))return cb(null,{...common,origin:true});const segments=req.path.split("/");if(segments.length!==5||segments[1]!=="api"||segments[2]!=="public"||segments[4]!=="chat"||!db)return cb(null,{...common,origin:false});let hotelSlug;try{hotelSlug=decodeURIComponent(segments[3]);}catch{return cb(null,{...common,origin:false});}db.query("SELECT 1 FROM organizations o JOIN organization_settings s ON s.organization_id=o.id WHERE o.slug=$1 AND s.website_url=$2 LIMIT 1",[hotelSlug,o]).then(x=>cb(null,{...common,origin:x.rowCount>0})).catch(()=>cb(null,{...common,origin:false}));}));

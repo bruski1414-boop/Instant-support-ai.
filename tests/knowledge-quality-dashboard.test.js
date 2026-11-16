@@ -30,7 +30,7 @@ test("hotel onboarding dashboard displays all deployment safety gates", () => {
     "Guest data storage enabled",
     "Durable backups and restore",
     "Tenant isolation tests",
-    "Provider OAuth verification",
+    "Optional cloud document import verification",
     "Staff handoff and fallback test",
     "Pilot release approval",
   ]) {

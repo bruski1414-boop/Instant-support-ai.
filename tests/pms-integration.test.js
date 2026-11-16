@@ -49,6 +49,7 @@ test("rejects unsupported event types and invalid reservation dates", () => {
   assert.throws(() => normalizeReservationEvent({ ...reservation, eventType: "payment.card_authorized" }), /Unsupported/);
   assert.throws(() => normalizeReservationEvent({ ...reservation, departureDate: "2026-12-01" }), /after arrivalDate/);
   assert.throws(() => normalizeReservationEvent({ ...reservation, totalAmountMinor: 12.5 }), /safe integer/);
+  assert.throws(() => normalizeReservationEvent({ ...reservation, occurredAt: "2026-02-31T10:00:00Z" }), /valid calendar timestamp/);
 });
 
 test("requires currency when a reservation total is supplied", () => {
@@ -56,14 +57,16 @@ test("requires currency when a reservation total is supplied", () => {
 });
 
 test("normalizes short-lived availability snapshots", () => {
-  const value = normalizeAvailabilitySnapshot(availability);
+  const value = normalizeAvailabilitySnapshot(availability, Date.parse("2026-11-14T10:05:00.000Z"));
   assert.equal(value.roomsAvailable, 3);
   assert.equal(value.validUntil, "2026-11-14T10:10:00.000Z");
 });
 
 test("rejects stale or excessively long-lived availability snapshots", () => {
   assert.throws(() => normalizeAvailabilitySnapshot({ ...availability, validUntil: "2026-11-14T10:16:00.000Z" }), /15 minutes/);
-  assert.throws(() => normalizeAvailabilitySnapshot({ ...availability, validUntil: "2026-11-14T09:59:00.000Z" }), /later than observedAt/);
+  assert.throws(() => normalizeAvailabilitySnapshot({ ...availability, validUntil: "2026-11-14T09:59:00.000Z" }, Date.parse("2026-11-14T10:05:00.000Z")), /later than observedAt/);
+  assert.throws(() => normalizeAvailabilitySnapshot(availability, Date.parse("2026-11-14T10:11:00.000Z")), /has expired/);
+  assert.throws(() => normalizeAvailabilitySnapshot({ ...availability, observedAt: "2026-11-14T10:06:00.000Z" }, Date.parse("2026-11-14T10:05:00.000Z")), /cannot be in the future/);
 });
 
 test("requires an adapter to map both canonical event types", () => {
@@ -75,5 +78,7 @@ test("requires an adapter to map both canonical event types", () => {
   });
   assert.equal(adapter.provider, "Example PMS");
   assert.equal(adapter.reservationEvent(reservation).reservationId, "res-200");
-  assert.equal(adapter.availabilitySnapshot(availability).roomsAvailable, 3);
+  const now = Date.now();
+  const liveSnapshot = { ...availability, observedAt: new Date(now - 60_000).toISOString(), validUntil: new Date(now + 9 * 60_000).toISOString() };
+  assert.equal(adapter.availabilitySnapshot(liveSnapshot).roomsAvailable, 3);
 });

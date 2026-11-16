@@ -301,12 +301,12 @@ app.post("/api/demo/chat",demoChatLimiter,async(q,r)=>{
  try{
   const msg=q.body?.message;
   if(typeof msg!=="string"||!msg.trim()||msg.length>4000)return r.status(400).json({error:"Enter a message under 4,000 characters."});
-  if(!ai)return r.status(503).json({error:"Live AI is not configured. The sample demo can still use its offline responses."});
+  if(!ai)return r.status(503).json({error:"Live AI is not configured. This demo requires an AI provider key; no offline fallback is available on this endpoint."});
   const result=await generateDemoHotelAnswer({ai,model:MODEL,message:msg.trim(),history:q.body?.history});
   r.json({reply:result.reply,needsHuman:result.needsHuman,handoffReason:result.handoffReason,mode:"demo-ai",demo:true,persisted:false,staffNotificationSent:false});
  }catch(e){
   console.error("Demo AI request failed:",e.message);
-  r.status(502).json({error:"The live demo assistant is temporarily unavailable. Please try the sample response instead."});
+  r.status(502).json({error:"The live demo assistant is temporarily unavailable. Please try again later."});
  }
 });
 app.post("/api/public/:slug/chat",async(q,r,n)=>{

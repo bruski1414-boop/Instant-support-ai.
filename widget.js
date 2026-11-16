@@ -33,7 +33,7 @@
   function pollStaffReplies(){
     if(!conversationId||!conversationToken||!panel.classList.contains("open"))return;
     fetch(api+"/api/public/"+encodeURIComponent(slug)+"/chat?conversationId="+encodeURIComponent(conversationId),{headers:{"X-Veyra-Conversation-Token":conversationToken}})
-      .then(async function(response){if(!response.ok)return null;return response.json();})
+      .then(async function(response){if(response.status===404){conversationId=null;conversationToken=null;stopPolling();status.textContent="This chat session has expired or is unavailable. Send a new message to start a new chat.";return null;}if(!response.ok)return null;return response.json();})
       .then(function(data){if(!data)return;(data.messages||[]).forEach(function(message){if(!seenStaffMessages[message.id]){seenStaffMessages[message.id]=true;add(message.content,"staff");status.textContent="A hotel team member has replied.";}});})
       .catch(function(){});
   }

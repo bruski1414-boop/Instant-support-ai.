@@ -32,6 +32,17 @@ Operational requirements:
 4. Ensure the hosting proxy, access logs, APM and error reporting redact the entire `token` query parameter. If this cannot be guaranteed, do not enable the endpoint.
 5. Keep the receiver disabled until the integration ID, webhook registration, tenant mapping and log redaction are independently verified.
 
+## Background inbox processor added in this branch
+
+- `mews-inbox-processor.js` claims batches with PostgreSQL row locks and expiring leases, so multiple worker instances do not intentionally claim the same active row.
+- It resolves only a verified tenant-specific Mews connection, fetches reservation state through the read-only Connector API, and checks the event ID, configured property and configured daily service.
+- It stores an allowlisted snapshot only: reservation ID, service ID, state and scheduled/updated timestamps. Guest names, contact details, notes, prices and raw provider responses are not stored.
+- Temporary failures are retried with bounded exponential backoff. Attempts are capped; exhausted work is marked failed. Expired worker leases can be reclaimed.
+- `scripts/mews-inbox-worker.js` is a separate-process entry point. It refuses to start unless `MEWS_INBOX_WORKER_ENABLED=true`, a database URL and the encryption key are configured. It handles SIGTERM/SIGINT and avoids logging raw provider errors.
+- The web-service schema creates the retry/lease columns and the PII-minimal reservation snapshot table.
+
+The worker has not been deployed or run against a real database or Mews account. Keep the worker disabled until an authorised adult/operator configures durable PostgreSQL, verified demo credentials and the encryption key. This processor does not link reservations to Veyra conversations and does not create revenue attribution.
+
 ## Explicitly not yet implemented
 
 - The inbox is an intake queue only. There is no worker in this branch that claims inbox rows, calls Mews, fetches reservation details, retries failures or marks events processed.

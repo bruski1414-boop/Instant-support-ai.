@@ -43,6 +43,8 @@ function fakeDb(claimed = [row], { currentAttemptCount = row.attempt_count } = {
     },
     async query(sql, params) {
       calls.push({ sql, params });
+      if (sql.startsWith("UPDATE mews_webhook_inbox SET status=$2") &&
+          currentAttemptCount !== params[4]) return { rows: [], rowCount: 0 };
       return { rows: [], rowCount: 1 };
     }
   };

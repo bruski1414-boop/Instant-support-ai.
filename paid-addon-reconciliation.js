@@ -166,6 +166,7 @@ function reconcilePaidAddons({ organizationId, provider, orderItems, bills, paym
       amountMinor: netAmountMinor,
       currency: itemCurrency,
       occurredAt: paidAt,
+      adjustments: Object.freeze(itemAdjustments.map(adjustment => Object.freeze({ ...adjustment }))),
       evidence: Object.freeze({
         billType: "Receipt",
         billId,

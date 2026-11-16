@@ -44,10 +44,14 @@ function projectPaidAddonToLedger(event) {
     // Deliberately no conversationId: PMS reservation evidence alone is not
     // evidence that Veyra influenced or caused the booking.
   });
-  const adjustments = (event.evidence.adjustmentReferences || []).map((reference, index) => {
-    const amountMinor = event.adjustments?.[index]?.amountMinor;
-    const adjustmentCurrency = event.adjustments?.[index]?.currency;
-    const type = event.adjustments?.[index]?.type;
+  if (!Array.isArray(event.adjustments)) throw new Error("Confirmed adjustment detail is required.");
+  const adjustmentByReference = new Map(event.adjustments.map(adjustment => [adjustment.externalReference, adjustment]));
+  if (adjustmentByReference.size !== event.adjustments.length) throw new Error("Duplicate adjustment references are not allowed.");
+  const adjustments = (event.evidence.adjustmentReferences || []).map(reference => {
+    const evidence = adjustmentByReference.get(reference);
+    const amountMinor = evidence?.amountMinor;
+    const adjustmentCurrency = evidence?.currency;
+    const type = evidence?.type;
     if (!amountMinor || adjustmentCurrency !== currency || !["refund", "chargeback"].includes(type)) {
       throw new Error("Each confirmed adjustment must include its amount, currency and type.");
     }
@@ -59,7 +63,7 @@ function projectPaidAddonToLedger(event) {
       sourceReference: reference,
       amount: decimalAmount(amountMinor, currency),
       currency,
-      occurredAt: event.adjustments[index].occurredAt
+      occurredAt: evidence.occurredAt
     });
   });
   if (adjustments.length !== (event.evidence.adjustmentReferences || []).length) throw new Error("Adjustment evidence is incomplete.");

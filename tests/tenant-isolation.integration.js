@@ -91,6 +91,7 @@ async function seedStaff(tenant) {
 async function seedConversation(tenant) {
   const org = await pool.query("SELECT id FROM organizations WHERE slug=$1", [tenant.slug]);
   assert.equal(org.rowCount, 1);
+  tenant.organizationId = org.rows[0].id;
   const conversation = await pool.query(
     "INSERT INTO conversations(organization_id,channel,status) VALUES($1,'website','open') RETURNING id",
     [org.rows[0].id],
@@ -98,7 +99,7 @@ async function seedConversation(tenant) {
   tenant.conversationId = conversation.rows[0].id;
   tenant.guestToken = randomBytes(32).toString("base64url");
   const guestTokenHash = createHash("sha256").update(tenant.guestToken).digest("hex");
-  await pool.query("UPDATE conversations SET guest_token_hash=$1 WHERE id=$2", [guestTokenHash, tenant.conversationId]);
+  await pool.query("UPDATE conversations SET guest_token_hash=$1,guest_token_expires_at=now()+interval '30 days' WHERE id=$2", [guestTokenHash, tenant.conversationId]);
   await pool.query(
     "INSERT INTO messages(conversation_id,role,content) VALUES($1,'guest',$2),($1,'assistant',$3)",
     [tenant.conversationId, tenant.message, "Synthetic automated reply for performance testing"],

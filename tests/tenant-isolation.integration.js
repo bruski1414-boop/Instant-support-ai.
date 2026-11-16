@@ -304,8 +304,8 @@ try {
     "a hotel must not issue an attribution token for another hotel's conversation",
   );
 
+  const attributionProvider = "synthetic-pms";
   const confirmedReservation = {
-    provider: "synthetic-pms",
     eventId: `ATTR-EVENT-${tag}`,
     eventType: "reservation.created",
     occurredAt: new Date().toISOString(),
@@ -319,6 +319,7 @@ try {
   };
   const crossTenantAttribution = await bookingAttributionStore.consumeConfirmedReservation({
     organizationId: orgBForPilot.rows[0].id,
+    provider: attributionProvider,
     reservationEvent: confirmedReservation,
   });
   assert.equal(crossTenantAttribution.status, "unmatched", "tenant B must not consume tenant A's attribution token");
@@ -326,6 +327,7 @@ try {
   const concurrentAttribution = await Promise.all([
     bookingAttributionStore.consumeConfirmedReservation({
       organizationId: orgAForPilot.rows[0].id,
+      provider: attributionProvider,
       reservationEvent: confirmedReservation,
     }),
     bookingAttributionStore.consumeConfirmedReservation({
@@ -354,6 +356,7 @@ try {
 
   const replayWithNewEventId = await bookingAttributionStore.consumeConfirmedReservation({
     organizationId: orgAForPilot.rows[0].id,
+    provider: attributionProvider,
     reservationEvent: { ...confirmedReservation, eventId: `ATTR-EVENT-REPLAY-${tag}` },
   });
   assert.equal(replayWithNewEventId.status, "duplicate", "a second provider event for the same reservation must not create a second conversion");

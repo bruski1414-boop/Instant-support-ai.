@@ -31,3 +31,10 @@ test("demo page uses the isolated demo API and renders guest text safely", () =>
   assert.match(html, /bubble\.textContent=text/);
   assert.doesNotMatch(html, /localStorage|sessionStorage/);
 });
+
+
+test("demo page exposes quick prompts for the newly supported hotel FAQs", () => {
+  assert.match(html, /data-prompt="Is parking available\?">Parking/);
+  assert.match(html, /data-prompt="Is there wheelchair access\?">Accessibility/);
+  assert.match(html, /data-prompt="What is your cancellation policy\?">Cancellation policy/);
+});

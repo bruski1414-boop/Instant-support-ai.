@@ -4,6 +4,8 @@ import { createServer } from "node:http";
 import { randomUUID, randomBytes, scrypt as scryptCallback, createHash, createHmac } from "node:crypto";
 import { promisify } from "node:util";
 import pg from "pg";
+import storageSecurity from "../storage-security.js";
+const { createTokenCipher } = storageSecurity;
 const { Pool } = pg;
 
 if (process.env.CI !== "true" || process.env.VEYRA_TENANT_TEST_DATABASE !== "true") {
@@ -27,6 +29,8 @@ let child;
 let childOutput = "";
 let serverReady = false;
 const webhookSecret = "ci-webhook-secret-" + tag;
+const staffEncryptionKey = randomBytes(32).toString("base64");
+const staffCipher = createTokenCipher(staffEncryptionKey);
 const webhookRequests = [];
 let webhookResponseStatus = 200;
 let webhookDelayMs = 0;
@@ -128,7 +132,7 @@ async function seedConversation(tenant) {
   tenant.conversationId = conversation.rows[0].id;
   tenant.guestToken = randomBytes(32).toString("base64url");
   const guestTokenHash = createHash("sha256").update(tenant.guestToken).digest("hex");
-  await pool.query("UPDATE conversations SET guest_token_hash=$1 WHERE id=$2", [guestTokenHash, tenant.conversationId]);
+  await pool.query("UPDATE conversations SET guest_token_hash=$1,guest_token_expires_at=now()+interval '30 days' WHERE id=$2", [guestTokenHash, tenant.conversationId]);
   await pool.query(
     "INSERT INTO messages(conversation_id,role,content) VALUES($1,'guest',$2),($1,'assistant',$3)",
     [tenant.conversationId, tenant.message, "Synthetic automated reply for performance testing"],
@@ -206,8 +210,8 @@ try {
       PLATFORM_PROVISIONING_TOKEN: token,
       OPENAI_API_KEY: "ci-mock-api-key",
       OPENAI_BASE_URL: "http://127.0.0.1:" + mockAiPort + "/v1",
-      STAFF_WEBHOOK_URL: "http://127.0.0.1:" + mockWebhookPort + "/notify",
-      STAFF_WEBHOOK_SECRET: webhookSecret,
+      STAFF_WEBHOOK_ENCRYPTION_KEY: staffEncryptionKey,
+      STAFF_WEBHOOK_ALLOWED_HOSTS: "127.0.0.1",
       GUEST_DATA_STORAGE_ENABLED: "true",
       DURABLE_BACKUPS_VERIFIED: "true",
       TENANT_ISOLATION_TESTS_PASSED: "true",
@@ -226,6 +230,9 @@ try {
   for (const tenant of tenants) await provision(tenant);
 
   const orgAForPilot = await pool.query("SELECT id FROM organizations WHERE slug=$1", [tenants[0].slug]);
+  const orgBForPilot = await pool.query("SELECT id FROM organizations WHERE slug=$1", [tenants[1].slug]);
+  const staffWebhookUrl = "http://127.0.0.1:" + mockWebhookPort + "/notify";
+  await pool.query("INSERT INTO organization_staff_webhooks(organization_id,webhook_url,encrypted_secret,status) VALUES($1,$2,$3,'verified'),($4,$5,$6,'verified')", [orgAForPilot.rows[0].id, staffWebhookUrl, staffCipher.encrypt({ webhookSecret: webhookSecret + "-a" }), orgBForPilot.rows[0].id, staffWebhookUrl, staffCipher.encrypt({ webhookSecret: webhookSecret + "-b" })]);
   await pool.query("INSERT INTO organization_privacy_approvals(organization_id,policy_version,purpose_acknowledged,retention_acknowledged,backup_acknowledged,access_acknowledged,deletion_acknowledged,approved_by) SELECT $1,'2026-11-14-v1',true,true,true,true,true,id FROM users WHERE organization_id=$1 AND role='owner'", [orgAForPilot.rows[0].id]);
 
   // The real guest-chat route must remain closed until every pilot release gate is verified.
@@ -236,7 +243,7 @@ try {
   });
   assert.equal(gatedChat.status, 503, "guest chat must not start before this hotel's integrations are verified");
   const gatedChatBody = await gatedChat.json();
-  assert.match(gatedChatBody.error, /AI and staff notification integrations must be verified/i);
+  assert.match(gatedChatBody.error, /AI and its own staff notification endpoint must be verified/i);
   const tenantBWithoutApproval = await fetch(`${baseUrl}/api/public/${tenants[1].slug}/chat`, {
     method: "POST", headers: { "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true" },
     body: JSON.stringify({ message: "What time is breakfast?" }),
@@ -255,7 +262,6 @@ try {
 
   // Configure Beta independently: its own privacy approval, integration checks,
   // storage connection and approved knowledge must be required for its guest chat.
-  const orgBForPilot = await pool.query("SELECT id FROM organizations WHERE slug=$1", [tenants[1].slug]);
   await pool.query("INSERT INTO organization_privacy_approvals(organization_id,policy_version,purpose_acknowledged,retention_acknowledged,backup_acknowledged,access_acknowledged,deletion_acknowledged,approved_by) SELECT $1,'2026-11-14-v1',true,true,true,true,true,id FROM users WHERE organization_id=$1 AND role='owner'", [orgBForPilot.rows[0].id]);
   await pool.query("INSERT INTO organization_integration_checks(organization_id,integration,verified_at) VALUES($1,$2,now()),($1,$3,now())", [orgBForPilot.rows[0].id, "ai_provider", "staff_webhook"]);
   await pool.query("INSERT INTO organization_storage_connections(organization_id,provider,workspace_reference,root_folder_reference,status,connected_at,last_sync_at,last_sync_status,last_sync_error) VALUES($1,$2,$3,$4,$5,now(),now(),'success','')", [orgBForPilot.rows[0].id, "google_drive", "ci-workspace-b", "ci-folder-b", "connected"]);
@@ -413,7 +419,7 @@ try {
   assert.equal(guestEscalationBody.notificationDelivered, true);
   assert.equal(webhookRequests.length, 1, "the staff webhook must receive the escalation exactly once");
   const webhookRequest = webhookRequests[0];
-  const expectedSignature = createHmac("sha256", webhookSecret).update(webhookRequest.body).digest("hex");
+  const expectedSignature = createHmac("sha256", webhookSecret + "-a").update(webhookRequest.body).digest("hex");
   assert.equal(webhookRequest.signature, expectedSignature, "staff webhook payload must carry a valid HMAC signature");
   const webhookPayload = JSON.parse(webhookRequest.body);
   assert.equal(webhookPayload.event, "veyra.escalation.created");
@@ -439,7 +445,7 @@ try {
   assert.equal(guestEscalationBBody.notificationStatus, "delivered");
   assert.equal(webhookRequests.length, 2, "each hotel's escalation must produce exactly one staff notification");
   const webhookRequestB = webhookRequests[1];
-  const expectedSignatureB = createHmac("sha256", webhookSecret).update(webhookRequestB.body).digest("hex");
+  const expectedSignatureB = createHmac("sha256", webhookSecret + "-b").update(webhookRequestB.body).digest("hex");
   assert.equal(webhookRequestB.signature, expectedSignatureB, "Beta staff webhook payload must carry a valid HMAC signature");
   const webhookPayloadB = JSON.parse(webhookRequestB.body);
   assert.equal(webhookPayloadB.event, "veyra.escalation.created");
@@ -653,9 +659,33 @@ try {
   assert.equal(recoveredRecord.rows[0].notification_status, "delivered");
   assert.equal(recoveredRecord.rows[0].notification_attempts, 2, "recovering an abandoned claim must count the new attempt");
 
+  const staffReplyToGuestJourney = await fetch(baseUrl + "/api/admin/conversations/" + guestChatBody.conversationId + "/reply", {
+    method: "POST",
+    headers: { cookie: staffCookie, "X-CSRF-Token": staffCsrf, "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true" },
+    body: JSON.stringify({ message: "Our hotel team has received your question and will help shortly." }),
+  });
+  assert.equal(staffReplyToGuestJourney.status, 201, await staffReplyToGuestJourney.clone().text());
+  const staffReplyToGuestJourneyBody = await staffReplyToGuestJourney.json();
+  assert.equal(staffReplyToGuestJourneyBody.message.role, "staff");
+
   const guestStaffPoll = await fetch(baseUrl + "/api/public/" + tenants[0].slug + "/chat?conversationId=" + guestChatBody.conversationId, { headers: { "X-Veyra-Conversation-Token": guestChatBody.conversationToken } });
   assert.equal(guestStaffPoll.status, 200);
-  assert.deepEqual((await guestStaffPoll.json()).messages, []);
+  const guestStaffPollBody = await guestStaffPoll.json();
+  assert.ok(guestStaffPollBody.messages.some(message => message.id === staffReplyToGuestJourneyBody.message.id), "the guest polling endpoint must return the staff reply from the same guest conversation");
+
+  // Guest polling and message submission must both reject an expired token.
+  await pool.query("UPDATE conversations SET guest_token_expires_at=now()-interval '1 second' WHERE id=$1 AND organization_id=$2", [guestChatBody.conversationId, orgAForPilot.rows[0].id]);
+  const expiredGuestPoll = await fetch(baseUrl + "/api/public/" + tenants[0].slug + "/chat?conversationId=" + guestChatBody.conversationId, {
+    headers: { "X-Veyra-Conversation-Token": guestChatBody.conversationToken },
+  });
+  assert.equal(expiredGuestPoll.status, 404, "expired guest tokens must not read staff replies");
+  const expiredGuestMessage = await fetch(baseUrl + "/api/public/" + tenants[0].slug + "/chat", {
+    method: "POST",
+    headers: { "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true" },
+    body: JSON.stringify({ message: "Can you confirm breakfast?", conversationId: guestChatBody.conversationId, conversationToken: guestChatBody.conversationToken }),
+  });
+  assert.equal(expiredGuestMessage.status, 404, "expired guest tokens must not append messages");
+
   await pool.query("UPDATE organization_privacy_approvals SET revoked_at=now() WHERE organization_id=$1", [orgAForPilot.rows[0].id]);
   const chatAfterRevocation = await fetch(baseUrl + "/api/public/" + tenants[0].slug + "/chat", {
     method: "POST", headers: { "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true" },

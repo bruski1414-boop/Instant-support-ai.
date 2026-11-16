@@ -3,6 +3,7 @@ const assert = require("node:assert/strict");
 const net = require("node:net");
 const { spawn } = require("node:child_process");
 const fs = require("node:fs");
+const { applyExplicitStaffHandoff } = require("../staff-handoff");
 const vm = require("node:vm");
 let child;
 let baseUrl;
@@ -270,9 +271,30 @@ test("knowledge approval cannot use an expired review date and overdue documents
   assert.match(dashboard, /payload\.review_due_at=nextReview/);
 });
 
+test("guest staff-reply polling rejects expired conversation tokens", () => {
+  const server = fs.readFileSync("server.js", "utf8");
+  assert.match(server, /SELECT id FROM conversations WHERE id=\$1 AND organization_id=\$2 AND guest_token_hash=\$3 AND guest_token_expires_at>now\(\)/);
+});
+
+test("guest conversation token expiry is present in schema, creation and message writes", () => {
+  const server = fs.readFileSync("server.js", "utf8");
+  assert.match(server, /ALTER TABLE conversations ADD COLUMN IF NOT EXISTS guest_token_expires_at TIMESTAMPTZ/);
+  assert.match(server, /UPDATE conversations SET guest_token_expires_at=now\(\) WHERE guest_token_hash IS NOT NULL AND guest_token_expires_at IS NULL/);
+  assert.match(server, /guest_token_hash,guest_token_expires_at\) VALUES\(\$1,'website',\$2,\$3,now\(\)\+interval '30 days'\)/);
+  assert.match(server, /guest_token_hash=\$3 AND guest_token_expires_at>now\(\) FOR UPDATE/);
+});
+
+test("guest widget resets its session and polling when the server rejects an expired token", () => {
+  const widget = fs.readFileSync("widget.js", "utf8");
+  assert.match(widget, /response\.status===404/);
+  assert.match(widget, /conversationId=null;conversationToken=null/);
+  assert.match(widget, /stopPolling\(\)/);
+  assert.match(widget, /This chat session has expired/);
+});
 test("guest conversation writes lock and revalidate the tenant-owned conversation before appending messages", () => {
   const server = fs.readFileSync("server.js", "utf8");
-  assert.match(server, /SELECT id FROM conversations WHERE id=\$1 AND organization_id=\$2 AND guest_token_hash=\$3 FOR UPDATE/);
+  assert.match(server, /SELECT id FROM conversations WHERE id=\$1 AND organization_id=\$2 AND guest_token_hash=\$3 AND guest_token_expires_at>now\(\)"/);
+  assert.match(server, /SELECT id FROM conversations WHERE id=\$1 AND organization_id=\$2 AND guest_token_hash=\$3 AND guest_token_expires_at>now\(\) FOR UPDATE/);
   assert.match(server, /UPDATE conversations SET last_message_at=now\(\),status=CASE WHEN \$2 THEN 'escalated' WHEN status='resolved' THEN 'open' ELSE status END WHERE id=\$1 AND organization_id=\$3/);
 });
 
@@ -292,9 +314,11 @@ test("failed staff notifications are retried at most twice after the initial att
   const dashboard = fs.readFileSync("dashboard.html", "utf8");
   assert.match(server, /notification_status,notification_attempts FROM escalations/);
   assert.match(server, /shouldRetryStaffNotification\(/);
-  assert.match(server, /notification_attempts=notification_attempts\+1/);
-  assert.match(server, /notification_status='sending'/);
-  assert.match(server, /notification_last_attempt_at<now\(\)-interval '2 minutes'/);
+  // The atomic claim and lease now live in the dedicated dispatcher module.
+  assert.match(notifications, /notification_attempts=notification_attempts\+1/);
+  assert.match(notifications, /notification_status='sending'/);
+  assert.match(notifications, /notification_last_attempt_at<now\(\)-interval '2 minutes'/);
+  assert.match(server, /dispatchStaffNotification\(/);
   assert.match(notifications, /Number\(notificationAttempts\) < 3/);
   assert.match(dashboard, /Attempts: .*notification_attempts/);
   assert.match(dashboard, /notification_last_attempt_at/);
@@ -308,22 +332,21 @@ test("hotel website origins are allowed dynamically from each tenant's saved HTT
   assert.match(server, /u\.protocol==="https:"&&u\.origin===p\.website_url/);
 });
 
-test("public guest chat requires fresh tenant-specific AI, staff and storage verification", () => {
+test("FAQ-only public guest chat requires fresh tenant-specific AI and staff verification, not cloud document import", () => {
   const server = fs.readFileSync("server.js", "utf8");
+  assert.match(server, /buildFaqPilotReadiness\(releaseGate\.checks\)/);
   assert.match(server, /verified_at>now\(\)-interval '30 days'/);
   assert.match(server, /verifiedForHotel\.has\("ai_provider"\)/);
   assert.match(server, /verifiedForHotel\.has\("staff_webhook"\)/);
-  assert.match(server, /FROM organization_storage_connections WHERE organization_id=\$1 AND status='connected' AND connected_at IS NOT NULL AND last_sync_at IS NOT NULL AND last_sync_status='success' AND last_sync_error=''/);
-  assert.match(server, /This hotel's AI and staff notification integrations must be verified/);
-  assert.match(server, /This hotel must authorize its own storage provider and complete a successful sync/);
+  assert.match(server, /This hotel's AI and its own staff notification endpoint must be verified/);
+  assert.doesNotMatch(server, /This hotel must authorize its own storage provider and complete a successful sync/);
+  assert.match(server, /Optional cloud document import/);
 });
 
-test("onboarding readiness requires verified storage authorization, a successful sync and separate hotel privacy approval", () => {
+test("onboarding keeps cloud document import optional while retaining separate hotel privacy approval", () => {
   const server = fs.readFileSync("server.js", "utf8");
-  assert.match(server, /last_sync_status,last_sync_error FROM organization_storage_connections/);
-  assert.match(server, /Boolean\(storage\.rows\[0\]\.connected_at\)/);
-  assert.match(server, /Boolean\(storage\.rows\[0\]\.last_sync_at\)/);
-  assert.match(server, /storage\.rows\[0\]\.last_sync_status==="success"/);
+  assert.match(server, /Optional cloud document import/);
+  assert.match(server, /Optional cloud document import verification/);
   assert.match(server, /Hotel privacy and retention approval/);
   assert.match(server, /No current hotel owner\/admin privacy acknowledgement is recorded/);
   assert.match(server, /CREATE TABLE IF NOT EXISTS organization_privacy_approvals/);
@@ -339,7 +362,15 @@ test("AI and staff integrations require live verification before onboarding mark
   assert.match(server, /ai\.models\.retrieve\(MODEL/);
   assert.match(server, /veyra\.integration\.test/);
   assert.match(server, /verified_at,verified_by/);
-  assert.match(server, /handoffVerified=Boolean\(handoffConfigured&&verified\.staff_webhook\)/);
+  assert.match(server, /staffWebhookStatus=await staffWebhookStore\.getStatus\(q\.actor\.organization_id\)/);
+  assert.match(server, /organization_staff_webhooks/);
+  assert.match(server, /createStaffWebhookStore/);
+  assert.match(server, /STAFF_WEBHOOK_ENCRYPTION_KEY/);
+  assert.match(server, /STAFF_WEBHOOK_ALLOWED_HOSTS/);
+  assert.match(server, /staffWebhookStore\.resolve\(org\.id\)/);
+  assert.match(server, /staffWebhookStatus\.verified/);
+  assert.match(server, /app\.put\("\/api\/admin\/staff-webhook"/);
+  assert.match(server, /app\.delete\("\/api\/admin\/staff-webhook"/);
 });
 
 
@@ -445,6 +476,47 @@ test("unsupported numeric AI claims are replaced with a staff-confirmation hando
   assert.match(server, /answer\.needsHuman=true/);
 });
 
+test("unsupported factual terms and contact details receive distinct handoff reasons", () => {
+  const server = fs.readFileSync("server.js", "utf8");
+  assert.match(server, /Generated answer contained factual terms not supported by approved hotel information/);
+  assert.match(server, /Generated answer contained an email address or website link not present in approved information/);
+  assert.match(server, /unsupportedClaimTerms:groundingCheck\.unsupportedClaimTerms\|\|\[\]/);
+});
+
+test("a deliberate AI staff handoff is preserved without running answer grounding", () => {
+  const server = fs.readFileSync("server.js", "utf8");
+  assert.match(server, /if\(retrieval\.matched&&answer\.needsHuman\)\{groundingCheck=\{supported:false,reason:"staff_handoff"/);
+});
+
+test("an explicit request for staff replaces an ordinary answer with a clear handoff", () => {
+  const answer = { reply: "Certainly, I can help with that.", needsHuman: false };
+  const result = applyExplicitStaffHandoff(answer, true);
+  assert.equal(result, answer);
+  assert.equal(result.reply, "Of course. I’ll pass your request to the hotel team so a member of staff can assist you.");
+  assert.equal(result.needsHuman, true);
+  assert.equal(result.handoffReason, "Guest explicitly requested staff assistance or raised an issue requiring human review.");
+});
+
+test("explicit staff handoff preserves an existing deliberate handoff", () => {
+  const answer = { reply: "I’ll ask the hotel team to confirm.", needsHuman: true, handoffReason: "Unverified booking detail." };
+  assert.equal(applyExplicitStaffHandoff(answer, true), answer);
+  assert.equal(answer.reply, "I’ll ask the hotel team to confirm.");
+  assert.equal(answer.handoffReason, "Unverified booking detail.");
+});
+
+test("ordinary guest answers are unchanged when staff escalation is not required", () => {
+  const answer = { reply: "Breakfast is served from 6:30 AM.", needsHuman: false };
+  assert.equal(applyExplicitStaffHandoff(answer, false), answer);
+  assert.equal(answer.reply, "Breakfast is served from 6:30 AM.");
+  assert.equal(answer.needsHuman, false);
+});
+
+test("the guest chat route applies the tested staff handoff helper", () => {
+  const server = fs.readFileSync("server.js", "utf8");
+  assert.match(server, /applyExplicitStaffHandoff\(answer,flag\)/);
+});
+
+
 
 test("conversation evidence is tenant-scoped and exposes approved source provenance to managers", () => {
   const server = fs.readFileSync("server.js", "utf8");
@@ -511,3 +583,16 @@ test("live hotel guest chat remains blocked when its database and pilot prerequi
   assert.notEqual(body.mode, "demo-simulation");
 });
 
+
+
+test("staff webhook setup is per-hotel and never displays saved signing secrets", () => {
+  const dashboard = fs.readFileSync("dashboard.html", "utf8");
+  assert.match(dashboard, /id="staffWebhookConfigCard"/);
+  assert.match(dashboard, /id="staffWebhookUrl"/);
+  assert.match(dashboard, /id="staffWebhookSecret"/);
+  assert.match(dashboard, /api\("\/api\/admin\/staff-webhook"/);
+  assert.match(dashboard, /method:"PUT"/);
+  assert.match(dashboard, /method:"DELETE"/);
+  assert.match(dashboard, /STAFF_WEBHOOK_ALLOWED_HOSTS/);
+  assert.match(dashboard, /Secrets are encrypted on the server and never shown again/);
+});

@@ -46,6 +46,13 @@ test("demo HTTP routes return isolated synthetic data and safe handoffs", async 
       OPENAI_API_KEY: "",
       STAFF_WEBHOOK_URL: "",
       STAFF_WEBHOOK_SECRET: "",
+      GUEST_DATA_STORAGE_ENABLED: "false",
+      DURABLE_BACKUPS_VERIFIED: "false",
+      TENANT_ISOLATION_TESTS_PASSED: "false",
+      PROVIDER_OAUTH_TESTED: "false",
+      HOTEL_PRIVACY_APPROVED: "false",
+      STAFF_HANDOFF_TESTED: "false",
+      PILOT_RELEASE_APPROVED: "false",
       ALLOWED_ORIGINS: "http://localhost:3000,http://127.0.0.1:3000"
     },
     stdio: ["ignore", "ignore", "pipe"]
@@ -64,6 +71,21 @@ test("demo HTTP routes return isolated synthetic data and safe handoffs", async 
   });
 
   await waitForDemo();
+
+  const healthResponse = await fetch(baseUrl + "/api/health");
+  assert.equal(healthResponse.status, 200);
+  const health = await healthResponse.json();
+  assert.equal(health.status, "degraded");
+  assert.equal(health.mode, "demo-no-api-key");
+  assert.equal(health.readyForPilot, false);
+  assert.equal(health.checks.aiConfigured, false);
+
+  const readinessResponse = await fetch(baseUrl + "/api/readiness");
+  assert.equal(readinessResponse.status, 503);
+  const readiness = await readinessResponse.json();
+  assert.equal(readiness.status, "not-ready");
+  assert.equal(readiness.readyForPilot, false);
+  assert.equal(Object.values(readiness.checks).every(value => value === false), true);
 
   const page = await fetch(baseUrl + "/demo");
   assert.equal(page.status, 200);

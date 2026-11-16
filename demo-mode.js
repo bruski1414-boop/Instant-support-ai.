@@ -7,7 +7,10 @@ const DEMO_HOTEL = Object.freeze({
   checkOut: "11:00 AM",
   breakfast: "6:30 AM–10:30 AM",
   pool: "7:00 AM–9:00 PM",
-  wifi: "The complimentary Wi-Fi network is Aster-Guest. Reception provides the access code at check-in."
+  wifi: "The complimentary Wi-Fi network is Aster-Guest. Reception provides the access code at check-in.",
+  parking: "Complimentary on-site guest parking is available in the hotel car park.",
+  accessibility: "Step-free access is available at the main entrance. Please contact reception about specific room requirements.",
+  cancellation: "Cancellation terms depend on the rate selected. The cancellation deadline is shown in the booking confirmation."
 });
 
 const SAMPLE_STAY = Object.freeze({
@@ -47,6 +50,17 @@ function parseDate(value) {
   return time;
 }
 
+function answer(reply) {
+  return Object.freeze({
+    reply,
+    needsHuman: false,
+    handoffStatus: "not_required",
+    handoffReason: "",
+    mode: "demo-simulation",
+    demoOnly: true
+  });
+}
+
 function handoff(reply, reason) {
   return Object.freeze({
     reply,
@@ -65,10 +79,18 @@ function respondToDemoMessage(input, stay = {}) {
   if (/\b(allerg|allergic|medical|injur|emergency|unsafe|harass|discriminat)\b/.test(text)) {
     return handoff("I’m flagging this for the hotel team in this demonstration. For an urgent safety or medical issue, please contact hotel staff or local emergency services directly.", "Sensitive or safety-related request.");
   }
-  if (/\b(refund|charged twice|payment failed|billing dispute|cancel(?:lation)?|change my booking|modify my reservation|book me|make a reservation|reserve me)\b/.test(text)) {
+
+  // Informational policy questions must not be confused with requests to cancel
+  // or change an actual reservation.
+  if (/\b(cancellation policy|cancel(?:lation)? terms|cancel(?:lation)? fee|how (?:do|can) i cancel)\b/.test(text)) {
+    return answer(DEMO_HOTEL.cancellation + " This is sample policy information; your booking confirmation controls your actual terms.");
+  }
+
+  if (/\b(refund|charged twice|payment failed|billing dispute|cancel my (?:booking|reservation)|cancel (?:the |my )?(?:booking|reservation)|change my booking|modify my reservation|book me|make a reservation|reserve me)\b/.test(text)) {
     return handoff("A hotel team member needs to handle that request in the booking system. In this demo, the handoff is shown on screen only; no real staff member is notified.", "Booking or payment action requires hotel staff.");
   }
-  if (/\b(room|rooms|availability|available|vacancy)\b/.test(text) && /\b(check|available|availability|have|need|looking)\b/.test(text)) {
+
+  if (/\b(room|rooms|availability|vacancy)\b/.test(text) && /\b(check|available|availability|have|need|looking)\b/.test(text)) {
     const arrival = parseDate(stay.arrivalDate);
     const departure = parseDate(stay.departureDate);
     const sampleStart = parseDate(SAMPLE_STAY.arrivalDate);
@@ -83,23 +105,22 @@ function respondToDemoMessage(input, stay = {}) {
       const count = Math.min(...room.nightlyAvailability);
       return count > 0 ? room.name + ": " + count + " sample room(s) available for each night." : room.name + ": no sample rooms available for the full stay.";
     });
-    return Object.freeze({
-      reply: "For 10–12 December 2026, the demonstration inventory shows: " + lines.join(" ") + " This is simulated data only, not live hotel availability or a reservation.",
-      needsHuman: false,
-      handoffStatus: "not_required",
-      handoffReason: "",
-      mode: "demo-simulation",
-      demoOnly: true
-    });
+    return answer("For 10–12 December 2026, the demonstration inventory shows: " + lines.join(" ") + " This is simulated data only, not live hotel availability or a reservation.");
   }
-  if (/\b(check.?in|arrival time)\b/.test(text)) return Object.freeze({ reply: "Check-in at Aster House Hotel begins at 3:00 PM. This is approved sample hotel information in the demo.", needsHuman: false, handoffStatus: "not_required", handoffReason: "", mode: "demo-simulation", demoOnly: true });
-  if (/\b(check.?out|departure time)\b/.test(text)) return Object.freeze({ reply: "Check-out is by 11:00 AM. If you need a later departure, I can flag a request for the hotel team; it is subject to confirmation.", needsHuman: false, handoffStatus: "not_required", handoffReason: "", mode: "demo-simulation", demoOnly: true });
-  if (/\b(breakfast|morning meal)\b/.test(text)) return Object.freeze({ reply: "Breakfast is served from 6:30 AM to 10:30 AM in the Garden Dining Room.", needsHuman: false, handoffStatus: "not_required", handoffReason: "", mode: "demo-simulation", demoOnly: true });
-  if (/\b(pool|swimming)\b/.test(text)) return Object.freeze({ reply: "The pool is open daily from 7:00 AM to 9:00 PM in this sample hotel profile.", needsHuman: false, handoffStatus: "not_required", handoffReason: "", mode: "demo-simulation", demoOnly: true });
-  if (/\b(wi.?fi|internet|password)\b/.test(text)) return Object.freeze({ reply: DEMO_HOTEL.wifi, needsHuman: false, handoffStatus: "not_required", handoffReason: "", mode: "demo-simulation", demoOnly: true });
+
+  if (/\b(early check.?in|check.?in early|arrive early|arriving before check.?in)\b/.test(text)) return handoff("Early check-in depends on room readiness. I would send this request to the hotel team for confirmation; no request is actually sent in this demo.", "Early check-in requires staff confirmation.");
+  if (/\b(late check.?out|check.?out late|check.?out later|later departure|leave later|extend (?:my )?check.?out)\b/.test(text)) return handoff("Late check-out depends on availability and hotel approval. I would send this request to the hotel team for confirmation; no request is actually sent in this demo.", "Late check-out requires staff confirmation.");
+  if (/\b(breakfast|morning meal)\b/.test(text) && /\b(included|free|complimentary|part of (?:my )?booking)\b/.test(text)) return handoff("Breakfast inclusion depends on the rate you booked. Please check your confirmation or ask the hotel team to verify your reservation; this demo cannot access booking details.", "Breakfast inclusion depends on the guest booking.");
+  if (/\b(check.?in|arrival time)\b/.test(text)) return answer("Check-in at Aster House Hotel begins at 3:00 PM. This is approved sample hotel information in the demo.");
+  if (/\b(check.?out|departure time)\b/.test(text)) return answer("Check-out is by 11:00 AM.");
+  if (/\b(breakfast|morning meal)\b/.test(text)) return answer("Breakfast is served from 6:30 AM to 10:30 AM in the Garden Dining Room.");
+  if (/\b(pool|swimming)\b/.test(text)) return answer("The pool is open daily from 7:00 AM to 9:00 PM in this sample hotel profile.");
+  if (/\b(wi.?fi|internet|password)\b/.test(text)) return answer(DEMO_HOTEL.wifi);
+  if (/\b(parking|car park)\b/.test(text)) return answer(DEMO_HOTEL.parking);
+  if (/\b(accessib|wheelchair|step.?free|mobility)\b/.test(text)) return answer(DEMO_HOTEL.accessibility);
   if (/\b(airport|transfer|taxi|transport)\b/.test(text)) return handoff("Airport transfers can be requested through reception. A team member would need to confirm the vehicle, price and timing; none are booked in this demo.", "Transport arrangement needs staff confirmation.");
   if (/\b(human|real person|staff|reception|front desk|manager|concierge)\b/.test(text)) return handoff("I’ve added a simulated handoff to the on-screen staff queue. No real hotel employee has been contacted.", "Guest requested hotel staff.");
-  if (/\b(hello|hi|hey|good morning|good afternoon)\b/.test(text)) return Object.freeze({ reply: "Hello and welcome to Aster House Hotel! I can help with hotel information, or demonstrate a sample room-availability check.", needsHuman: false, handoffStatus: "not_required", handoffReason: "", mode: "demo-simulation", demoOnly: true });
+  if (/\b(hello|hi|hey|good morning|good afternoon)\b/.test(text)) return answer("Hello and welcome to Aster House Hotel! I can help with hotel information, or demonstrate a sample room-availability check.");
   return handoff("I don’t have an approved answer for that in this sample hotel knowledge base, so I’d send it to the hotel team rather than guess. The handoff shown here is simulated only.", "No approved answer found in demo knowledge.");
 }
 

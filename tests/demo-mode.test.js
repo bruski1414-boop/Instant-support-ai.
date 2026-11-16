@@ -18,6 +18,30 @@ test("answers common hotel questions from the demo knowledge base", () => {
   assert.match(respondToDemoMessage("When is breakfast?").reply, /6:30 AM to 10:30 AM/);
   assert.match(respondToDemoMessage("Is the pool open?").reply, /7:00 AM to 9:00 PM/);
   assert.match(respondToDemoMessage("What is the Wi-Fi password?").reply, /Aster-Guest/);
+  assert.match(respondToDemoMessage("Is parking available?").reply, /Complimentary on-site guest parking/);
+  assert.match(respondToDemoMessage("Is there wheelchair access?").reply, /Step-free access/);
+});
+
+test("early arrival, late departure and breakfast inclusion require staff confirmation", () => {
+  for (const question of [
+    "Can I check in early?",
+    "Can I have a late check-out?",
+    "Is breakfast included in my booking?"
+  ]) {
+    const result = respondToDemoMessage(question);
+    assert.equal(result.needsHuman, true, question);
+    assert.equal(result.handoffStatus, "demo_queue_only", question);
+    assert.match(result.reply, /hotel team|hotel approval|confirmation/i, question);
+  }
+});
+
+test("cancellation policy questions are answered, while cancelling a real booking is handed off", () => {
+  const policy = respondToDemoMessage("What is your cancellation policy?");
+  assert.equal(policy.needsHuman, false);
+  assert.match(policy.reply, /terms depend on the rate selected/);
+  const action = respondToDemoMessage("Please cancel my reservation.");
+  assert.equal(action.needsHuman, true);
+  assert.equal(action.handoffStatus, "demo_queue_only");
 });
 
 test("full-stay sample availability uses the minimum inventory across each night", () => {

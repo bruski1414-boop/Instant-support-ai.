@@ -32,12 +32,17 @@ function isoDate(value, field) {
 }
 
 function isoTimestamp(value, field) {
-  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?Z$/.test(value)) {
+  if (typeof value !== "string" || !/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?Z$/.test(value)) {
     throw new Error(field + " must be an ISO-8601 UTC timestamp.");
   }
   const time = Date.parse(value);
   if (!Number.isFinite(time)) throw new Error(field + " must be a valid timestamp.");
-  return new Date(time).toISOString();
+  const canonicalInput = value.includes(".")
+    ? value.replace(/\\.(\\d{1,3})Z$/, (_, ms) => "." + ms.padEnd(3, "0") + "Z")
+    : value.replace(/Z$/, ".000Z");
+  const canonicalTime = new Date(time).toISOString();
+  if (canonicalTime !== canonicalInput) throw new Error(field + " must be a valid calendar timestamp.");
+  return canonicalTime;
 }
 
 function normalizeReservationEvent(input) {
@@ -77,16 +82,20 @@ function normalizeReservationEvent(input) {
   return Object.freeze(event);
 }
 
-function normalizeAvailabilitySnapshot(input) {
+function normalizeAvailabilitySnapshot(input, now = Date.now()) {
   if (!input || typeof input !== "object" || Array.isArray(input)) {
     throw new Error("PMS availability snapshot must be an object.");
   }
   const observedAt = isoTimestamp(input.observedAt, "observedAt");
   const validUntil = isoTimestamp(input.validUntil, "validUntil");
-  if (Date.parse(validUntil) <= Date.parse(observedAt)) {
+  const observedTime = Date.parse(observedAt);
+  const validUntilTime = Date.parse(validUntil);
+  if (observedTime > now) throw new Error("observedAt cannot be in the future.");
+  if (validUntilTime <= observedTime) {
     throw new Error("validUntil must be later than observedAt.");
   }
-  if (Date.parse(validUntil) - Date.parse(observedAt) > 15 * 60 * 1000) {
+  if (validUntilTime <= now) throw new Error("Availability snapshot has expired.");
+  if (validUntilTime - observedTime > 15 * 60 * 1000) {
     throw new Error("Availability snapshots cannot be considered valid for more than 15 minutes.");
   }
   const arrivalDate = isoDate(input.arrivalDate, "arrivalDate");

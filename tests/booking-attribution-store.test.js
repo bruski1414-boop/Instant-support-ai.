@@ -53,7 +53,7 @@ function createMemoryPool() {
         return { rowCount: 1, rows: [] };
       }
       if (statement.startsWith("INSERT INTO audit_logs")) {
-        state.audits.push({ action: params[2], target_id: params[4] });
+        state.audits.push({ action: statement.includes("booking_attribution.intent_issued") ? "booking_attribution.intent_issued" : "booking_attribution.reservation_matched", target_id: params[1] });
         return { rowCount: 1, rows: [] };
       }
       throw new Error("Unexpected SQL in memory test pool: " + statement);

@@ -10,7 +10,7 @@ function event(overrides = {}) {
   reservationId:"reservation-22", grossAmountMinor:12500, adjustmentAmountMinor:2500,
   amountMinor:10000, currency:"EUR", occurredAt:"2026-11-16T09:00:00.000Z",
   evidence:{billType:"Receipt",chargedPaymentIds:["payment-1"],adjustmentReferences:["refund-1"]},
-  adjustments:[{type:"refund",amountMinor:2500,currency:"EUR",occurredAt:"2026-11-16T10:00:00.000Z"}],
+  adjustments:[{externalReference:"refund-1",type:"refund",amountMinor:2500,currency:"EUR",occurredAt:"2026-11-16T10:00:00.000Z"}],
   ...overrides
  };
 }

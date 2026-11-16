@@ -84,6 +84,14 @@ const schema=[
 "CREATE INDEX IF NOT EXISTS booking_attribution_matches_org_date_idx ON booking_attribution_matches(organization_id,occurred_at DESC)",
  "CREATE TABLE IF NOT EXISTS mews_webhook_inbox(id UUID PRIMARY KEY DEFAULT gen_random_uuid(),organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,integration_id TEXT NOT NULL CHECK(length(integration_id) BETWEEN 1 AND 80),enterprise_id TEXT NOT NULL CHECK(length(enterprise_id) BETWEEN 1 AND 80),discriminator TEXT NOT NULL CHECK(discriminator='ServiceOrderUpdated'),entity_id TEXT NOT NULL CHECK(length(entity_id) BETWEEN 1 AND 80),received_at TIMESTAMPTZ NOT NULL DEFAULT now(),processed_at TIMESTAMPTZ,status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','processed','failed')),attempt_count INTEGER NOT NULL DEFAULT 0 CHECK(attempt_count>=0),last_error TEXT NOT NULL DEFAULT '')",
  "CREATE INDEX IF NOT EXISTS mews_webhook_inbox_pending_idx ON mews_webhook_inbox(status,received_at) WHERE status='pending'",
+ "ALTER TABLE mews_webhook_inbox DROP CONSTRAINT IF EXISTS mews_webhook_inbox_status_check",
+ "ALTER TABLE mews_webhook_inbox ADD CONSTRAINT mews_webhook_inbox_status_check CHECK(status IN ('pending','processing','processed','failed'))",
+ "ALTER TABLE mews_webhook_inbox ADD COLUMN IF NOT EXISTS next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT now()",
+ "ALTER TABLE mews_webhook_inbox ADD COLUMN IF NOT EXISTS lease_expires_at TIMESTAMPTZ",
+ "CREATE INDEX IF NOT EXISTS mews_webhook_inbox_claim_idx ON mews_webhook_inbox(status,next_attempt_at,received_at)",
+ "CREATE TABLE IF NOT EXISTS mews_reservation_snapshots(id UUID PRIMARY KEY DEFAULT gen_random_uuid(),organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,enterprise_id TEXT NOT NULL,reservation_id TEXT NOT NULL,service_id TEXT NOT NULL,state TEXT NOT NULL CHECK(state IN ('Inquired','Confirmed','Started','Processed','Canceled','Optional','Requested')),scheduled_start_utc TIMESTAMPTZ NOT NULL,scheduled_end_utc TIMESTAMPTZ NOT NULL,provider_updated_utc TIMESTAMPTZ NOT NULL,fetched_at TIMESTAMPTZ NOT NULL DEFAULT now(),CHECK(scheduled_end_utc>scheduled_start_utc),UNIQUE(organization_id,reservation_id))",
+ "CREATE INDEX IF NOT EXISTS mews_reservation_snapshots_org_updated_idx ON mews_reservation_snapshots(organization_id,provider_updated_utc DESC)",
+
 
 "CREATE TABLE IF NOT EXISTS messages(id UUID PRIMARY KEY DEFAULT gen_random_uuid(),conversation_id UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,role TEXT NOT NULL CHECK(role IN ('guest','assistant','staff')),content TEXT NOT NULL,evidence JSONB NOT NULL DEFAULT '[]'::jsonb,created_at TIMESTAMPTZ NOT NULL DEFAULT now())",
 "ALTER TABLE messages ADD COLUMN IF NOT EXISTS evidence JSONB NOT NULL DEFAULT '[]'::jsonb",

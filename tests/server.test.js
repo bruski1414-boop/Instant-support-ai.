@@ -275,7 +275,7 @@ test("guest staff-reply polling rejects expired conversation tokens", () => {
   const server = fs.readFileSync("server.js", "utf8");
   assert.match(server, /SELECT id FROM conversations WHERE id=\$1 AND organization_id=\$2 AND guest_token_hash=\$3 AND guest_token_expires_at>now\(\)/);
 });
-\ntest("guest conversation writes lock and revalidate the tenant-owned conversation before appending messages", () => {
+test("guest conversation writes lock and revalidate the tenant-owned conversation before appending messages", () => {
   const server = fs.readFileSync("server.js", "utf8");
   assert.match(server, /SELECT id FROM conversations WHERE id=\$1 AND organization_id=\$2 AND guest_token_hash=\$3 FOR UPDATE/);
   assert.match(server, /UPDATE conversations SET last_message_at=now\(\),status=CASE WHEN \$2 THEN 'escalated' WHEN status='resolved' THEN 'open' ELSE status END WHERE id=\$1 AND organization_id=\$3/);

@@ -3,7 +3,9 @@ const assert = require("node:assert/strict");
 const {
   normalizeGuestConversationAccess,
   normalizeStaffReply,
-  canReplyToConversation
+  canReplyToConversation,
+  isGuestConversationTokenActive,
+  GUEST_TOKEN_TTL_DAYS
 } = require("../guest-messaging");
 
 test("validates guest conversation access without exposing or transforming the token", () => {
@@ -32,4 +34,13 @@ test("resolved conversations cannot receive a staff reply", () => {
   assert.equal(canReplyToConversation("open"), true);
   assert.equal(canReplyToConversation("escalated"), true);
   assert.equal(canReplyToConversation("resolved"), false);
+});
+
+test("guest conversation tokens expire after the configured 30-day lifetime", () => {
+  const now = Date.parse("2026-11-16T00:00:00.000Z");
+  assert.equal(GUEST_TOKEN_TTL_DAYS, 30);
+  assert.equal(isGuestConversationTokenActive("2026-12-16T00:00:00.000Z", now), true);
+  assert.equal(isGuestConversationTokenActive("2026-11-15T23:59:59.000Z", now), false);
+  assert.equal(isGuestConversationTokenActive("not-a-date", now), false);
+  assert.equal(isGuestConversationTokenActive(null, now), false);
 });

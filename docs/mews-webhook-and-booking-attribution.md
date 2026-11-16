@@ -45,7 +45,7 @@ The worker code is implemented but has not been deployed or run against a real d
 
 ## Explicitly not yet implemented
 
-- The inbox receiver itself remains queue-only; the separate opt-in worker in this branch claims inbox rows, fetches reservation state, retries failures and marks events processed. The worker has not yet been run against real infrastructure.
+- The webhook receiver remains queue-only; the separate opt-in worker in this branch claims inbox rows, fetches reservation state, retries failures and marks events processed. The worker has not yet been run against real infrastructure.
 - No provider-specific Mews reservation metadata field for the Veyra attribution token is documented in the current public Reservation contract. The token therefore cannot currently be matched to a Mews reservation through a supported private metadata field.
 - Do not put the token into Mews guest-visible notes, `OriginDetails`, `ChannelNumber`, or another operational field as a workaround.
 - No booking is attributed by the webhook receiver. It only queues a reservation entity reference.

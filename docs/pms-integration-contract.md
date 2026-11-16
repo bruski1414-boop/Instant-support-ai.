@@ -35,7 +35,7 @@ The canonical reservation event may include an optional `attributionToken`. It m
 5. Persist token consumption, the provider name, provider event ID, reservation ID and conversation link in one database transaction. Enforce uniqueness on the tenant/provider/event ID so retries and replays cannot create duplicate conversions.
 6. If a valid source amount and currency are present, expose them as **booking value**, not cash collected. Missing amounts stay missing; a confirmed reservation must never be converted into an invented revenue amount.
 
-The current implementation is deliberately limited to the pure model and synthetic fixture. It does not yet issue tokens from guest chat, persist/consume them, write to the revenue ledger, or map any live provider. The read-only Mews demo client does not currently supply this token. No provider-correlated conversion metric is available yet.
+The current implementation now includes a PostgreSQL persistence service and synthetic tenant-isolation tests. It stores token hashes only, validates the conversation's hotel workspace, locks and consumes an intent in the same transaction as the match and audit record, and enforces unique provider event/reservation IDs. Conversation deletion detaches the link so a deleted transcript cannot remain attributed. However, the service is not yet wired to guest chat or an authenticated provider event route, does not write to the revenue ledger, and has no provider-specific metadata mapping. The read-only Mews demo client does not currently supply this token. No live provider-correlated conversion metric is available yet.
 
 ## Availability snapshot
 
@@ -53,3 +53,17 @@ Before connecting a real provider:
 7. Run sandbox and two-hotel isolation tests before any supervised pilot.
 
 No PMS credentials, guest data, or live provider calls are used by this foundation.
+
+## Mews Connector API discovery (checked 2026-11-16)
+
+Official documentation reviewed before selecting any Mews correlation field:
+
+- The current [Reservations operation](https://docs.mews.com/connector-api/operations/reservations) documents the 2023-06-06 Reservation object, including its state and origin fields, but does not document a reservation-level `ExternalIdentifier` or dedicated custom metadata field. Do not repurpose `OriginDetails`, `ChannelNumber` or other operational fields as a Veyra token.
+- Mews exposes [Service order notes](https://docs.mews.com/connector-api/operations/serviceordernotes) that can be added to and retrieved from a reservation or product order. These are ordinary notes, not a documented private integration-metadata field. A note-based token is only a candidate if the hotel explicitly approves its operational visibility and retention and the behaviour is verified in a sandbox; it is not enabled by this contract.
+- [General Webhooks](https://docs.mews.com/connector-api/events/wh-general) identify the enterprise/integration and affected entity; the integration must retrieve entity details through the relevant API operation and must deduplicate webhook deliveries.
+- For Veyra-created add-on orders, [Add order](https://docs.mews.com/connector-api/operations/orders) supports `LinkedReservationId`; product-order and order-item parameters expose `ExternalIdentifier`. [Get all order items](https://docs.mews.com/connector-api/operations/orderitems) returns item amounts, bill references, accounting state and external identifiers. This is a plausible documented correlation path for add-ons created by Veyra, subject to hotel-authorised write scopes and sandbox validation.
+- `AccountingState=Closed` is not by itself proof of payment: Mews defines it as an item closed on a bill or invoice. [Bills](https://docs.mews.com/connector-api/operations/bills) distinguish a `Receipt` (paid in full) from an `Invoice` (not paid in full), while [Payments](https://docs.mews.com/connector-api/operations/payments) expose states such as `Charged`, `Pending`, `Canceled` and `Failed`. Paid add-on reporting must reconcile item, bill, payment, refunds/rebates and currency rather than treating a closed item as cash received.
+- Mews' [accounting integration guidance](https://docs.mews.com/connector-api/use-cases/accounting) notes that accounting items are posted to guest profiles; only stay products are inherently related back to a reservation by `OrderId`. Other service products must not be assumed to carry a reservation link unless Veyra explicitly creates the order with `LinkedReservationId`.
+
+**Current blocker:** the public reservation contract does not establish a dedicated field for Veyra's booking-enquiry token. No Mews credential, sandbox property or hotel approval is available in this work. Do not implement a live reservation correlation mapping until the hotel approves a documented note-based alternative or Mews confirms a supported reservation metadata field. The add-on order path can be prototyped separately with synthetic data, but must remain read-only until write scopes and reconciliation semantics are approved.
+

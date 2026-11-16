@@ -7,6 +7,7 @@ import pg from "pg";
 import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 const { encryptSecret } = require("../staff-notifications");
+const { createBookingAttributionStore } = require("../booking-attribution-store");
 const { Pool } = pg;
 
 if (process.env.CI !== "true" || process.env.VEYRA_TENANT_TEST_DATABASE !== "true") {
@@ -18,6 +19,7 @@ const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: process.env.DATABASE_SSL === "false" ? false : undefined,
 });
+const bookingAttributionStore = createBookingAttributionStore({ pool });
 const tag = randomUUID().replace(/-/g, "").slice(0, 10);
 const port = 31000 + Math.floor(Math.random() * 20000);
 const baseUrl = `http://127.0.0.1:${port}`;
@@ -274,6 +276,114 @@ try {
   const [cookieA, cookieB] = await Promise.all(tenants.map(login));
   const staffCookie = await login(await seedStaff(tenants[0]));
   await Promise.all(tenants.map(seedConversation));
+
+  // Persist only a token hash and consume a confirmed reservation exactly once.
+  const issuedAt = new Date(Date.now() - 60_000).toISOString();
+  const issuedIntent = await bookingAttributionStore.issueIntent({
+    organizationId: orgAForPilot.rows[0].id,
+    conversationId: tenants[0].conversationId,
+    issuedAt,
+    ttlMs: 60 * 60 * 1000,
+  });
+  assert.match(issuedIntent.oneTimeToken, /^[A-Za-z0-9_-]{43}$/);
+  const persistedIntent = await pool.query(
+    "SELECT token_hash,consumed_at FROM booking_attribution_intents WHERE id=$1 AND organization_id=$2",
+    [issuedIntent.intentId, orgAForPilot.rows[0].id],
+  );
+  assert.equal(persistedIntent.rowCount, 1);
+  assert.equal(persistedIntent.rows[0].token_hash, createHash("sha256").update(issuedIntent.oneTimeToken, "utf8").digest("hex"));
+  assert.notEqual(persistedIntent.rows[0].token_hash, issuedIntent.oneTimeToken, "the raw attribution token must never be stored");
+  assert.equal(persistedIntent.rows[0].consumed_at, null);
+
+  await assert.rejects(
+    () => bookingAttributionStore.issueIntent({
+      organizationId: orgAForPilot.rows[0].id,
+      conversationId: tenants[1].conversationId,
+    }),
+    /not found in this hotel workspace/,
+    "a hotel must not issue an attribution token for another hotel's conversation",
+  );
+
+  const attributionProvider = "synthetic-pms";
+  const confirmedReservation = {
+    eventId: `ATTR-EVENT-${tag}`,
+    eventType: "reservation.created",
+    occurredAt: new Date().toISOString(),
+    reservationId: `ATTR-RESERVATION-${tag}`,
+    status: "confirmed",
+    arrivalDate: "2026-12-01",
+    departureDate: "2026-12-04",
+    totalAmountMinor: 84000,
+    currency: "EUR",
+    attributionToken: issuedIntent.oneTimeToken,
+  };
+  const crossTenantAttribution = await bookingAttributionStore.consumeConfirmedReservation({
+    organizationId: orgBForPilot.rows[0].id,
+    provider: attributionProvider,
+    reservationEvent: confirmedReservation,
+  });
+  assert.equal(crossTenantAttribution.status, "unmatched", "tenant B must not consume tenant A's attribution token");
+
+  const concurrentAttribution = await Promise.all([
+    bookingAttributionStore.consumeConfirmedReservation({
+      organizationId: orgAForPilot.rows[0].id,
+      provider: attributionProvider,
+      reservationEvent: confirmedReservation,
+    }),
+    bookingAttributionStore.consumeConfirmedReservation({
+      organizationId: orgAForPilot.rows[0].id,
+      provider: attributionProvider,
+      reservationEvent: confirmedReservation,
+    }),
+  ]);
+  assert.deepEqual(
+    concurrentAttribution.map(result => result.status).sort(),
+    ["duplicate", "matched"],
+    "concurrent provider retries must create exactly one attribution match",
+  );
+  const matchedAttribution = concurrentAttribution.find(result => result.status === "matched");
+  assert.equal(matchedAttribution.match.conversationId, tenants[0].conversationId);
+  assert.equal(matchedAttribution.match.bookingValue.amountMinor, 84000);
+  assert.equal(matchedAttribution.match.bookingValue.currency, "EUR");
+
+  const storedMatch = await pool.query(
+    "SELECT conversation_id,provider,provider_event_id,reservation_id,booking_value_minor::text,currency FROM booking_attribution_matches WHERE organization_id=$1 AND provider_event_id=$2",
+    [orgAForPilot.rows[0].id, confirmedReservation.eventId],
+  );
+  assert.equal(storedMatch.rowCount, 1);
+  assert.equal(storedMatch.rows[0].conversation_id, tenants[0].conversationId);
+  assert.equal(storedMatch.rows[0].booking_value_minor, "84000");
+  assert.equal(storedMatch.rows[0].currency, "EUR");
+
+  const replayWithNewEventId = await bookingAttributionStore.consumeConfirmedReservation({
+    organizationId: orgAForPilot.rows[0].id,
+    provider: attributionProvider,
+    reservationEvent: { ...confirmedReservation, eventId: `ATTR-EVENT-REPLAY-${tag}` },
+  });
+  assert.equal(replayWithNewEventId.status, "duplicate", "a second provider event for the same reservation must not create a second conversion");
+
+  const reusedTokenForDifferentReservation = await bookingAttributionStore.consumeConfirmedReservation({
+    organizationId: orgAForPilot.rows[0].id,
+    provider: attributionProvider,
+    reservationEvent: {
+      ...confirmedReservation,
+      eventId: `ATTR-EVENT-REUSE-${tag}`,
+      reservationId: `ATTR-RESERVATION-REUSE-${tag}`,
+    },
+  });
+  assert.equal(reusedTokenForDifferentReservation.status, "already_consumed", "a consumed token must not be reused for a different reservation");
+
+  const attributionAudit = await pool.query(
+    "SELECT count(*)::int AS count FROM audit_logs WHERE organization_id=$1 AND action='booking_attribution.reservation_matched' AND target_id=$2",
+    [orgAForPilot.rows[0].id, matchedAttribution.match.id],
+  );
+  assert.equal(attributionAudit.rows[0].count, 1, "provider-confirmed attribution must be audited atomically");
+  const noAutomaticRevenue = await pool.query(
+    "SELECT count(*)::int AS count FROM revenue_events WHERE organization_id=$1 AND external_reference=$2",
+    [orgAForPilot.rows[0].id, confirmedReservation.reservationId],
+  );
+  assert.equal(noAutomaticRevenue.rows[0].count, 0, "a reservation total must not be inserted as paid revenue");
+
   await Promise.all(tenants.map(seedKnowledge));
 
   const ownA = await readTranscript(cookieA, tenants[0].conversationId);
@@ -931,6 +1041,18 @@ try {
   assert.equal(deletedAddonEvent.attribution_status, "hotel_reported_unlinked");
   assert.equal(afterDeleteBody.linkedTotals.reduce((n, item) => n + Number(item.event_count), 0), 0);
   assert.equal(afterDeleteBody.linkedConversationCount, 0);
+
+  const detachedAttribution = await pool.query(
+    "SELECT conversation_id FROM booking_attribution_matches WHERE organization_id=$1 AND provider_event_id=$2",
+    [orgAForPilot.rows[0].id, confirmedReservation.eventId],
+  );
+  assert.equal(detachedAttribution.rowCount, 1, "deleting a conversation must preserve minimal provider evidence");
+  assert.equal(detachedAttribution.rows[0].conversation_id, null, "deleted transcripts must no longer be linked to provider attribution");
+  const detachedIntent = await pool.query(
+    "SELECT conversation_id FROM booking_attribution_intents WHERE id=$1 AND organization_id=$2",
+    [issuedIntent.intentId, orgAForPilot.rows[0].id],
+  );
+  assert.equal(detachedIntent.rows[0].conversation_id, null, "a deleted conversation must detach its attribution intent");
 
   const orgA = await pool.query("SELECT id FROM organizations WHERE slug=$1", [tenants[0].slug]);
   const retentionOld = await pool.query(

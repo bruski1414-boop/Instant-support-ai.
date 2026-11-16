@@ -74,9 +74,10 @@ function createBookingAttributionStore({ pool } = {}) {
     }
   }
 
-  async function consumeConfirmedReservation({ organizationId, reservationEvent } = {}) {
+  async function consumeConfirmedReservation({ organizationId, provider: trustedProvider, reservationEvent } = {}) {
     const safeOrganizationId = requiredOrganizationId(organizationId);
-    const provider = requiredProvider(reservationEvent?.provider);
+    // Provider identity must come from a configured adapter, never from the guest or raw webhook payload.
+    const provider = requiredProvider(trustedProvider);
     const normalized = normalizeReservationEvent(reservationEvent);
     const event = Object.freeze({ ...normalized, provider });
 

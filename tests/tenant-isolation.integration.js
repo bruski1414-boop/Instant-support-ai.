@@ -332,6 +332,7 @@ try {
     }),
     bookingAttributionStore.consumeConfirmedReservation({
       organizationId: orgAForPilot.rows[0].id,
+      provider: attributionProvider,
       reservationEvent: confirmedReservation,
     }),
   ]);

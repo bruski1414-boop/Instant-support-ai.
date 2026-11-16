@@ -8,6 +8,7 @@ const HASH = /^[0-9a-f]{64}$/i;
 const UTC_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/;
 const DEFAULT_ATTRIBUTION_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 const MIN_ATTRIBUTION_WINDOW_MS = 5 * 60 * 1000;
+const SUPPORTED_CURRENCIES = new Set(typeof Intl.supportedValuesOf === "function" ? Intl.supportedValuesOf("currency") : ["EUR", "USD", "GBP", "THB", "AED", "JPY"]);
 
 function requiredUuid(value, field) {
   if (typeof value !== "string" || !UUID.test(value)) throw new Error(field + " must be a valid UUID.");
@@ -110,7 +111,7 @@ function matchConfirmedReservationToBookingIntent({ organizationId, reservationE
   const reservationId = requiredString(reservationEvent.reservationId, "reservationEvent.reservationId");
   let bookingValue = null;
   if (Number.isSafeInteger(reservationEvent.totalAmountMinor) && reservationEvent.totalAmountMinor > 0 &&
-      typeof reservationEvent.currency === "string" && /^[A-Z]{3}$/.test(reservationEvent.currency)) {
+      typeof reservationEvent.currency === "string" && /^[A-Z]{3}$/.test(reservationEvent.currency) && SUPPORTED_CURRENCIES.has(reservationEvent.currency)) {
     bookingValue = Object.freeze({
       amountMinor: reservationEvent.totalAmountMinor,
       currency: reservationEvent.currency

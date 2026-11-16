@@ -275,6 +275,22 @@ test("guest staff-reply polling rejects expired conversation tokens", () => {
   const server = fs.readFileSync("server.js", "utf8");
   assert.match(server, /SELECT id FROM conversations WHERE id=\$1 AND organization_id=\$2 AND guest_token_hash=\$3 AND guest_token_expires_at>now\(\)/);
 });
+
+test("guest conversation token expiry is present in schema, creation and message writes", () => {
+  const server = fs.readFileSync("server.js", "utf8");
+  assert.match(server, /ALTER TABLE conversations ADD COLUMN IF NOT EXISTS guest_token_expires_at TIMESTAMPTZ/);
+  assert.match(server, /UPDATE conversations SET guest_token_expires_at=now\(\) WHERE guest_token_hash IS NOT NULL AND guest_token_expires_at IS NULL/);
+  assert.match(server, /guest_token_hash,guest_token_expires_at\) VALUES\(\$1,'website',\$2,\$3,now\(\)\+interval '30 days'\)/);
+  assert.match(server, /guest_token_hash=\$3 AND guest_token_expires_at>now\(\) FOR UPDATE/);
+});
+
+test("guest widget resets its session and polling when the server rejects an expired token", () => {
+  const widget = fs.readFileSync("widget.js", "utf8");
+  assert.match(widget, /response\.status===404/);
+  assert.match(widget, /conversationId=null;conversationToken=null/);
+  assert.match(widget, /stopPolling\(\)/);
+  assert.match(widget, /This chat session has expired/);
+});
 test("guest conversation writes lock and revalidate the tenant-owned conversation before appending messages", () => {
   const server = fs.readFileSync("server.js", "utf8");
   assert.match(server, /SELECT id FROM conversations WHERE id=\$1 AND organization_id=\$2 AND guest_token_hash=\$3 FOR UPDATE/);

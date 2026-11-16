@@ -151,7 +151,6 @@ function reconcilePaidAddons({ organizationId, provider, orderItems, bills, paym
     if (netAmountMinor <= 0) continue;
 
     const paidAt = charged.map(payment => timestamp(payment.occurredAt, "payment occurredAt")).sort().at(-1);
-    const sourceReferences = [billId, ...charged.map(payment => requiredText(payment.id, "payment id"))].sort();
     output.push(Object.freeze({
       organizationId: tenant,
       provider: trustedProvider,

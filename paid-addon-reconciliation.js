@@ -158,7 +158,7 @@ function reconcilePaidAddons({ organizationId, provider, orderItems, bills, paym
       type: "addon_paid",
       status: "paid_addon_verified",
       externalReference: requiredText(item.id, "order item id"),
-      sourceReference: sourceReferences.join(","),
+      sourceReference: billId,
       reservationId: requiredText(item.reservationId, "reservationId"),
       externalIdentifier,
       grossAmountMinor: itemAmount,

@@ -311,22 +311,21 @@ test("hotel website origins are allowed dynamically from each tenant's saved HTT
   assert.match(server, /u\.protocol==="https:"&&u\.origin===p\.website_url/);
 });
 
-test("public guest chat requires fresh tenant-specific AI, staff and storage verification", () => {
+test("FAQ-only public guest chat requires fresh tenant-specific AI and staff verification, not cloud document import", () => {
   const server = fs.readFileSync("server.js", "utf8");
+  assert.match(server, /buildFaqPilotReadiness\(releaseGate\.checks\)/);
   assert.match(server, /verified_at>now\(\)-interval '30 days'/);
   assert.match(server, /verifiedForHotel\.has\("ai_provider"\)/);
   assert.match(server, /verifiedForHotel\.has\("staff_webhook"\)/);
-  assert.match(server, /FROM organization_storage_connections WHERE organization_id=\$1 AND status='connected' AND connected_at IS NOT NULL AND last_sync_at IS NOT NULL AND last_sync_status='success' AND last_sync_error=''/);
   assert.match(server, /This hotel's AI and its own staff notification endpoint must be verified/);
-  assert.match(server, /This hotel must authorize its own storage provider and complete a successful sync/);
+  assert.doesNotMatch(server, /This hotel must authorize its own storage provider and complete a successful sync/);
+  assert.match(server, /Optional cloud document import/);
 });
 
-test("onboarding readiness requires verified storage authorization, a successful sync and separate hotel privacy approval", () => {
+test("onboarding keeps cloud document import optional while retaining separate hotel privacy approval", () => {
   const server = fs.readFileSync("server.js", "utf8");
-  assert.match(server, /last_sync_status,last_sync_error FROM organization_storage_connections/);
-  assert.match(server, /Boolean\(storage\.rows\[0\]\.connected_at\)/);
-  assert.match(server, /Boolean\(storage\.rows\[0\]\.last_sync_at\)/);
-  assert.match(server, /storage\.rows\[0\]\.last_sync_status==="success"/);
+  assert.match(server, /Optional cloud document import/);
+  assert.match(server, /Optional cloud document import verification/);
   assert.match(server, /Hotel privacy and retention approval/);
   assert.match(server, /No current hotel owner\/admin privacy acknowledgement is recorded/);
   assert.match(server, /CREATE TABLE IF NOT EXISTS organization_privacy_approvals/);

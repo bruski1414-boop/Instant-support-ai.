@@ -395,7 +395,7 @@ app.get("/api/public/:slug/chat",async(q,r,n)=>{
   if(!org.rowCount||org.rows[0].status==="suspended")return r.status(404).json({error:"Assistant unavailable."});
   let access;
   try{access=normalizeGuestConversationAccess(q.query.conversationId,q.get("X-Veyra-Conversation-Token"));}catch(e){return r.status(400).json({error:e.message});}
-  const conversation=await db.query("SELECT id FROM conversations WHERE id=$1 AND organization_id=$2 AND guest_token_hash=$3",[access.conversationId,org.rows[0].id,hash(access.token)]);
+  const conversation=await db.query("SELECT id FROM conversations WHERE id=$1 AND organization_id=$2 AND guest_token_hash=$3 AND guest_token_expires_at>now()",[access.conversationId,org.rows[0].id,hash(access.token)]);
   if(!conversation.rowCount)return r.status(404).json({error:"Conversation not found."});
   const messages=await db.query("SELECT id,content,created_at FROM messages WHERE conversation_id=$1 AND role='staff' ORDER BY created_at DESC LIMIT 50",[access.conversationId]);
   r.json({messages:messages.rows.reverse()});

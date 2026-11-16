@@ -27,6 +27,10 @@ function createMemoryPool() {
         const found = state.conversations.has(params[1] + ":" + params[0]);
         return { rowCount: found ? 1 : 0, rows: found ? [{ id: params[0] }] : [] };
       }
+      if (statement.startsWith("DELETE FROM booking_attribution_intents")) {
+        state.intents = state.intents.filter(x => !(x.organization_id === params[0] && x.conversation_id === params[1] && x.consumed_at === null));
+        return { rowCount: 0, rows: [] };
+      }
       if (statement.startsWith("INSERT INTO booking_attribution_intents")) {
         const row = { id: "intent-" + nextId++, organization_id: params[0], conversation_id: params[1], token_hash: params[2], issued_at: params[3], expires_at: params[4], consumed_at: null, provider: null, provider_event_id: null, reservation_id: null };
         state.intents.push(row);
@@ -159,4 +163,15 @@ test("the same provider reservation cannot be attributed to a second conversatio
   assert.equal((await store.consumeConfirmedReservation({ organizationId: ORG, provider: "trusted-pms-adapter", reservationEvent: replayWithDifferentToken })).status, "duplicate");
   assert.equal(state.matches.length, 1);
   assert.equal(state.intents[1].consumed_at, null);
+});
+
+
+test("issuing a replacement token invalidates the prior unused token for that conversation", async () => {
+  const { state, pool } = createMemoryPool();
+  const store = createBookingAttributionStore({ pool });
+  const first = await store.issueIntent({ organizationId: ORG, conversationId: CONVERSATION, issuedAt: "2026-11-15T10:00:00.000Z" });
+  const second = await store.issueIntent({ organizationId: ORG, conversationId: CONVERSATION, issuedAt: "2026-11-15T10:01:00.000Z" });
+  assert.notEqual(first.oneTimeToken, second.oneTimeToken);
+  assert.equal(state.intents.length, 1);
+  assert.equal(state.intents[0].token_hash, require("../booking-attribution").hashBookingAttributionToken(second.oneTimeToken));
 });

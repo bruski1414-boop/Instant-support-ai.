@@ -63,7 +63,7 @@ test("normalizes short-lived availability snapshots", () => {
 });
 
 test("rejects stale or excessively long-lived availability snapshots", () => {
-  assert.throws(() => normalizeAvailabilitySnapshot({ ...availability, validUntil: "2026-11-14T10:16:00.000Z" }), /15 minutes/);
+  assert.throws(() => normalizeAvailabilitySnapshot({ ...availability, validUntil: "2026-11-14T10:16:00.000Z" }, Date.parse("2026-11-14T10:05:00.000Z")), /15 minutes/);
   assert.throws(() => normalizeAvailabilitySnapshot({ ...availability, validUntil: "2026-11-14T09:59:00.000Z" }, Date.parse("2026-11-14T10:05:00.000Z")), /later than observedAt/);
   assert.throws(() => normalizeAvailabilitySnapshot(availability, Date.parse("2026-11-14T10:11:00.000Z")), /has expired/);
   assert.throws(() => normalizeAvailabilitySnapshot({ ...availability, observedAt: "2026-11-14T10:06:00.000Z" }, Date.parse("2026-11-14T10:05:00.000Z")), /cannot be in the future/);

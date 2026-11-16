@@ -659,9 +659,19 @@ try {
   assert.equal(recoveredRecord.rows[0].notification_status, "delivered");
   assert.equal(recoveredRecord.rows[0].notification_attempts, 2, "recovering an abandoned claim must count the new attempt");
 
+  const staffReplyToGuestJourney = await fetch(baseUrl + "/api/admin/conversations/" + guestChatBody.conversationId + "/reply", {
+    method: "POST",
+    headers: { cookie: staffCookie, "X-CSRF-Token": staffCsrf, "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true" },
+    body: JSON.stringify({ message: "Our hotel team has received your question and will help shortly." }),
+  });
+  assert.equal(staffReplyToGuestJourney.status, 201, await staffReplyToGuestJourney.clone().text());
+  const staffReplyToGuestJourneyBody = await staffReplyToGuestJourney.json();
+  assert.equal(staffReplyToGuestJourneyBody.message.role, "staff");
+
   const guestStaffPoll = await fetch(baseUrl + "/api/public/" + tenants[0].slug + "/chat?conversationId=" + guestChatBody.conversationId, { headers: { "X-Veyra-Conversation-Token": guestChatBody.conversationToken } });
   assert.equal(guestStaffPoll.status, 200);
-  assert.deepEqual((await guestStaffPoll.json()).messages, []);
+  const guestStaffPollBody = await guestStaffPoll.json();
+  assert.ok(guestStaffPollBody.messages.some(message => message.id === staffReplyToGuestJourneyBody.message.id), "the guest polling endpoint must return the staff reply from the same guest conversation");
 
   // Guest polling and message submission must both reject an expired token.
   await pool.query("UPDATE conversations SET guest_token_expires_at=now()-interval '1 second' WHERE id=$1 AND organization_id=$2", [guestChatBody.conversationId, orgAForPilot.rows[0].id]);

@@ -153,3 +153,22 @@ test("a worker whose lease was reclaimed cannot write or complete the newer atte
   assert.equal(db.calls.some((call) => call.sql.startsWith("INSERT INTO mews_reservation_snapshots")), false);
   assert.equal(db.calls.some((call) => call.sql.includes("status='processed'")), false);
 });
+
+test("a stale worker cannot reschedule a job after a newer attempt has claimed it", async () => {
+  const db = fakeDb([row], { currentAttemptCount: row.attempt_count + 1 });
+  const mewsStore = {
+    async resolve() {
+      return {
+        propertyReference: row.enterprise_id,
+        service: { id: serviceId },
+        client: { async getReservations() { throw new Error("temporary provider failure"); } }
+      };
+    }
+  };
+  const processor = createMewsInboxProcessor({ db, mewsStore });
+  const result = await processor.processBatch();
+  assert.deepEqual(result, { claimed: 1, processed: 0, retried: 0, failed: 0, stale: 1 });
+  const failureUpdate = db.calls.find((call) => call.sql.startsWith("UPDATE mews_webhook_inbox SET status=$2"));
+  assert.ok(failureUpdate);
+  assert.equal(failureUpdate.params[4], row.attempt_count);
+});

@@ -75,6 +75,6 @@ Any cross-workspace data exposure is a release-blocking security defect.
 - Guest-data storage is disabled by default.
 - Storage import is limited to small text-based documents and Google Docs; full PDF, Word and spreadsheet extraction, broad sync and incremental sync are not complete.
 - Google and Microsoft app registrations, client credentials, consent and live provider flows have not been verified.
-- Current CI runs syntax checks and Node's test discovery, but comprehensive API, frontend, OAuth and two-tenant isolation integration tests are still required.
+- CI now runs `npm test` plus the PostgreSQL 18 two-tenant API isolation integration suite; the latest run (43835784767) passed. This is not a substitute for the remaining manual API/UI, live OAuth/provider, staff-notification, privacy, backup/restore and supervised hotel-pilot checks. The checklist above remains open until each item is separately evidenced and signed off.
 
 Do not describe Veyra as production-ready or hotel-ready until every applicable release gate has been tested and signed off.

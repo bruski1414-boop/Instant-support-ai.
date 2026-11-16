@@ -24,7 +24,7 @@ const reservation = {
   guestEmail: "private@example.invalid"
 };
 
-function fakeDb(claimed = [row]) {
+function fakeDb(claimed = [row], { currentAttemptCount = row.attempt_count } = {}) {
   const calls = [];
   return {
     calls,
@@ -33,6 +33,9 @@ function fakeDb(claimed = [row]) {
         async query(sql, params) {
           calls.push({ sql, params });
           if (sql.startsWith("WITH candidates")) return { rows: claimed };
+          if (sql.startsWith("SELECT id FROM mews_webhook_inbox")) {
+            return currentAttemptCount === params[1] ? { rows: [{ id: params[0] }], rowCount: 1 } : { rows: [], rowCount: 0 };
+          }
           return { rows: [], rowCount: 1 };
         },
         release() {}
@@ -99,7 +102,7 @@ test("claims, fetches and stores a PII-free reservation snapshot atomically", as
   };
   const processor = createMewsInboxProcessor({ db, mewsStore });
   const result = await processor.processBatch();
-  assert.deepEqual(result, { claimed: 1, processed: 1, retried: 0, failed: 0 });
+  assert.deepEqual(result, { claimed: 1, processed: 1, retried: 0, failed: 0, stale: 0 });
   const insert = db.calls.find((call) => call.sql.startsWith("INSERT INTO mews_reservation_snapshots"));
   assert.ok(insert);
   assert.equal(insert.params.length, 8);
@@ -125,10 +128,28 @@ test("retries a temporary Mews failure without retaining provider error text", a
     clock: () => new Date("2026-11-16T10:00:00Z")
   });
   const result = await processor.processBatch();
-  assert.deepEqual(result, { claimed: 1, processed: 0, retried: 1, failed: 0 });
+  assert.deepEqual(result, { claimed: 1, processed: 0, retried: 1, failed: 0, stale: 0 });
   const update = db.calls.find((call) => call.sql.startsWith("UPDATE mews_webhook_inbox SET status=$2"));
   assert.ok(update);
   assert.equal(update.params[1], "pending");
   assert.equal(update.params[3], "reservation_fetch_failed");
   assert.equal(JSON.stringify(db.calls).includes("private@example.invalid"), false);
+});
+
+test("a worker whose lease was reclaimed cannot write or complete the newer attempt", async () => {
+  const db = fakeDb([row], { currentAttemptCount: row.attempt_count + 1 });
+  const mewsStore = {
+    async resolve() {
+      return {
+        propertyReference: row.enterprise_id,
+        service: { id: serviceId },
+        client: { async getReservations() { return { reservations: [reservation] }; } }
+      };
+    }
+  };
+  const processor = createMewsInboxProcessor({ db, mewsStore });
+  const result = await processor.processBatch();
+  assert.deepEqual(result, { claimed: 1, processed: 0, retried: 0, failed: 0, stale: 1 });
+  assert.equal(db.calls.some((call) => call.sql.startsWith("INSERT INTO mews_reservation_snapshots")), false);
+  assert.equal(db.calls.some((call) => call.sql.includes("status='processed'")), false);
 });

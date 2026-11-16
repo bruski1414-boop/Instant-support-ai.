@@ -44,6 +44,11 @@ function createBookingAttributionStore({ pool } = {}) {
         throw new Error("Conversation not found in this hotel workspace.");
       }
 
+      // Keep one active token per conversation; a refreshed token invalidates the old unused one.
+      await client.query(
+        "DELETE FROM booking_attribution_intents WHERE organization_id=$1 AND conversation_id=$2 AND consumed_at IS NULL",
+        [issued.record.organizationId, issued.record.conversationId]
+      );
       const inserted = await client.query(
         "INSERT INTO booking_attribution_intents(organization_id,conversation_id,token_hash,issued_at,expires_at) VALUES($1,$2,$3,$4,$5) RETURNING id",
         [

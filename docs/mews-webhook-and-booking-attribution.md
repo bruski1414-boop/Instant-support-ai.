@@ -9,6 +9,7 @@
 - It accepts only `ServiceOrderUpdated` entity references for queueing. Other event types are counted and ignored.
 - Tenant assignment is derived server-side by matching the webhook's `EnterpriseId` to exactly one verified `mews_connections.property_reference`. The request cannot supply an organization ID.
 - Only integration, enterprise, discriminator and entity identifiers are stored in `mews_webhook_inbox`. No raw payload, guest name, email, phone, payment or note data is retained.
+- A partial unique index coalesces repeat deliveries while the same event is pending or processing. Once processed, a later event for that reservation can be queued again, so a legitimate subsequent reservation update is not permanently suppressed. This is entity-level coalescing, not proof of a provider event ID.
 - The endpoint responds with HTTP 202 after queue persistence. It does not call Mews during the webhook request.
 
 ### Guest-facing correlation token issuance

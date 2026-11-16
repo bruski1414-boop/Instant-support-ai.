@@ -356,8 +356,13 @@ app.get("/api/public/:slug/chat",async(q,r,n)=>{
  }catch(e){n(e);}
 });
 app.post("/api/public/:slug/chat",async(q,r,n)=>{
- try{if(!db)return r.status(503).json({error:"Hotel platform is not configured."});const releaseGate=await readinessSnapshot();if(!releaseGate.readyForPilot)return r.status(503).json({error:"Hotel pilot release gates are not all verified. Please contact hotel staff.",readyForPilot:false});const msg=q.body?.message;if(typeof msg!=="string"||!msg.trim()||msg.length>4000)return r.status(400).json({error:"Enter a message under 4,000 characters."});
+ try{if(!db)return r.status(503).json({error:"Hotel platform is not configured."});const msg=q.body?.message;if(typeof msg!=="string"||!msg.trim()||msg.length>4000)return r.status(400).json({error:"Enter a message under 4,000 characters."});
  const orgR=await db.query("SELECT id,name,slug,status FROM organizations WHERE slug=$1",[q.params.slug]);if(!orgR.rowCount||orgR.rows[0].status==="suspended")return r.status(404).json({error:"Assistant unavailable."});const org=orgR.rows[0];
+ const requestedConversation=q.body?.conversationId,requestedToken=q.body?.conversationToken;
+ if(requestedConversation!==undefined&&requestedConversation!==null&&requestedConversation!==""&&(typeof requestedConversation!=="string"||!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(requestedConversation)))return r.status(400).json({error:"Invalid conversation reference."});
+ if(requestedConversation&&(typeof requestedToken!=="string"||!/^[A-Za-z0-9_-]{40,64}$/.test(requestedToken)))return r.status(400).json({error:"Conversation access token required."});
+ if(requestedConversation){const activeConversation=await db.query("SELECT id FROM conversations WHERE id=$1 AND organization_id=$2 AND guest_token_hash=$3 AND guest_token_expires_at>now()",[requestedConversation,org.id,hash(requestedToken)]);if(!activeConversation.rowCount)return r.status(404).json({error:"Conversation not found."});}
+ const releaseGate=await readinessSnapshot();if(!releaseGate.readyForPilot)return r.status(503).json({error:"Hotel pilot release gates are not all verified. Please contact hotel staff.",readyForPilot:false});
  const [hotelIntegrations,hotelStorage]=await Promise.all([db.query("SELECT integration FROM organization_integration_checks WHERE organization_id=$1 AND verified_at>now()-interval '30 days'",[org.id]),db.query("SELECT 1 FROM organization_storage_connections WHERE organization_id=$1 AND status='connected' LIMIT 1",[org.id])]);
  const verifiedForHotel=new Set(hotelIntegrations.rows.map(x=>x.integration));
  if(!verifiedForHotel.has("ai_provider")||!verifiedForHotel.has("staff_webhook"))return r.status(503).json({error:"This hotel's AI and staff notification integrations must be verified in its setup dashboard before guest chat is enabled."});

@@ -110,7 +110,6 @@ test("claims, fetches and stores a PII-free reservation snapshot atomically", as
 
 test("retries a temporary Mews failure without retaining provider error text", async () => {
   const db = fakeDb();
-  db.calls = [];
   const mewsStore = {
     async resolve() {
       return {

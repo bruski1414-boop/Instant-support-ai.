@@ -41,7 +41,9 @@ async function main() {
     CREATE TABLE mews_webhook_inbox (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       organization_id UUID NOT NULL,
+      integration_id TEXT NOT NULL,
       enterprise_id TEXT NOT NULL,
+      discriminator TEXT NOT NULL,
       entity_id TEXT NOT NULL,
       received_at TIMESTAMPTZ NOT NULL DEFAULT now(),
       processed_at TIMESTAMPTZ,
@@ -51,6 +53,9 @@ async function main() {
       lease_expires_at TIMESTAMPTZ,
       last_error TEXT NOT NULL DEFAULT ''
     );
+    CREATE UNIQUE INDEX mews_webhook_inbox_active_event_unique_idx
+      ON mews_webhook_inbox(organization_id,integration_id,enterprise_id,discriminator,entity_id)
+      WHERE status IN ('pending','processing');
     CREATE TABLE mews_reservation_snapshots (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       organization_id UUID NOT NULL,
@@ -67,8 +72,8 @@ async function main() {
   `);
 
   const inserted = await pool.query(
-    "INSERT INTO mews_webhook_inbox(organization_id,enterprise_id,entity_id) VALUES($1,$2,$3) RETURNING id",
-    [ids.organization, ids.enterprise, ids.reservation]
+    "INSERT INTO mews_webhook_inbox(organization_id,integration_id,enterprise_id,discriminator,entity_id) VALUES($1,$2,$3,$4,$5) RETURNING id",
+    [ids.organization, randomUUID(), ids.enterprise, "ServiceOrderUpdated", ids.reservation]
   );
   const inboxId = inserted.rows[0].id;
 

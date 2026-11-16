@@ -97,6 +97,16 @@ test("a confirmed booking without a valid source amount is linked without invent
   assert.equal(match.bookingValue, null);
 });
 
+test("unsupported currency codes do not become reported booking value", () => {
+  const match = matchConfirmedReservationToBookingIntent({
+    organizationId: fixture.organizationId,
+    reservationEvent: { ...fixture.confirmedReservationEvent, currency: "ZZZ" },
+    attributionIntent: fixture.attributionIntent
+  });
+  assert.equal(match.conversationId, fixture.conversationId);
+  assert.equal(match.bookingValue, null);
+});
+
 test("rejects invalid identifiers, token shapes and attribution windows", () => {
   assert.throws(() => issueBookingAttributionIntent({
     organizationId: "not-a-uuid",

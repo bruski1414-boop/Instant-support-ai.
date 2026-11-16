@@ -53,7 +53,7 @@ function createMemoryPool() {
         return { rowCount: 1, rows: [] };
       }
       if (statement.startsWith("INSERT INTO audit_logs")) {
-        state.audits.push({ action: params[2], target_id: params[3] });
+        state.audits.push({ action: params[2], target_id: params[4] });
         return { rowCount: 1, rows: [] };
       }
       throw new Error("Unexpected SQL in memory test pool: " + statement);
@@ -131,7 +131,7 @@ test("wrong-tenant token, wrong token and unconfirmed reservation never match", 
   const store = createBookingAttributionStore({ pool });
   const issued = await store.issueIntent({ organizationId: ORG, conversationId: CONVERSATION, issuedAt: "2026-11-15T10:00:00.000Z" });
   assert.equal((await store.consumeConfirmedReservation({ organizationId: OTHER_ORG, provider: "trusted-pms-adapter", reservationEvent: reservationEvent(issued.oneTimeToken) })).status, "unmatched");
-  assert.equal((await store.consumeConfirmedReservation({ organizationId: ORG, provider: "trusted-pms-adapter", reservationEvent: reservationEvent("B".repeat(43)) })).status, "unmatched");
+  assert.equal((await store.consumeConfirmedReservation({ organizationId: ORG, provider: "trusted-pms-adapter", reservationEvent: reservationEvent(Buffer.alloc(32, 2).toString("base64url")) })).status, "unmatched");
   assert.equal((await store.consumeConfirmedReservation({ organizationId: ORG, provider: "trusted-pms-adapter", reservationEvent: reservationEvent(issued.oneTimeToken, { status: "pending" }) })).status, "unmatched");
   assert.equal(state.matches.length, 0);
 });

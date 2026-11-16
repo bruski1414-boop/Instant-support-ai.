@@ -243,6 +243,18 @@ try {
   });
   assert.equal(wrongGuestToken.status, 404, "another guest token must not read this conversation's staff replies");
 
+  await pool.query("UPDATE conversations SET guest_token_expires_at=now()-interval '1 second' WHERE id=$1 AND organization_id=$2", [tenants[1].conversationId, tenants[1].organizationId]);
+  const expiredGuestPoll = await fetch(`${baseUrl}/api/public/${tenants[1].slug}/chat?conversationId=${tenants[1].conversationId}`, {
+    headers: { "X-Veyra-Conversation-Token": tenants[1].guestToken },
+  });
+  assert.equal(expiredGuestPoll.status, 404, "expired guest tokens must not read staff replies");
+  const expiredGuestMessage = await fetch(`${baseUrl}/api/public/${tenants[1].slug}/chat`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ message: "This expired conversation must not be reused.", conversationId: tenants[1].conversationId, conversationToken: tenants[1].guestToken }),
+  });
+  assert.equal(expiredGuestMessage.status, 404, "expired guest tokens must not append messages to an old conversation");
+
   const crossTenantStaffReply = await fetch(`${baseUrl}/api/admin/conversations/${tenants[1].conversationId}/reply`, {
     method: "POST",
     headers: { cookie: staffCookie, "X-CSRF-Token": staffCsrf, "content-type": "application/json" },

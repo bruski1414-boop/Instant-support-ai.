@@ -22,6 +22,19 @@ test("answers common hotel questions from the demo knowledge base", () => {
   assert.match(respondToDemoMessage("Is there wheelchair access?").reply, /Step-free access/);
 });
 
+test("early arrival, late departure and breakfast inclusion require staff confirmation", () => {
+  for (const question of [
+    "Can I check in early?",
+    "Can I have a late check-out?",
+    "Is breakfast included in my booking?"
+  ]) {
+    const result = respondToDemoMessage(question);
+    assert.equal(result.needsHuman, true, question);
+    assert.equal(result.handoffStatus, "demo_queue_only", question);
+    assert.match(result.reply, /hotel team|hotel approval|confirmation/i, question);
+  }
+});
+
 test("cancellation policy questions are answered, while cancelling a real booking is handed off", () => {
   const policy = respondToDemoMessage("What is your cancellation policy?");
   assert.equal(policy.needsHuman, false);

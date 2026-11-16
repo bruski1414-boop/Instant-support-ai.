@@ -35,7 +35,7 @@ The canonical reservation event may include an optional `attributionToken`. It m
 5. Persist token consumption, the provider name, provider event ID, reservation ID and conversation link in one database transaction. Enforce uniqueness on the tenant/provider/event ID so retries and replays cannot create duplicate conversions.
 6. If a valid source amount and currency are present, expose them as **booking value**, not cash collected. Missing amounts stay missing; a confirmed reservation must never be converted into an invented revenue amount.
 
-The current implementation is deliberately limited to the pure model and synthetic fixture. It does not yet issue tokens from guest chat, persist/consume them, write to the revenue ledger, or map any live provider. The read-only Mews demo client does not currently supply this token. No provider-correlated conversion metric is available yet.
+The current implementation now includes a PostgreSQL persistence service and synthetic tenant-isolation tests. It stores token hashes only, validates the conversation's hotel workspace, locks and consumes an intent in the same transaction as the match and audit record, and enforces unique provider event/reservation IDs. Conversation deletion detaches the link so a deleted transcript cannot remain attributed. However, the service is not yet wired to guest chat or an authenticated provider event route, does not write to the revenue ledger, and has no provider-specific metadata mapping. The read-only Mews demo client does not currently supply this token. No live provider-correlated conversion metric is available yet.
 
 ## Availability snapshot
 

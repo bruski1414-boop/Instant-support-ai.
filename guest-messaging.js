@@ -1,5 +1,11 @@
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const TOKEN = /^[A-Za-z0-9_-]{40,64}$/;
+const GUEST_TOKEN_TTL_DAYS = 30;
+
+function isGuestConversationTokenActive(expiresAt, now = Date.now()) {
+  const expiry = expiresAt instanceof Date ? expiresAt.getTime() : Date.parse(expiresAt);
+  return Number.isFinite(expiry) && expiry > now;
+}
 
 function normalizeGuestConversationAccess(conversationId, token) {
   if (typeof conversationId !== "string" || !UUID.test(conversationId)) {
@@ -22,4 +28,4 @@ function canReplyToConversation(status) {
   return status !== "resolved";
 }
 
-module.exports = { normalizeGuestConversationAccess, normalizeStaffReply, canReplyToConversation };
+module.exports = { normalizeGuestConversationAccess, normalizeStaffReply, canReplyToConversation, isGuestConversationTokenActive, GUEST_TOKEN_TTL_DAYS };

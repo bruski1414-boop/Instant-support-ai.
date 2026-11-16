@@ -32,13 +32,13 @@ function isoDate(value, field) {
 }
 
 function isoTimestamp(value, field) {
-  if (typeof value !== "string" || !/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?Z$/.test(value)) {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?Z$/.test(value)) {
     throw new Error(field + " must be an ISO-8601 UTC timestamp.");
   }
   const time = Date.parse(value);
   if (!Number.isFinite(time)) throw new Error(field + " must be a valid timestamp.");
   const canonicalInput = value.includes(".")
-    ? value.replace(/\\.(\\d{1,3})Z$/, (_, ms) => "." + ms.padEnd(3, "0") + "Z")
+    ? value.replace(/\.(\d{1,3})Z$/, (_, ms) => "." + ms.padEnd(3, "0") + "Z")
     : value.replace(/Z$/, ".000Z");
   const canonicalTime = new Date(time).toISOString();
   if (canonicalTime !== canonicalInput) throw new Error(field + " must be a valid calendar timestamp.");

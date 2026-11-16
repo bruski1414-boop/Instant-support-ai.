@@ -108,8 +108,11 @@ function respondToDemoMessage(input, stay = {}) {
     return answer("For 10–12 December 2026, the demonstration inventory shows: " + lines.join(" ") + " This is simulated data only, not live hotel availability or a reservation.");
   }
 
+  if (/\b(early check.?in|arrive early|arriving before check.?in)\b/.test(text)) return handoff("Early check-in depends on room readiness. I would send this request to the hotel team for confirmation; no request is actually sent in this demo.", "Early check-in requires staff confirmation.");
+  if (/\b(late check.?out|later departure|leave later|extend (?:my )?check.?out)\b/.test(text)) return handoff("Late check-out depends on availability and hotel approval. I would send this request to the hotel team for confirmation; no request is actually sent in this demo.", "Late check-out requires staff confirmation.");
+  if (/\b(breakfast|morning meal)\b/.test(text) && /\b(included|free|complimentary|part of (?:my )?booking)\b/.test(text)) return handoff("Breakfast inclusion depends on the rate you booked. Please check your confirmation or ask the hotel team to verify your reservation; this demo cannot access booking details.", "Breakfast inclusion depends on the guest booking.");
   if (/\b(check.?in|arrival time)\b/.test(text)) return answer("Check-in at Aster House Hotel begins at 3:00 PM. This is approved sample hotel information in the demo.");
-  if (/\b(check.?out|departure time)\b/.test(text)) return answer("Check-out is by 11:00 AM. If you need a later departure, I can flag a request for the hotel team; it is subject to confirmation.");
+  if (/\b(check.?out|departure time)\b/.test(text)) return answer("Check-out is by 11:00 AM.");
   if (/\b(breakfast|morning meal)\b/.test(text)) return answer("Breakfast is served from 6:30 AM to 10:30 AM in the Garden Dining Room.");
   if (/\b(pool|swimming)\b/.test(text)) return answer("The pool is open daily from 7:00 AM to 9:00 PM in this sample hotel profile.");
   if (/\b(wi.?fi|internet|password)\b/.test(text)) return answer(DEMO_HOTEL.wifi);

@@ -23,14 +23,14 @@ A parent/guardian or another authorized adult must manage the Render account, da
 1. On a trusted computer, install PostgreSQL 18 client tools so `pg_dump`, `pg_restore`, and `psql` are available.
 2. Open the database in the Render Dashboard and obtain its **external** database URL. Do not use the internal URL from a computer outside Render.
 3. In the database's Networking settings, temporarily allowlist only the trusted computer's current public IP as a single-address rule (`/32` for IPv4). Never open access to all addresses (`0.0.0.0/0`).
-4. In a terminal on that computer, set `DATABASE_URL` as a temporary environment variable using the external URL. Do not put the URL in a script, shell history, screenshot, or repository.
-5. Create a compressed custom-format dump:
+4. Configure a **temporary PostgreSQL service file** (libpq `pg_service.conf`) on that trusted computer. Create a service named `veyra_backup` containing the external host, port, database name, username, password, and `sslmode=require`. Keep the password only in this file, never in a command, URL argument, script, or shell history. Set the file's permissions so only the authorized operating-system account can read it (on Windows, use a restrictive file ACL). Set `PGSERVICEFILE` to this file's path in the terminal session. Do not commit or sync this file.
+5. Create a compressed custom-format dump using the service name, so the database password is not passed as a process argument:
 
    PowerShell:
    ```powershell
    $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
    $backup = "veyra-$stamp.dump"
-   pg_dump --format=custom --no-owner --no-acl --file="$backup" "$env:DATABASE_URL"
+   pg_dump "service=veyra_backup" --format=custom --no-owner --no-acl --file="$backup"
    if ($LASTEXITCODE -ne 0) { throw "pg_dump failed" }
    ```
 
@@ -38,7 +38,7 @@ A parent/guardian or another authorized adult must manage the Render account, da
    ```bash
    stamp=$(date -u +%Y%m%d-%H%M%S)
    backup="veyra-$stamp.dump"
-   pg_dump --format=custom --no-owner --no-acl --file="$backup" "$DATABASE_URL"
+   pg_dump "service=veyra_backup" --format=custom --no-owner --no-acl --file="$backup"
    ```
 
 6. Verify that PostgreSQL can read the archive's table of contents:
@@ -49,7 +49,7 @@ A parent/guardian or another authorized adult must manage the Render account, da
 
    Also record a SHA-256 checksum. On PowerShell use `Get-FileHash .\\veyra-YYYYMMDD-HHMMSS.dump -Algorithm SHA256`; on macOS use `shasum -a 256`; on Linux use `sha256sum`.
 7. Move the dump to an encrypted, access-controlled backup location outside the Git repository. Keep a second protected copy in a separate location. Do not upload database dumps to GitHub.
-8. Remove the temporary IP allowlist entry in Render and clear the temporary `DATABASE_URL` environment variable from the terminal session.
+8. Remove the temporary IP allowlist entry in Render, unset `PGSERVICEFILE`, and securely remove the temporary service file when the backup and restore work is complete.
 
 A successful `pg_dump` and `pg_restore --list` proves that an archive was created and is readable; it does **not** prove that a restore works.
 
@@ -58,11 +58,11 @@ A successful `pg_dump` and `pg_restore --list` proves that an archive was create
 Perform this on a separate, empty local PostgreSQL 18 database or a separate disposable test database. Never restore over the live Veyra database.
 
 1. Create a new empty database named `veyra_restore_test` on the test PostgreSQL server.
-2. Set `RESTORE_TEST_DATABASE_URL` to that test database's connection URL.
-3. Restore the archive:
+2. Add a separate `veyra_restore_test` service entry to the protected PostgreSQL service file, pointing only to the disposable test database. Keep its password in that protected file, not in a command or URL argument.
+3. Restore the archive using that service:
 
    ```bash
-   pg_restore --exit-on-error --no-owner --no-acl --dbname="$RESTORE_TEST_DATABASE_URL" veyra-YYYYMMDD-HHMMSS.dump
+   pg_restore --exit-on-error --no-owner --no-acl --dbname="service=veyra_restore_test" veyra-YYYYMMDD-HHMMSS.dump
    ```
 
 4. Confirm the expected Veyra tables exist and inspect basic row counts using `psql`. Do not publish row contents or credentials.

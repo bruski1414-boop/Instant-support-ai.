@@ -43,3 +43,10 @@ For a Mews implementation, a later adapter must validate the current Connector A
 This is deliberately a projection, not an automatic write. The caller must submit through the authenticated owner/admin ledger endpoints, where the server derives the tenant from the session and enforces duplicate references, tenant ownership, currency consistency and adjustment limits. The projection never supplies a conversation ID: provider reservation evidence does not prove that Veyra caused or influenced a booking. The ledger record therefore remains hotel-reported/unlinked unless an authorised hotel user separately attests a valid Veyra conversation link.
 
 Synthetic tests cover gross/net reconciliation, separate refunds, incomplete evidence, tenant identity, zero-decimal currency and rejection of unverified records. No provider credentials, live PMS, guest data or production configuration are used.
+
+
+## Revenue reporting windows
+
+The authenticated owner/admin `GET /api/admin/revenue` endpoint defaults to a rolling 30-day window. It also accepts `startDate=YYYY-MM-DD&endDate=YYYY-MM-DD` for an inclusive UTC calendar-date range. Both dates are required together; impossible dates, reversed ranges, future end dates and ranges longer than 366 inclusive days are rejected. SQL uses a half-open interval (start at UTC midnight, end at midnight after the selected end date) so the final selected day is included without timestamp overlap.
+
+The same reporting window now constrains linked and unlinked totals, revenue event rows, adjustment rows and linked-conversation counts. Currency totals remain grouped by currency; no FX conversion or cross-currency sum is implied. The endpoint's existing note continues to distinguish a hotel manager's conversation link from proof of causation. Default rolling windows retain their exact current timestamp boundaries.

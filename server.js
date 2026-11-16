@@ -258,7 +258,7 @@ app.delete("/api/admin/storage",requireDb,auth,role("owner"),async(q,r,n)=>{try{
 
 app.get("/api/admin/mews/webhook",requireDb,auth,role("owner","admin"),async(q,r,n)=>{try{
  const x=await db.query("SELECT property_reference,status FROM mews_connections WHERE organization_id=$1",[q.actor.organization_id]);
- r.json({configured:Boolean(process.env.MEWS_WEBHOOK_TOKEN&&process.env.MEWS_INTEGRATION_ID),propertyConnected:Boolean(x.rowCount&&x.rows[0].status==="verified"),endpointTemplate:"/api/integrations/mews/events?token={shared-secret}",notice:"Mews Connector General Webhooks authenticate with a shared secret in the URL. Configure MEWS_WEBHOOK_TOKEN and MEWS_INTEGRATION_ID on the server, register the URL with Mews support, and redact the secret-bearing path from all proxy/APM logs. This receiver queues identifiers only; reservation details and token correlation are not yet processed."});
+ r.json({configured:Boolean(process.env.MEWS_WEBHOOK_TOKEN&&process.env.MEWS_INTEGRATION_ID),propertyConnected:Boolean(x.rowCount&&x.rows[0].status==="verified"),endpointTemplate:"/api/integrations/mews/events?token={shared-secret}",notice:"Mews Connector General Webhooks authenticate with a shared secret in the URL. Configure MEWS_WEBHOOK_TOKEN and MEWS_INTEGRATION_ID on the server, register the URL with Mews support, and redact the entire token query parameter from all proxy/APM logs. This receiver queues identifiers only; reservation details and token correlation are not yet processed."});
 }catch(e){n(e);}});
 app.post("/api/integrations/mews/events",requireDb,mewsWebhookLimiter,async(q,r,n)=>{try{
  const expected=process.env.MEWS_WEBHOOK_TOKEN;

@@ -45,8 +45,9 @@ function validateWebhookUrl(value) {
   let url;
   try { url = new URL(String(value || "").trim()); } catch { throw new Error("Enter a valid HTTPS notification URL."); }
   const host = url.hostname.toLowerCase();
+  const hostForIpCheck = host.startsWith("[") && host.endsWith("]") ? host.slice(1, -1) : host;
   if (url.protocol !== "https:" || url.username || url.password || (url.port && url.port !== "443") ||
-      !host || host.endsWith(".") || isIP(host) !== 0 || host.includes("%") ||
+      !host || host.endsWith(".") || isIP(hostForIpCheck) !== 0 || host.includes("%") ||
       host === "localhost" || host.endsWith(".localhost") || host.endsWith(".local") ||
       host.endsWith(".internal") || host.endsWith(".test") || host.endsWith(".invalid") ||
       host.endsWith(".example") || host.endsWith(".example.com") || host.endsWith(".example.net") ||
@@ -99,7 +100,7 @@ async function deliverStaffEscalation({
     const body = JSON.stringify({
       event, test: Boolean(test), organizationId: organization.id,
       organizationSlug: organization.slug, organization: organization.name,
-      ...(conversationId ? { conversationId } : {}), ...(reason ? { reason } : {}),
+      ...(conversationId && !test ? { conversationId } : {}), ...(reason && !test ? { reason } : {}),
       idempotencyKey: idempotencyKey || null, createdAt: new Date().toISOString()
     });
     const signature = crypto.createHmac("sha256", webhookSecret).update(body).digest("hex");

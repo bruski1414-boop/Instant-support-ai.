@@ -77,7 +77,7 @@ test("staff handoff queue links each escalation to its tenant-scoped guest conve
   assert.match(server, /SELECT e\.id,e\.reason,e\.status,e\.created_at,e\.resolved_at,e\.conversation_id,e\.notification_status/);
   assert.match(server, /WHERE e\.organization_id=\$1 ORDER BY e\.created_at DESC LIMIT 100/);
   assert.match(dashboard, /data-action="view-escalation-conversation"/);
-  assert.match(dashboard, /api\("\/api\/admin\/conversations\/"+encodeURIComponent\(view\.dataset\.id\)\)/);
+  assert.ok(dashboard.includes('api("/api/admin/conversations/"+encodeURIComponent(view.dataset.id))'));
   assert.match(dashboard, /id="escalationConversationDetail"/);
   assert.match(dashboard, /id="escalationReplyForm"/);
   assert.ok(dashboard.includes('api("/api/admin/conversations/"+encodeURIComponent(id)+"/reply"'));
@@ -366,7 +366,8 @@ test("AI and staff integrations require live verification before onboarding mark
   assert.match(server, /ai\.models\.retrieve\(MODEL/);
   assert.match(server, /veyra\.integration\.test/);
   assert.match(server, /verified_at,verified_by/);
-  assert.match(server, /handoffVerified=Boolean\(handoffConfigured&&verified\.staff_webhook\)/);\n  assert.match(server, /FROM organization_staff_webhooks WHERE organization_id=\$1/);
+  assert.match(server, /handoffVerified=Boolean\(handoffConfigured&&verified\.staff_webhook\)/);
+  assert.match(server, /FROM organization_staff_webhooks WHERE organization_id=\$1/);
 });
 
 

@@ -45,10 +45,27 @@ test("normalizes a reservation event and drops guest/payment PII", () => {
   assert.equal("paymentCard" in value, false);
 });
 
+test("accepts an opaque booking attribution token while continuing to discard guest and payment PII", () => {
+  const token = "A".repeat(43);
+  const value = normalizeReservationEvent({ ...reservation, attributionToken: token });
+  assert.equal(value.attributionToken, token);
+  assert.equal("guestName" in value, false);
+  assert.equal("guestEmail" in value, false);
+  assert.equal("paymentCard" in value, false);
+});
+
+test("rejects malformed booking attribution tokens", () => {
+  assert.throws(() => normalizeReservationEvent({ ...reservation, attributionToken: "not-a-token" }), /attributionToken/);
+});
+
 test("rejects unsupported event types and invalid reservation dates", () => {
   assert.throws(() => normalizeReservationEvent({ ...reservation, eventType: "payment.card_authorized" }), /Unsupported/);
   assert.throws(() => normalizeReservationEvent({ ...reservation, departureDate: "2026-12-01" }), /after arrivalDate/);
   assert.throws(() => normalizeReservationEvent({ ...reservation, totalAmountMinor: 12.5 }), /safe integer/);
+});
+
+test("rejects impossible UTC reservation timestamps", () => {
+  assert.throws(() => normalizeReservationEvent({ ...reservation, occurredAt: "2026-02-30T10:00:00.000Z" }), /real UTC calendar timestamp/);
 });
 
 test("requires currency when a reservation total is supplied", () => {
@@ -75,5 +92,6 @@ test("requires an adapter to map both canonical event types", () => {
   });
   assert.equal(adapter.provider, "Example PMS");
   assert.equal(adapter.reservationEvent(reservation).reservationId, "res-200");
+  assert.equal(adapter.reservationEvent(reservation).provider, "Example PMS");
   assert.equal(adapter.availabilitySnapshot(availability).roomsAvailable, 3);
 });

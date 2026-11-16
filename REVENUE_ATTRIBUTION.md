@@ -48,6 +48,18 @@ Workspace owners and administrators can create or rotate a workspace-specific we
 
 This is a generic authenticated receiver, not a finished connector to a named PMS, booking engine or payment processor. A provider or secure integration relay must be configured to map its verified events into Veyra's normalized payload and send the custom header. Provider-specific authentication, event mapping, retries, automated cancellation/refund delivery, reconciliation and production credentials remain future work. Refunds and chargebacks must currently be entered by an owner/admin through the dashboard.
 
+## Provider-correlation foundation (not yet live)
+
+The repository now defines a provider-neutral, synthetic-only foundation for linking a confirmed reservation to the Veyra conversation that generated an opaque booking reference:
+
+- Veyra can issue a random 256-bit token and retain only its SHA-256 hash with the hotel workspace, conversation, issue time and expiry.
+- A canonical provider reservation event may carry that token only when the provider has a documented, hotel-authorised metadata/reference field that can preserve it.
+- The matcher accepts only a confirmed reservation event, an exact token match, the same hotel workspace, an event timestamp inside the token's attribution window, and an unconsumed token.
+- The match output contains the provider name, opaque provider event/reservation references and the Veyra conversation ID; it does not copy guest names, emails, phone numbers, card data or free-text notes.
+- A reservation total is booked value, not proof that cash was collected. It is returned separately as booking value only when the source supplies a valid amount and currency. It must not be relabelled as a paid add-on.
+
+This is a pure data-contract/matching foundation plus synthetic fixtures and tests. It is **not** wired to a database table, guest-chat token issuance route, revenue-ledger write, or Mews mapping. No production booking can currently be automatically linked by this feature. The existing `veyra_linked_hotel_attested` label still means a hotel owner/admin manually linked a record; it is not provider-verified attribution. The persistence layer must later consume each token transactionally and enforce provider-event idempotency before this matcher is used for live reporting.
+
 ## Current limitations
 
 This is a manual hotel-attestation workflow. It is not yet connected to a property-management system, booking engine, payment processor or accounting platform. Veyra cannot independently verify that a booking completed, that an add-on was paid, or that the hotel source reference is genuine. A manager must check the hotel's source system before entering the record.

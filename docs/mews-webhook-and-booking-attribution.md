@@ -41,17 +41,17 @@ Operational requirements:
 - `scripts/mews-inbox-worker.js` is a separate-process entry point. It refuses to start unless `MEWS_INBOX_WORKER_ENABLED=true`, a database URL and the encryption key are configured. It handles SIGTERM/SIGINT and avoids logging raw provider errors.
 - The web-service schema creates the retry/lease columns and the PII-minimal reservation snapshot table.
 
-The worker has not been deployed or run against a real database or Mews account. Keep the worker disabled until an authorised adult/operator configures durable PostgreSQL, verified demo credentials and the encryption key. This processor does not link reservations to Veyra conversations and does not create revenue attribution.
+The worker code is implemented but has not been deployed or run against a real database or Mews account. Keep it disabled until an authorised hotel operator configures durable PostgreSQL, verified demo credentials and the encryption key. This processor does not link reservations to Veyra conversations and does not create revenue attribution.
 
 ## Explicitly not yet implemented
 
-- The inbox is an intake queue only. There is no worker in this branch that claims inbox rows, calls Mews, fetches reservation details, retries failures or marks events processed.
+- The inbox receiver itself remains queue-only; the separate opt-in worker in this branch claims inbox rows, fetches reservation state, retries failures and marks events processed. The worker has not yet been run against real infrastructure.
 - No provider-specific Mews reservation metadata field for the Veyra attribution token is documented in the current public Reservation contract. The token therefore cannot currently be matched to a Mews reservation through a supported private metadata field.
 - Do not put the token into Mews guest-visible notes, `OriginDetails`, `ChannelNumber`, or another operational field as a workaround.
 - No booking is attributed by the webhook receiver. It only queues a reservation entity reference.
 - No live Mews credentials, hotel sandbox, guest data or production webhook registration were available or used.
 
-The next implementation step is a background inbox processor that fetches reservation state through the read-only Connector API, safely records provider state without PII, and leaves attribution unmatched unless Mews or the hotel approves a documented private token-correlation mechanism. A hotel pilot additionally requires Mews partner certification/production access and hotel authorization.
+The next implementation step is controlled verification of the worker against an authorised Mews demo property and disposable PostgreSQL database, followed by review of the daily-service scope. Booking attribution must remain unmatched unless Mews or the hotel approves a documented private token-correlation mechanism. A hotel pilot additionally requires Mews partner certification/production access and hotel authorization.
 
 ## Official Mews references
 

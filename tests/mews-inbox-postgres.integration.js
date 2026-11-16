@@ -77,6 +77,21 @@ async function main() {
   );
   const inboxId = inserted.rows[0].id;
 
+  const duplicateEntity = randomUUID();
+  const duplicateParams = [ids.organization, randomUUID(), ids.enterprise, "ServiceOrderUpdated", duplicateEntity];
+  const insertEvent = "INSERT INTO mews_webhook_inbox(organization_id,integration_id,enterprise_id,discriminator,entity_id) VALUES($1,$2,$3,$4,$5) ON CONFLICT(organization_id,integration_id,enterprise_id,discriminator,entity_id) WHERE status IN ('pending','processing') DO NOTHING RETURNING id";
+  const firstDelivery = await pool.query(insertEvent, duplicateParams);
+  assert.equal(firstDelivery.rowCount, 1);
+  const duplicatePending = await pool.query(insertEvent, duplicateParams);
+  assert.equal(duplicatePending.rowCount, 0, "duplicate pending delivery must be coalesced");
+  await pool.query("UPDATE mews_webhook_inbox SET status='processing' WHERE id=$1", [firstDelivery.rows[0].id]);
+  const duplicateProcessing = await pool.query(insertEvent, duplicateParams);
+  assert.equal(duplicateProcessing.rowCount, 0, "duplicate processing delivery must be coalesced");
+  await pool.query("UPDATE mews_webhook_inbox SET status='processed' WHERE id=$1", [firstDelivery.rows[0].id]);
+  const laterUpdate = await pool.query(insertEvent, duplicateParams);
+  assert.equal(laterUpdate.rowCount, 1, "later event after processing must be allowed through");
+  await pool.query("UPDATE mews_webhook_inbox SET status='processed' WHERE id=$1", [laterUpdate.rows[0].id]);
+
   let releaseFirstFetch;
   let firstFetchStarted;
   const firstStarted = new Promise((resolve) => { firstFetchStarted = resolve; });

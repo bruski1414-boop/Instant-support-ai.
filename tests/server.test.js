@@ -362,3 +362,36 @@ test("staff webhook configuration is encrypted, tenant-scoped and verified befor
   assert.match(dashboard, /id="staffWebhookForm"/);
   assert.match(dashboard, /id="staffWebhookSecret"/);
 });
+
+
+test("fictional homepage demo endpoint clearly reports when live AI is unavailable", async () => {
+  const response = await fetch(`${baseUrl}/api/demo/chat`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ message: "When is breakfast?" })
+  });
+  const body = await response.json();
+  assert.equal(response.status, 503);
+  assert.match(body.error, /Live AI is not configured/);
+});
+
+test("fictional homepage demo endpoint validates message input", async () => {
+  const response = await fetch(`${baseUrl}/api/demo/chat`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ message: "   " })
+  });
+  assert.equal(response.status, 400);
+});
+
+test("fictional homepage demo endpoint has its own abuse limit", async () => {
+  let last;
+  for (let i = 0; i < 11; i += 1) {
+    last = await fetch(`${baseUrl}/api/demo/chat`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ message: "When is breakfast?" })
+    });
+  }
+  assert.equal(last.status, 429);
+});

@@ -42,8 +42,8 @@ const serviceStatus=document.getElementById('serviceStatus');
 const conversationHistory=[];
 let liveAI=false;
 async function checkService(){
- try{const r=await fetch('/api/health');if(!r.ok)throw new Error();const d=await r.json();liveAI=d.mode==='ai-configured';serviceStatus.textContent=liveAI?'Live AI · Connected':'Demo assistant · Sample knowledge';}
- catch{liveAI=false;serviceStatus.textContent='Demo assistant · Sample knowledge';}
+ try{const r=await fetch('/api/health');if(!r.ok)throw new Error();const d=await r.json();liveAI=d.mode==='ai-configured';serviceStatus.textContent=liveAI?'Live AI · Fictional hotel demo':'Sample hotel · Offline demo';}
+ catch{liveAI=false;serviceStatus.textContent='Sample hotel · Offline demo';}
 }
 checkService();
 function add(text,who){const el=document.createElement('div');el.className='bubble '+who;el.textContent=text;messages.appendChild(el);messages.scrollTop=messages.scrollHeight;}
@@ -72,9 +72,9 @@ async function ask(q){
  q=q.trim();if(!q)return;add(q,'user');input.value='';conversationHistory.push({role:'user',content:q});
  const pending=document.createElement('div');pending.className='bubble bot';pending.textContent='Thinking…';messages.appendChild(pending);messages.scrollTop=messages.scrollHeight;
  let reply='';let needsHuman=false;
- try{const r=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:q,history:conversationHistory.slice(0,-1)})});const d=await r.json();
- if(r.ok&&d.reply){liveAI=d.mode==='live-ai';serviceStatus.textContent=liveAI?'Live AI · Connected':'Assistant connected';reply=d.reply;needsHuman=Boolean(d.needsHuman);}
- else{reply=demoResponse(q);serviceStatus.textContent='Demo assistant · Sample knowledge';}
+ try{const r=await fetch('/api/demo/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:q,history:conversationHistory.slice(0,-1)})});const d=await r.json();
+ if(r.ok&&d.reply){liveAI=d.mode==='demo-ai';serviceStatus.textContent=liveAI?'Live AI · Fictional hotel demo':'Sample hotel · Offline demo';reply=d.reply;needsHuman=Boolean(d.needsHuman);}
+ else{reply=demoResponse(q);serviceStatus.textContent='Sample hotel · Offline demo';}
  }catch{reply=demoResponse(q);serviceStatus.textContent='Demo assistant · Sample knowledge';}
  pending.remove();if(needsHuman)reply+='\n\nStaff review is recommended. (This demo flags handoff but does not send a staff notification.)';add(reply,'bot');conversationHistory.push({role:'assistant',content:reply});
 }

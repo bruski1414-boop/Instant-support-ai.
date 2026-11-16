@@ -60,6 +60,18 @@ The repository now defines a provider-neutral, synthetic-only foundation for lin
 
 This is a pure data-contract/matching foundation plus synthetic fixtures and tests. It is **not** wired to a database table, guest-chat token issuance route, revenue-ledger write, or Mews mapping. No production booking can currently be automatically linked by this feature. The existing `veyra_linked_hotel_attested` label still means a hotel owner/admin manually linked a record; it is not provider-verified attribution. The persistence layer must later consume each token transactionally and enforce provider-event idempotency before this matcher is used for live reporting.
 
+## Transactional persistence foundation (not yet live)
+
+The provider-correlation contract now has a PostgreSQL persistence service in `booking-attribution-store.js`:
+
+- Intent issuance verifies that the conversation belongs to the supplied hotel workspace, stores only the SHA-256 token hash, and writes an audit record in the same transaction. The raw 256-bit token is returned once to the caller and is never stored.
+- Confirmed reservation matching locks the tenant-scoped intent, checks the token and attribution window, writes one match, consumes the intent and records an audit entry in one transaction.
+- Database uniqueness constraints prevent one intent, provider event ID or provider reservation ID from creating multiple matches for the same hotel. Concurrent retries return a duplicate result.
+- Conversation deletion clears the conversation link but preserves the minimal provider evidence; a detached intent cannot be matched again.
+- Optional reservation totals are stored separately as booking value. They are not inserted into `revenue_events`, are not treated as paid cash, and are not eligible for the paid-add-on metric.
+
+This persistence service is exercised by the dedicated PostgreSQL tenant-isolation CI suite using synthetic provider events. It is not yet called by guest chat or a provider webhook route. No named PMS adapter currently maps a documented provider metadata field into the Veyra token, and no provider signature/authentication is configured for this path. Therefore it does not yet create live provider-verified conversions or dashboard revenue.
+
 ## Current limitations
 
 This is a manual hotel-attestation workflow. It is not yet connected to a property-management system, booking engine, payment processor or accounting platform. Veyra cannot independently verify that a booking completed, that an add-on was paid, or that the hotel source reference is genuine. A manager must check the hotel's source system before entering the record.

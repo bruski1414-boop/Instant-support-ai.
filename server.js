@@ -297,7 +297,7 @@ app.post("/api/admin/escalations/:id/notify",requireDb,auth,role("owner","admin"
 app.patch("/api/admin/escalations/:id",requireDb,auth,role("owner","admin","staff"),async(q,r,n)=>{try{const s=q.body?.status;if(!["open","claimed","resolved"].includes(s))return r.status(400).json({error:"Invalid status."});
  const x=await db.query("UPDATE escalations SET status=$1,assigned_to=CASE WHEN $1='claimed' THEN $2 WHEN $1='open' THEN NULL ELSE assigned_to END,resolved_at=CASE WHEN $1='resolved' THEN now() ELSE NULL END WHERE id=$3 AND organization_id=$4 RETURNING id,status,assigned_to,resolved_at",[s,q.actor.user_id,q.params.id,q.actor.organization_id]);if(!x.rowCount)return r.status(404).json({error:"Escalation not found."});
  await db.query("UPDATE conversations SET status=$1 WHERE organization_id=$3 AND id=(SELECT conversation_id FROM escalations WHERE id=$2 AND organization_id=$3)",[s==="resolved"?"resolved":"escalated",q.params.id,q.actor.organization_id]);await audit(q.actor,"escalation."+s,"escalation",q.params.id);r.json({escalation:x.rows[0]});}catch(e){n(e);}});
-app.post("/api/demo/chat",async(q,r)=>{
+app.post("/api/demo/chat",demoChatLimiter,async(q,r)=>{
  try{
   const msg=q.body?.message;
   if(typeof msg!=="string"||!msg.trim()||msg.length>4000)return r.status(400).json({error:"Enter a message under 4,000 characters."});

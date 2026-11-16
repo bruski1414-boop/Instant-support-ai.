@@ -82,8 +82,8 @@ function createMewsInboxProcessor({ db, mewsStore, clock = () => new Date(), bat
     const terminal = row.attempt_count >= maxAttempts;
     const nextAttempt = new Date(clock().getTime() + retryDelayMs(row.attempt_count));
     await db.query(
-      "UPDATE mews_webhook_inbox SET status=$2,next_attempt_at=$3,lease_expires_at=NULL,last_error=$4 WHERE id=$1 AND status='processing'",
-      [row.id, terminal ? "failed" : "pending", nextAttempt, "reservation_fetch_failed"]
+      "UPDATE mews_webhook_inbox SET status=$2,next_attempt_at=$3,lease_expires_at=NULL,last_error=$4 WHERE id=$1 AND status='processing' AND attempt_count=$5",
+      [row.id, terminal ? "failed" : "pending", nextAttempt, "reservation_fetch_failed", row.attempt_count]
     );
     return terminal ? "failed" : "retried";
   }
@@ -108,13 +108,21 @@ function createMewsInboxProcessor({ db, mewsStore, clock = () => new Date(), bat
       const client = await db.connect();
       try {
         await client.query("BEGIN");
+        const ownership = await client.query(
+          "SELECT id FROM mews_webhook_inbox WHERE id=$1 AND status='processing' AND attempt_count=$2 AND lease_expires_at>now() FOR UPDATE",
+          [row.id, row.attempt_count]
+        );
+        if (!ownership.rowCount) {
+          await client.query("ROLLBACK");
+          return "stale";
+        }
         await client.query(
           "INSERT INTO mews_reservation_snapshots(organization_id,enterprise_id,reservation_id,service_id,state,scheduled_start_utc,scheduled_end_utc,provider_updated_utc,fetched_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,now()) ON CONFLICT(organization_id,reservation_id) DO UPDATE SET enterprise_id=EXCLUDED.enterprise_id,service_id=EXCLUDED.service_id,state=EXCLUDED.state,scheduled_start_utc=EXCLUDED.scheduled_start_utc,scheduled_end_utc=EXCLUDED.scheduled_end_utc,provider_updated_utc=EXCLUDED.provider_updated_utc,fetched_at=now() WHERE mews_reservation_snapshots.provider_updated_utc<=EXCLUDED.provider_updated_utc",
           [row.organization_id,row.enterprise_id,snapshot.reservationId,snapshot.serviceId,snapshot.state,snapshot.scheduledStartUtc,snapshot.scheduledEndUtc,snapshot.updatedUtc]
         );
         await client.query(
-          "UPDATE mews_webhook_inbox SET status='processed',processed_at=now(),lease_expires_at=NULL,last_error='' WHERE id=$1 AND status='processing'",
-          [row.id]
+          "UPDATE mews_webhook_inbox SET status='processed',processed_at=now(),lease_expires_at=NULL,last_error='' WHERE id=$1 AND status='processing' AND attempt_count=$2",
+          [row.id, row.attempt_count]
         );
         await client.query("COMMIT");
         return "processed";
@@ -136,7 +144,8 @@ function createMewsInboxProcessor({ db, mewsStore, clock = () => new Date(), bat
       claimed: rows.length,
       processed: outcomes.filter((x) => x === "processed").length,
       retried: outcomes.filter((x) => x === "retried").length,
-      failed: outcomes.filter((x) => x === "failed").length
+      failed: outcomes.filter((x) => x === "failed").length,
+      stale: outcomes.filter((x) => x === "stale").length
     });
   }
 

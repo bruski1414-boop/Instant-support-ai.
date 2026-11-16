@@ -20,21 +20,26 @@ function normalizeMewsReservationSnapshot(reservation, { expectedId, expectedSer
   if (!reservation || typeof reservation !== "object" || Array.isArray(reservation)) {
     throw new Error("Mews reservation response is invalid.");
   }
-  if (typeof reservation.id !== "string" || reservation.id !== expectedId) {
+  if (typeof reservation.id !== "string" || reservation.id.toLowerCase() !== String(expectedId).toLowerCase()) {
     throw new Error("Mews reservation identifier did not match the queued event.");
   }
-  if (typeof reservation.serviceId !== "string" || reservation.serviceId !== expectedServiceId) {
+  if (typeof reservation.serviceId !== "string" || reservation.serviceId.toLowerCase() !== String(expectedServiceId).toLowerCase()) {
     throw new Error("Mews reservation does not belong to the configured daily service.");
   }
   if (!RESERVATION_STATES.has(reservation.state)) {
     throw new Error("Mews reservation state is not supported.");
   }
+  const scheduledStartUtc = utc(reservation.scheduledStartUtc, "scheduledStartUtc");
+  const scheduledEndUtc = utc(reservation.scheduledEndUtc, "scheduledEndUtc");
+  if (Date.parse(scheduledEndUtc) <= Date.parse(scheduledStartUtc)) {
+    throw new Error("Mews reservation end must be later than its start.");
+  }
   return Object.freeze({
-    reservationId: reservation.id,
-    serviceId: reservation.serviceId,
+    reservationId: reservation.id.toLowerCase(),
+    serviceId: reservation.serviceId.toLowerCase(),
     state: reservation.state,
-    scheduledStartUtc: utc(reservation.scheduledStartUtc, "scheduledStartUtc"),
-    scheduledEndUtc: utc(reservation.scheduledEndUtc, "scheduledEndUtc"),
+    scheduledStartUtc,
+    scheduledEndUtc,
     updatedUtc: utc(reservation.updatedUtc, "updatedUtc")
   });
 }
@@ -55,6 +60,10 @@ function createMewsInboxProcessor({ db, mewsStore, clock = () => new Date(), bat
     const client = await db.connect();
     try {
       await client.query("BEGIN");
+      await client.query(
+        "UPDATE mews_webhook_inbox SET status='failed',lease_expires_at=NULL,last_error='max_attempts_exhausted' WHERE status='processing' AND lease_expires_at<now() AND attempt_count >= $1",
+        [maxAttempts]
+      );
       const result = await client.query(
         "WITH candidates AS (SELECT id FROM mews_webhook_inbox WHERE attempt_count < $1 AND ((status='pending' AND next_attempt_at<=now()) OR (status='processing' AND lease_expires_at<now())) ORDER BY received_at,id FOR UPDATE SKIP LOCKED LIMIT $2) UPDATE mews_webhook_inbox AS inbox SET status='processing',attempt_count=inbox.attempt_count+1,lease_expires_at=now()+($3::text||' milliseconds')::interval,last_error='' FROM candidates WHERE inbox.id=candidates.id RETURNING inbox.id,inbox.organization_id,inbox.enterprise_id,inbox.entity_id,inbox.attempt_count",
         [maxAttempts, batchSize, leaseMs]

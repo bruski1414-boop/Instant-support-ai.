@@ -4,7 +4,7 @@ on:
   push:
     branches: [main, "feature/**", "fix/**"]
   pull_request:
-    branches: [main, improve-booking-intent-handoffs, feature/two-way-guest-messaging-ci, feature/pms-adapter-foundation, feature/mews-demo-connector, fix/mews-bookable-service-scope, fix/demo-hotel-faq-intents]
+    branches: [main, improve-booking-intent-handoffs, feature/two-way-guest-messaging-ci, feature/pms-adapter-foundation, feature/mews-demo-connector, feature/booking-attribution-evidence-v1, fix/mews-bookable-service-scope, fix/demo-hotel-faq-intents]
   workflow_dispatch:
 
 permissions:

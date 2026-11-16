@@ -258,15 +258,15 @@ app.delete("/api/admin/storage",requireDb,auth,role("owner"),async(q,r,n)=>{try{
 
 app.get("/api/admin/mews/webhook",requireDb,auth,role("owner","admin"),async(q,r,n)=>{try{
  const x=await db.query("SELECT property_reference,status FROM mews_connections WHERE organization_id=$1",[q.actor.organization_id]);
- r.json({configured:Boolean(process.env.MEWS_WEBHOOK_TOKEN&&process.env.MEWS_INTEGRATION_ID),propertyConnected:Boolean(x.rowCount&&x.rows[0].status==="verified"),endpointTemplate:"/api/integrations/mews/events/{shared-secret}",notice:"Mews Connector General Webhooks authenticate with a shared secret in the URL. Configure MEWS_WEBHOOK_TOKEN and MEWS_INTEGRATION_ID on the server, register the URL with Mews support, and redact the secret-bearing path from all proxy/APM logs. This receiver queues identifiers only; reservation details and token correlation are not yet processed."});
+ r.json({configured:Boolean(process.env.MEWS_WEBHOOK_TOKEN&&process.env.MEWS_INTEGRATION_ID),propertyConnected:Boolean(x.rowCount&&x.rows[0].status==="verified"),endpointTemplate:"/api/integrations/mews/events?token={shared-secret}",notice:"Mews Connector General Webhooks authenticate with a shared secret in the URL. Configure MEWS_WEBHOOK_TOKEN and MEWS_INTEGRATION_ID on the server, register the URL with Mews support, and redact the secret-bearing path from all proxy/APM logs. This receiver queues identifiers only; reservation details and token correlation are not yet processed."});
 }catch(e){n(e);}});
-app.post("/api/integrations/mews/events/:token",requireDb,mewsWebhookLimiter,async(q,r,n)=>{try{
+app.post("/api/integrations/mews/events",requireDb,mewsWebhookLimiter,async(q,r,n)=>{try{
  const expected=process.env.MEWS_WEBHOOK_TOKEN;
  const integrationId=process.env.MEWS_INTEGRATION_ID;
  if(!expected||!integrationId)return r.status(503).json({error:"Mews webhook receiver is not configured."});
- if(!verifyMewsWebhookUrlSecret(q.params.token,expected))return r.status(401).json({error:"Webhook authentication failed."});
+ if(!verifyMewsWebhookUrlSecret(q.query?.token,expected))return r.status(401).json({error:"Webhook authentication failed."});
  let payload;try{payload=normalizeMewsGeneralWebhook(q.body,integrationId);}catch(e){return r.status(400).json({error:e.message});}
- const connection=await db.query("SELECT organization_id FROM mews_connections WHERE property_reference=$1 AND status='verified' LIMIT 2",[payload.enterpriseId]);
+ const connection=await db.query("SELECT organization_id FROM mews_connections WHERE lower(property_reference)=lower($1) AND status='verified' LIMIT 2",[payload.enterpriseId]);
  if(connection.rowCount!==1)return r.status(connection.rowCount?409:404).json({error:"Mews enterprise is not uniquely connected to a verified hotel workspace."});
  const orgId=connection.rows[0].organization_id;
  const client=await db.connect();let queued=0;try{await client.query("BEGIN");

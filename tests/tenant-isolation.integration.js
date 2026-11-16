@@ -361,6 +361,17 @@ try {
   });
   assert.equal(replayWithNewEventId.status, "duplicate", "a second provider event for the same reservation must not create a second conversion");
 
+  const reusedTokenForDifferentReservation = await bookingAttributionStore.consumeConfirmedReservation({
+    organizationId: orgAForPilot.rows[0].id,
+    provider: attributionProvider,
+    reservationEvent: {
+      ...confirmedReservation,
+      eventId: `ATTR-EVENT-REUSE-${tag}`,
+      reservationId: `ATTR-RESERVATION-REUSE-${tag}`,
+    },
+  });
+  assert.equal(reusedTokenForDifferentReservation.status, "already_consumed", "a consumed token must not be reused for a different reservation");
+
   const attributionAudit = await pool.query(
     "SELECT count(*)::int AS count FROM audit_logs WHERE organization_id=$1 AND action='booking_attribution.reservation_matched' AND target_id=$2",
     [orgAForPilot.rows[0].id, matchedAttribution.match.id],

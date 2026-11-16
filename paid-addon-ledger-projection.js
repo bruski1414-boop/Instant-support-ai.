@@ -47,6 +47,7 @@ function projectPaidAddonToLedger(event) {
   if (!Array.isArray(event.adjustments)) throw new Error("Confirmed adjustment detail is required.");
   const adjustmentByReference = new Map(event.adjustments.map(adjustment => [adjustment.externalReference, adjustment]));
   if (adjustmentByReference.size !== event.adjustments.length) throw new Error("Duplicate adjustment references are not allowed.");
+  if (adjustmentByReference.size !== (event.evidence.adjustmentReferences || []).length) throw new Error("Adjustment evidence is incomplete.");
   const adjustments = (event.evidence.adjustmentReferences || []).map(reference => {
     const evidence = adjustmentByReference.get(reference);
     const amountMinor = evidence?.amountMinor;

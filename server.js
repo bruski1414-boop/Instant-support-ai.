@@ -89,6 +89,7 @@ const schema=[
  "ALTER TABLE mews_webhook_inbox ADD COLUMN IF NOT EXISTS next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT now()",
  "ALTER TABLE mews_webhook_inbox ADD COLUMN IF NOT EXISTS lease_expires_at TIMESTAMPTZ",
  "CREATE INDEX IF NOT EXISTS mews_webhook_inbox_claim_idx ON mews_webhook_inbox(status,next_attempt_at,received_at)",
+ "CREATE UNIQUE INDEX IF NOT EXISTS mews_webhook_inbox_active_event_unique_idx ON mews_webhook_inbox(organization_id,integration_id,enterprise_id,discriminator,entity_id) WHERE status IN ('pending','processing')",
  "CREATE TABLE IF NOT EXISTS mews_reservation_snapshots(id UUID PRIMARY KEY DEFAULT gen_random_uuid(),organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,enterprise_id TEXT NOT NULL,reservation_id TEXT NOT NULL,service_id TEXT NOT NULL,state TEXT NOT NULL CHECK(state IN ('Inquired','Confirmed','Started','Processed','Canceled','Optional','Requested')),scheduled_start_utc TIMESTAMPTZ NOT NULL,scheduled_end_utc TIMESTAMPTZ NOT NULL,provider_updated_utc TIMESTAMPTZ NOT NULL,fetched_at TIMESTAMPTZ NOT NULL DEFAULT now(),CHECK(scheduled_end_utc>scheduled_start_utc),UNIQUE(organization_id,reservation_id))",
  "CREATE INDEX IF NOT EXISTS mews_reservation_snapshots_org_updated_idx ON mews_reservation_snapshots(organization_id,provider_updated_utc DESC)",
 
@@ -278,11 +279,11 @@ app.post("/api/integrations/mews/events",requireDb,mewsWebhookLimiter,async(q,r,
  if(connection.rowCount!==1)return r.status(connection.rowCount?409:404).json({error:"Mews enterprise is not uniquely connected to a verified hotel workspace."});
  const orgId=connection.rows[0].organization_id;
  const client=await db.connect();let queued=0;try{await client.query("BEGIN");
-  for(const event of payload.reservations){await client.query("INSERT INTO mews_webhook_inbox(organization_id,integration_id,enterprise_id,discriminator,entity_id) VALUES($1,$2,$3,$4,$5)",[orgId,event.integrationId,event.enterpriseId,event.discriminator,event.entityId]);queued++;}
+  for(const event of payload.reservations){const inserted=await client.query("INSERT INTO mews_webhook_inbox(organization_id,integration_id,enterprise_id,discriminator,entity_id) VALUES($1,$2,$3,$4,$5) ON CONFLICT(organization_id,integration_id,enterprise_id,discriminator,entity_id) WHERE status IN ('pending','processing') DO NOTHING",[orgId,event.integrationId,event.enterpriseId,event.discriminator,event.entityId]);if(inserted.rowCount)queued++;}
   if(queued)await client.query("INSERT INTO audit_logs(organization_id,actor_user_id,action,target_type,target_id) VALUES($1,NULL,'integration.mews_webhook_received','mews_webhook_batch',$2)",[orgId,String(queued)]);
   await client.query("COMMIT");
  }catch(e){await client.query("ROLLBACK");throw e;}finally{client.release();}
- r.status(202).json({accepted:true,queued,ignored:payload.ignoredCount,processing:"pending",notice:"Only Mews event identifiers were queued. No guest details were stored and no booking was attributed."});
+ r.status(202).json({accepted:true,queued,ignored:payload.ignoredCount,processing:"pending",duplicateEventsCoalesced:payload.reservations.length-queued,notice:"Only Mews event identifiers were queued. No guest details were stored and no booking was attributed."});
 }catch(e){n(e);}});
 app.post("/api/public/:slug/conversations/:id/booking-attribution",requireDb,bookingIntentLimiter,async(q,r,n)=>{try{
  if(process.env.BOOKING_ATTRIBUTION_ENABLED!=="true")return r.status(503).json({error:"Booking attribution is not enabled for this booking-engine configuration."});

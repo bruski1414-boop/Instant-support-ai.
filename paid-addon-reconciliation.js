@@ -76,7 +76,8 @@ function reconcilePaidAddons({ organizationId, provider, orderItems, bills, paym
   const items = uniqueById(orderItems, "orderItems");
   const billRows = uniqueById(bills, "bills");
   const paymentRows = uniqueById(payments, "payments");
-  const adjustmentRows = uniqueById(adjustments, "adjustments");
+  if (!Array.isArray(adjustments)) throw new Error("adjustments must be an array.");
+  const adjustmentRows = adjustments;
 
   const billById = new Map(billRows.map(row => [row.id, row]));
   const paymentsByBill = new Map();

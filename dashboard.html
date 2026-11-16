@@ -166,10 +166,13 @@ main{padding:28px clamp(16px,4vw,48px);max-width:1450px;width:100%;margin:auto}.
   <p class="muted">These are operational counts and response-time measurements, not claimed staff-time savings or revenue caused by Veyra.</p>
   <div id="revenueSection">
   <div class="sectionrow"><h2>Revenue evidence</h2><span class="muted" id="revenueWindowLabel">Loading exact reporting window…</span></div>
+  <form id="revenueWindowForm" class="card" style="margin-bottom:14px"><div class="formrow"><div class="field"><label for="revenueStartDate">Start date (UTC)</label><input id="revenueStartDate" type="date"></div><div class="field"><label for="revenueEndDate">End date (UTC, inclusive)</label><input id="revenueEndDate" type="date"></div><div class="actions"><button class="btn primary" type="submit">Apply dates</button><button class="btn" id="revenueWindowReset" type="button">Reset to trailing 30 days</button></div></div><p class="muted">Choose both dates for a calendar-date report (maximum 366 days), or leave both blank for the trailing 30×24-hour report.</p></form>
   <div class="grid" id="revenueSummary">
    <div class="card"><div class="metriclabel">Veyra-linked confirmed revenue</div><div id="linkedRevenue" class="metric">—</div><div id="linkedRevenueCount" class="muted">Loading…</div></div>
    <div class="card"><div class="metriclabel">Hotel-reported, not Veyra-attributed</div><div id="unlinkedRevenue" class="metric">—</div><div id="unlinkedRevenueCount" class="muted">Loading…</div></div>
    <div class="card"><div class="metriclabel">Distinct conversations linked by hotel staff</div><div id="linkedConversationCount" class="metric">—</div><div class="muted">A conversation link is not proof of influence or causation.</div></div>
+   <div class="card"><div class="metriclabel">Confirmed booking revenue</div><div id="bookingRevenueBreakdown" class="muted">Loading…</div></div>
+   <div class="card"><div class="metriclabel">Paid add-on revenue</div><div id="addonRevenueBreakdown" class="muted">Loading…</div></div>
   </div>
   <div class="card" style="margin-top:14px">
    <h3 style="margin-top:0">Record a confirmed booking or paid add-on</h3>
@@ -303,10 +306,17 @@ function formatRevenue(amountMinor,currency){
  return new Intl.NumberFormat(undefined,{style:"currency",currency}).format(Number(amountMinor)/(10**digits));
 }
 async function loadRevenue(){
- const d=await api("/api/admin/revenue");
+ const startDate=$("revenueStartDate").value;
+ const endDate=$("revenueEndDate").value;
+ if(Boolean(startDate)!==Boolean(endDate))throw new Error("Choose both a start date and an end date.");
+ const params=startDate?"?startDate="+encodeURIComponent(startDate)+"&endDate="+encodeURIComponent(endDate):"";
+ const d=await api("/api/admin/revenue"+params);
  const formatWindow=(value)=>new Intl.DateTimeFormat(undefined,{dateStyle:"medium",timeStyle:"short",timeZone:"UTC"}).format(new Date(value))+" UTC";
- $("revenueWindowLabel").textContent="Trailing 30×24 hours · "+formatWindow(d.windowStart)+" to "+formatWindow(d.windowEnd)+" · hotel-attested records";
+ $("revenueWindowLabel").textContent=(d.windowMode==="calendar_dates_inclusive"?"Inclusive UTC calendar dates":"Trailing 30×24 hours")+" · "+formatWindow(d.windowStart)+" to "+formatWindow(d.windowEnd)+" · net of recorded adjustments";
  $("linkedConversationCount").textContent=String(d.linkedConversationCount??0);
+ const renderTypeBreakdown=(type)=>{const rows=(d.revenueBreakdown||[]).filter(x=>x.event_type===type);if(!rows.length)return "No verified revenue in this window.";return rows.map(x=>(x.attribution_status==="veyra_linked_hotel_attested"?"Veyra-linked · ":"Hotel-reported · ")+formatRevenue(x.amount_minor,x.currency)+" ("+x.event_count+" event(s))").join(" · ");};
+ $("bookingRevenueBreakdown").textContent=renderTypeBreakdown("booking_confirmed");
+ $("addonRevenueBreakdown").textContent=renderTypeBreakdown("addon_paid");
  $("revenueForm").classList.toggle("hidden",!["owner","admin"].includes(currentRole));
  const renderTotals=(items)=>items.length?items.map(x=>formatRevenue(x.amount_minor,x.currency)).join(" + "):"—";
  const count=(items)=>items.reduce((n,x)=>n+Number(x.event_count||0),0);
@@ -318,6 +328,8 @@ async function loadRevenue(){
  $("revenueRows").innerHTML=(d.events||[]).map(x=>'<tr><td>'+safe(x.event_type==="booking_confirmed"?"Confirmed booking":"Paid add-on")+'</td><td>'+formatRevenue(x.amount_minor,x.currency)+'</td><td>'+(x.attribution_status==="veyra_linked_hotel_attested"?'<span class="tag good">Veyra-linked · hotel-attested</span>':'<span class="tag warn">Hotel-reported · unlinked</span>')+'</td><td>'+safe(x.external_reference)+'<div class="muted">'+safe(x.source_reference)+'</div></td><td>'+date(x.occurred_at)+'</td></tr>').concat((d.adjustments||[]).map(x=>'<tr><td>'+safe(x.adjustment_type==="refund"?"Refund":"Chargeback")+'</td><td>−'+formatRevenue(x.amount_minor,x.currency)+'</td><td><span class="tag warn">Revenue adjustment</span></td><td>'+safe(x.external_reference)+'<div class="muted">Original: '+safe(x.original_external_reference)+' · '+safe(x.source_reference)+'</div></td><td>'+date(x.occurred_at)+'</td></tr>')).join("")||'<tr><td colspan="5" class="empty">No revenue evidence recorded yet.</td></tr>';
  $("revenueFormMessage").textContent=d.notice||"";
 }
+$("revenueWindowForm").addEventListener("submit",async e=>{e.preventDefault();try{await loadRevenue();}catch(error){showToast(error.message||"Could not load revenue report.");}});
+$("revenueWindowReset").addEventListener("click",async()=>{$("revenueStartDate").value="";$("revenueEndDate").value="";try{await loadRevenue();}catch(error){showToast(error.message||"Could not load revenue report.");}});
 async function loadKnowledge(){
  const d=await api("/api/admin/knowledge");
  $( "knowledgeList" ).innerHTML=(d.documents||[]).map(x=>{

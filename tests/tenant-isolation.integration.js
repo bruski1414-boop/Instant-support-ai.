@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { randomUUID, randomBytes, scrypt as scryptCallback, createHash } from "node:crypto";
+import { createServer } from "node:http";
+import { randomUUID, randomBytes, scrypt as scryptCallback, createHash, createHmac } from "node:crypto";
 import { promisify } from "node:util";
 import pg from "pg";
 const { Pool } = pg;
@@ -25,6 +26,35 @@ const tenants = [
 let child;
 let childOutput = "";
 let serverReady = false;
+const webhookSecret = "ci-webhook-secret-" + tag;
+const webhookRequests = [];
+let webhookResponseStatus = 200;
+let webhookDelayMs = 0;
+const mockAiServer = createServer(async (req, res) => {
+  let raw = "";
+  for await (const chunk of req) raw += chunk;
+  let request = {};
+  try { request = JSON.parse(raw); } catch {}
+  const question = String(request.messages?.find(message => message.role === "user")?.content || "");
+  const answer = /breakfast/i.test(question) ? { reply: "Breakfast is served daily from 6:30 AM to 10:30 AM.", needsHuman: false, handoffReason: "" } : { reply: "I will ask the hotel team to help you.", needsHuman: true, handoffReason: "Staff assistance requested in integration test." };
+  res.writeHead(200, { "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true" });
+  res.end(JSON.stringify({ id: "chatcmpl-ci", object: "chat.completion", created: 1, model: "mock-veyra-test", choices: [{ index: 0, message: { role: "assistant", content: JSON.stringify(answer) }, finish_reason: "stop" }] }));
+});
+const mockWebhookServer = createServer(async (req, res) => {
+  let raw = "";
+  for await (const chunk of req) raw += chunk;
+  webhookRequests.push({ body: raw, signature: req.headers["x-veyra-signature"], idempotencyKey: req.headers["idempotency-key"] });
+  if (webhookDelayMs) await new Promise(resolve => setTimeout(resolve, webhookDelayMs));
+  res.writeHead(webhookResponseStatus, { "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true" });
+  res.end(JSON.stringify({ accepted: webhookResponseStatus >= 200 && webhookResponseStatus < 300 }));
+});
+async function listen(server) {
+  await new Promise((resolve, reject) => { server.once("error", reject); server.listen(0, "127.0.0.1", resolve); });
+  return server.address().port;
+}
+async function closeServer(server) {
+  if (server.listening) await new Promise(resolve => server.close(resolve));
+}
 
 async function waitForServer() {
   for (let attempt = 0; attempt < 100; attempt += 1) {
@@ -44,7 +74,7 @@ async function waitForServer() {
 async function provision(tenant) {
   const response = await fetch(`${baseUrl}/api/platform/organizations`, {
     method: "POST",
-    headers: { "content-type": "application/json", "X-Platform-Provisioning-Token": token },
+    headers: { "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true", "X-Platform-Provisioning-Token": token },
     body: JSON.stringify({
       organizationName: tenant.name,
       email: tenant.email,
@@ -59,7 +89,7 @@ async function provision(tenant) {
 async function login(tenant) {
   const response = await fetch(`${baseUrl}/api/auth/login`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true" },
     body: JSON.stringify({
       organizationSlug: tenant.slug,
       email: tenant.email,
@@ -119,7 +149,7 @@ async function csrfToken(cookie) {
 async function submitRevenue(cookie, csrf, event) {
   return fetch(`${baseUrl}/api/admin/revenue`, {
     method: "POST",
-    headers: { cookie, "content-type": "application/json", "X-CSRF-Token": csrf },
+    headers: { cookie, "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true", "X-CSRF-Token": csrf },
     body: JSON.stringify(event),
   });
 }
@@ -131,7 +161,7 @@ async function readRevenue(cookie) {
 async function rotateRevenueWebhook(cookie, csrf) {
   const response = await fetch(`${baseUrl}/api/admin/integrations/revenue-webhook/rotate`, {
     method: "POST",
-    headers: { cookie, "X-CSRF-Token": csrf, "content-type": "application/json" },
+    headers: { cookie, "X-CSRF-Token": csrf, "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true" },
     body: "{}",
   });
   const body = await response.json();
@@ -144,7 +174,7 @@ async function rotateRevenueWebhook(cookie, csrf) {
 async function sendProviderRevenue(slug, secret, event) {
   return fetch(`${baseUrl}/api/integrations/${slug}/revenue`, {
     method: "POST",
-    headers: { "content-type": "application/json", "X-Veyra-Webhook-Token": secret || "" },
+    headers: { "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true", "X-Veyra-Webhook-Token": secret || "" },
     body: JSON.stringify(event),
   });
 }
@@ -163,6 +193,8 @@ async function readKnowledgeVersions(cookie, documentId) {
 }
 
 try {
+  const mockAiPort = await listen(mockAiServer);
+  const mockWebhookPort = await listen(mockWebhookServer);
   child = spawn(process.execPath, ["server.js"], {
     cwd: process.cwd(),
     env: {
@@ -172,10 +204,17 @@ try {
       DATABASE_SSL: "false",
       BOOTSTRAP_TOKEN: `bootstrap-${tag}`,
       PLATFORM_PROVISIONING_TOKEN: token,
-      OPENAI_API_KEY: "",
-      STAFF_WEBHOOK_URL: "",
-      STAFF_WEBHOOK_SECRET: "",
-      GUEST_DATA_STORAGE_ENABLED: "false",
+      OPENAI_API_KEY: "ci-mock-api-key",
+      OPENAI_BASE_URL: "http://127.0.0.1:" + mockAiPort + "/v1",
+      STAFF_WEBHOOK_URL: "http://127.0.0.1:" + mockWebhookPort + "/notify",
+      STAFF_WEBHOOK_SECRET: webhookSecret,
+      GUEST_DATA_STORAGE_ENABLED: "true",
+      DURABLE_BACKUPS_VERIFIED: "true",
+      TENANT_ISOLATION_TESTS_PASSED: "true",
+      PROVIDER_OAUTH_TESTED: "true",
+      HOTEL_PRIVACY_APPROVED: "true",
+      STAFF_HANDOFF_TESTED: "true",
+      PILOT_RELEASE_APPROVED: "true",
     },
     stdio: ["ignore", "ignore", "pipe"],
   });
@@ -185,6 +224,42 @@ try {
   serverReady = true;
 
   for (const tenant of tenants) await provision(tenant);
+
+  const orgAForPilot = await pool.query("SELECT id FROM organizations WHERE slug=$1", [tenants[0].slug]);
+  await pool.query("INSERT INTO organization_privacy_approvals(organization_id,policy_version,purpose_acknowledged,retention_acknowledged,backup_acknowledged,access_acknowledged,deletion_acknowledged,approved_by) SELECT $1,'2026-11-14-v1',true,true,true,true,true,id FROM users WHERE organization_id=$1 AND role='owner'", [orgAForPilot.rows[0].id]);
+
+  // The real guest-chat route must remain closed until every pilot release gate is verified.
+  const gatedChat = await fetch(`${baseUrl}/api/public/${tenants[0].slug}/chat`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true" },
+    body: JSON.stringify({ message: "What time is breakfast?" }),
+  });
+  assert.equal(gatedChat.status, 503, "guest chat must not start before this hotel's integrations are verified");
+  const gatedChatBody = await gatedChat.json();
+  assert.match(gatedChatBody.error, /AI and staff notification integrations must be verified/i);
+  const tenantBWithoutApproval = await fetch(`${baseUrl}/api/public/${tenants[1].slug}/chat`, {
+    method: "POST", headers: { "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true" },
+    body: JSON.stringify({ message: "What time is breakfast?" }),
+  });
+  assert.equal(tenantBWithoutApproval.status, 503);
+  assert.match((await tenantBWithoutApproval.json()).error, /privacy approval/i, "tenant A's approval must not authorise tenant B");
+  const noPrematureConversation = await pool.query(
+    "SELECT count(*)::int AS count FROM conversations WHERE organization_id=(SELECT id FROM organizations WHERE slug=$1)",
+    [tenants[0].slug],
+  );
+  assert.equal(noPrematureConversation.rows[0].count, 0, "a blocked guest request must not create a conversation");
+
+  await pool.query("INSERT INTO organization_integration_checks(organization_id,integration,verified_at) VALUES($1,$2,now()),($1,$3,now())", [orgAForPilot.rows[0].id, "ai_provider", "staff_webhook"]);
+  await pool.query("INSERT INTO organization_storage_connections(organization_id,provider,workspace_reference,root_folder_reference,status,connected_at,last_sync_at,last_sync_status,last_sync_error) VALUES($1,$2,$3,$4,$5,now(),now(),'success','')", [orgAForPilot.rows[0].id, "google_drive", "ci-workspace-a", "ci-folder-a", "connected"]);
+  await pool.query("INSERT INTO knowledge_documents(organization_id,title,category,content,approved,source_reference,reviewed_at) VALUES($1,$2,$3,$4,true,$5,now())", [orgAForPilot.rows[0].id, "Breakfast hours Alpha", "services", "Breakfast is served daily from 6:30 AM to 10:30 AM.", "ci-approved-hotel-alpha-handbook"]);
+
+  // Configure Beta independently: its own privacy approval, integration checks,
+  // storage connection and approved knowledge must be required for its guest chat.
+  const orgBForPilot = await pool.query("SELECT id FROM organizations WHERE slug=$1", [tenants[1].slug]);
+  await pool.query("INSERT INTO organization_privacy_approvals(organization_id,policy_version,purpose_acknowledged,retention_acknowledged,backup_acknowledged,access_acknowledged,deletion_acknowledged,approved_by) SELECT $1,'2026-11-14-v1',true,true,true,true,true,id FROM users WHERE organization_id=$1 AND role='owner'", [orgBForPilot.rows[0].id]);
+  await pool.query("INSERT INTO organization_integration_checks(organization_id,integration,verified_at) VALUES($1,$2,now()),($1,$3,now())", [orgBForPilot.rows[0].id, "ai_provider", "staff_webhook"]);
+  await pool.query("INSERT INTO organization_storage_connections(organization_id,provider,workspace_reference,root_folder_reference,status,connected_at,last_sync_at,last_sync_status,last_sync_error) VALUES($1,$2,$3,$4,$5,now(),now(),'success','')", [orgBForPilot.rows[0].id, "google_drive", "ci-workspace-b", "ci-folder-b", "connected"]);
+  await pool.query("INSERT INTO knowledge_documents(organization_id,title,category,content,approved,source_reference,reviewed_at) VALUES($1,$2,$3,$4,true,$5,now())", [orgBForPilot.rows[0].id, "Breakfast hours Beta", "services", "Breakfast is served daily from 6:30 AM to 10:30 AM.", "ci-approved-hotel-beta-handbook"]);
   const [cookieA, cookieB] = await Promise.all(tenants.map(login));
   const staffCookie = await login(await seedStaff(tenants[0]));
   await Promise.all(tenants.map(seedConversation));
@@ -223,7 +298,7 @@ try {
 
   const staffReply = await fetch(`${baseUrl}/api/admin/conversations/${tenants[0].conversationId}/reply`, {
     method: "POST",
-    headers: { cookie: staffCookie, "X-CSRF-Token": staffCsrf, "content-type": "application/json" },
+    headers: { cookie: staffCookie, "X-CSRF-Token": staffCsrf, "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true" },
     body: JSON.stringify({ message: "A member of our hotel team can help with that." }),
   });
   assert.equal(staffReply.status, 201, await staffReply.clone().text());
@@ -245,14 +320,14 @@ try {
 
   const crossTenantStaffReply = await fetch(`${baseUrl}/api/admin/conversations/${tenants[1].conversationId}/reply`, {
     method: "POST",
-    headers: { cookie: staffCookie, "X-CSRF-Token": staffCsrf, "content-type": "application/json" },
+    headers: { cookie: staffCookie, "X-CSRF-Token": staffCsrf, "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true" },
     body: JSON.stringify({ message: "This cross-hotel reply must be blocked." }),
   });
   assert.equal(crossTenantStaffReply.status, 404, "staff must not reply to another hotel's conversation");
 
   const staffReplyWithoutCsrf = await fetch(`${baseUrl}/api/admin/conversations/${tenants[0].conversationId}/reply`, {
     method: "POST",
-    headers: { cookie: staffCookie, "content-type": "application/json" },
+    headers: { cookie: staffCookie, "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true" },
     body: JSON.stringify({ message: "This reply must be blocked." }),
   });
   assert.equal(staffReplyWithoutCsrf.status, 403, "staff replies must require CSRF verification");
@@ -275,9 +350,329 @@ try {
   assert.equal(performanceABody.handoff_conversations, 0);
   assert.equal(performanceBBody.handoff_conversations, 0);
 
+  // Exercise the real tenant guest-chat route with local AI and webhook test doubles.
+  const guestChat = await fetch(baseUrl + "/api/public/" + tenants[0].slug + "/chat", {
+    method: "POST", headers: { "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true" },
+    body: JSON.stringify({ message: "What time is breakfast?" }),
+  });
+  assert.equal(guestChat.status, 200, await guestChat.clone().text());
+  const guestChatBody = await guestChat.json();
+  assert.equal(guestChatBody.reply, "Breakfast is served daily from 6:30 AM to 10:30 AM.");
+  assert.equal(guestChatBody.needsHuman, false);
+  assert.ok(guestChatBody.conversationId);
+  assert.match(guestChatBody.conversationToken, /^[A-Za-z0-9_-]{40,64}$/);
+  assert.ok(guestChatBody.knowledgeSources.some(source => source.title === "Breakfast hours Alpha"));
+  const persistedJourney = await pool.query("SELECT m.role,m.content,m.evidence FROM conversations c JOIN messages m ON m.conversation_id=c.id WHERE c.id=$1 AND c.organization_id=$2 ORDER BY m.created_at", [guestChatBody.conversationId, orgAForPilot.rows[0].id]);
+  assert.equal(persistedJourney.rowCount, 2, "guest and AI reply must persist in the same tenant conversation");
+  assert.equal(persistedJourney.rows[0].role, "guest");
+  assert.equal(persistedJourney.rows[1].role, "assistant");
+  assert.equal(persistedJourney.rows[1].content, guestChatBody.reply);
+  assert.equal(persistedJourney.rows[1].evidence.status, "supported");
+  assert.ok(persistedJourney.rows[1].evidence.sources.some(source => source.title === "Breakfast hours Alpha"));
+
+  // Beta independently answers from its own approved knowledge and persists
+  // the guest journey under Beta's organization, without Alpha's source evidence.
+  const guestChatB = await fetch(baseUrl + "/api/public/" + tenants[1].slug + "/chat", {
+    method: "POST", headers: { "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true" },
+    body: JSON.stringify({ message: "What time is breakfast?" }),
+  });
+  assert.equal(guestChatB.status, 200, await guestChatB.clone().text());
+  const guestChatBBody = await guestChatB.json();
+  assert.equal(guestChatBBody.reply, "Breakfast is served daily from 6:30 AM to 10:30 AM.");
+  assert.equal(guestChatBBody.needsHuman, false);
+  assert.ok(guestChatBBody.conversationId);
+  assert.ok(guestChatBBody.knowledgeSources.some(source => source.title === "Breakfast hours Beta"));
+  assert.ok(!guestChatBBody.knowledgeSources.some(source => source.title === "Breakfast hours Alpha"), "Beta must not receive Alpha's approved knowledge sources");
+  const persistedJourneyB = await pool.query("SELECT c.organization_id,m.role,m.content,m.evidence FROM conversations c JOIN messages m ON m.conversation_id=c.id WHERE c.id=$1 ORDER BY m.created_at", [guestChatBBody.conversationId]);
+  assert.equal(persistedJourneyB.rowCount, 2);
+  assert.equal(String(persistedJourneyB.rows[0].organization_id), String(orgBForPilot.rows[0].id));
+  assert.equal(persistedJourneyB.rows[0].role, "guest");
+  assert.equal(persistedJourneyB.rows[1].role, "assistant");
+  assert.equal(persistedJourneyB.rows[1].content, guestChatBBody.reply);
+  assert.ok(persistedJourneyB.rows[1].evidence.sources.some(source => source.title === "Breakfast hours Beta"));
+  assert.ok(!persistedJourneyB.rows[1].evidence.sources.some(source => source.title === "Breakfast hours Alpha"));
+
+  // Guest conversation IDs and tokens must not cross workspace boundaries.
+  const betaTokenAgainstAlpha = await fetch(baseUrl + "/api/public/" + tenants[0].slug + "/chat?conversationId=" + guestChatBBody.conversationId, {
+    headers: { "X-Veyra-Conversation-Token": guestChatBBody.conversationToken },
+  });
+  assert.equal(betaTokenAgainstAlpha.status, 404, "Beta guest tokens must not work against Alpha's workspace");
+  const alphaTokenAgainstBeta = await fetch(baseUrl + "/api/public/" + tenants[1].slug + "/chat?conversationId=" + guestChatBody.conversationId, {
+    headers: { "X-Veyra-Conversation-Token": guestChatBody.conversationToken },
+  });
+  assert.equal(alphaTokenAgainstBeta.status, 404, "Alpha guest tokens must not work against Beta's workspace");
+
+  const guestEscalation = await fetch(baseUrl + "/api/public/" + tenants[0].slug + "/chat", {
+    method: "POST", headers: { "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true" },
+    body: JSON.stringify({ message: "I have a serious allergy and need help." }),
+  });
+  assert.equal(guestEscalation.status, 200, await guestEscalation.clone().text());
+  const guestEscalationBody = await guestEscalation.json();
+  assert.equal(guestEscalationBody.needsHuman, true);
+  assert.equal(guestEscalationBody.notificationStatus, "delivered");
+  assert.equal(guestEscalationBody.notificationDelivered, true);
+  assert.equal(webhookRequests.length, 1, "the staff webhook must receive the escalation exactly once");
+  const webhookRequest = webhookRequests[0];
+  const expectedSignature = createHmac("sha256", webhookSecret).update(webhookRequest.body).digest("hex");
+  assert.equal(webhookRequest.signature, expectedSignature, "staff webhook payload must carry a valid HMAC signature");
+  const webhookPayload = JSON.parse(webhookRequest.body);
+  assert.equal(webhookPayload.event, "veyra.escalation.created");
+  assert.equal(webhookPayload.organizationSlug, tenants[0].slug);
+  assert.equal(webhookPayload.conversationId, guestEscalationBody.conversationId);
+  assert.equal(webhookPayload.idempotencyKey, guestEscalationBody.escalationId, "the webhook event must use its escalation ID as a stable idempotency key");
+  assert.equal(webhookRequest.idempotencyKey, guestEscalationBody.escalationId, "the receiver must receive the stable idempotency key header");
+  const escalationRecord = await pool.query("SELECT e.notification_status,e.notification_attempts,c.status AS conversation_status FROM escalations e JOIN conversations c ON c.id=e.conversation_id WHERE e.id=$1 AND e.organization_id=$2", [guestEscalationBody.escalationId, orgAForPilot.rows[0].id]);
+  assert.equal(escalationRecord.rowCount, 1);
+  assert.equal(escalationRecord.rows[0].notification_status, "delivered");
+  assert.equal(escalationRecord.rows[0].notification_attempts, 1);
+  assert.equal(escalationRecord.rows[0].conversation_status, "escalated");
+
+  // Beta's urgent request must notify the same test receiver but identify Beta,
+  // persist under Beta's organization, and never be recorded as Alpha's escalation.
+  const guestEscalationB = await fetch(baseUrl + "/api/public/" + tenants[1].slug + "/chat", {
+    method: "POST", headers: { "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true" },
+    body: JSON.stringify({ message: "I have a serious allergy and need help." }),
+  });
+  assert.equal(guestEscalationB.status, 200, await guestEscalationB.clone().text());
+  const guestEscalationBBody = await guestEscalationB.json();
+  assert.equal(guestEscalationBBody.needsHuman, true);
+  assert.equal(guestEscalationBBody.notificationStatus, "delivered");
+  assert.equal(webhookRequests.length, 2, "each hotel's escalation must produce exactly one staff notification");
+  const webhookRequestB = webhookRequests[1];
+  const expectedSignatureB = createHmac("sha256", webhookSecret).update(webhookRequestB.body).digest("hex");
+  assert.equal(webhookRequestB.signature, expectedSignatureB, "Beta staff webhook payload must carry a valid HMAC signature");
+  const webhookPayloadB = JSON.parse(webhookRequestB.body);
+  assert.equal(webhookPayloadB.event, "veyra.escalation.created");
+  assert.equal(webhookPayloadB.organizationSlug, tenants[1].slug);
+  assert.equal(webhookPayloadB.conversationId, guestEscalationBBody.conversationId);
+  assert.equal(webhookPayloadB.idempotencyKey, guestEscalationBBody.escalationId);
+  assert.equal(webhookRequestB.idempotencyKey, guestEscalationBBody.escalationId);
+  const escalationRecordB = await pool.query("SELECT e.notification_status,e.notification_attempts,c.status AS conversation_status FROM escalations e JOIN conversations c ON c.id=e.conversation_id WHERE e.id=$1 AND e.organization_id=$2", [guestEscalationBBody.escalationId, orgBForPilot.rows[0].id]);
+  assert.equal(escalationRecordB.rowCount, 1, "Beta escalation must belong to Beta's organization");
+  assert.equal(escalationRecordB.rows[0].notification_status, "delivered");
+  assert.equal(escalationRecordB.rows[0].notification_attempts, 1);
+  assert.equal(escalationRecordB.rows[0].conversation_status, "escalated");
+  const betaEscalationInAlpha = await pool.query("SELECT count(*)::int AS count FROM escalations WHERE id=$1 AND organization_id=$2", [guestEscalationBBody.escalationId, orgAForPilot.rows[0].id]);
+  assert.equal(betaEscalationInAlpha.rows[0].count, 0, "Beta escalation must never be visible in Alpha's organization");
+
+  // The staff escalation inbox is tenant-scoped, and staff cannot mutate another hotel's handoff.
+  const staffEscalationsA = await fetch(baseUrl + "/api/admin/escalations", { headers: { cookie: staffCookie } });
+  const staffEscalationsB = await fetch(baseUrl + "/api/admin/escalations", { headers: { cookie: cookieB } });
+  assert.equal(staffEscalationsA.status, 200);
+  assert.equal(staffEscalationsB.status, 200);
+  const staffEscalationsABody = await staffEscalationsA.json();
+  const staffEscalationsBBody = await staffEscalationsB.json();
+  assert.ok(staffEscalationsABody.escalations.some(item => item.id === guestEscalationBody.escalationId), "Alpha staff must see Alpha's escalation");
+  assert.ok(!staffEscalationsABody.escalations.some(item => item.id === guestEscalationBBody.escalationId), "Alpha staff must not see Beta's escalation");
+  assert.ok(staffEscalationsBBody.escalations.some(item => item.id === guestEscalationBBody.escalationId), "Beta owner must see Beta's escalation");
+  assert.ok(!staffEscalationsBBody.escalations.some(item => item.id === guestEscalationBody.escalationId), "Beta must not see Alpha's escalation");
+  const crossTenantEscalationUpdate = await fetch(baseUrl + "/api/admin/escalations/" + guestEscalationBBody.escalationId, {
+    method: "PATCH",
+    headers: { cookie: staffCookie, "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true", "X-CSRF-Token": staffCsrf },
+    body: JSON.stringify({ status: "claimed" }),
+  });
+  assert.equal(crossTenantEscalationUpdate.status, 404, "Alpha staff must not claim Beta's escalation");
+
+  const crossTenantNotificationRetry = await fetch(baseUrl + "/api/admin/escalations/" + guestEscalationBBody.escalationId + "/notify", {
+    method: "POST",
+    headers: { cookie: staffCookie, "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true", "X-CSRF-Token": staffCsrf },
+    body: JSON.stringify({}),
+  });
+  assert.equal(crossTenantNotificationRetry.status, 404, "Alpha staff must not retry Beta's notification");
+
+  const duplicateDeliveredNotification = await fetch(baseUrl + "/api/admin/escalations/" + guestEscalationBody.escalationId + "/notify", {
+    method: "POST",
+    headers: { cookie: staffCookie, "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true", "X-CSRF-Token": staffCsrf },
+    body: JSON.stringify({}),
+  });
+  assert.equal(duplicateDeliveredNotification.status, 409, "a delivered notification must not be sent again");
+
+  const resolveBetaEscalation = await fetch(baseUrl + "/api/admin/escalations/" + guestEscalationBBody.escalationId, {
+    method: "PATCH",
+    headers: { cookie: cookieB, "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true", "X-CSRF-Token": csrfB },
+    body: JSON.stringify({ status: "resolved" }),
+  });
+  assert.equal(resolveBetaEscalation.status, 200, await resolveBetaEscalation.clone().text());
+  const retryResolvedEscalation = await fetch(baseUrl + "/api/admin/escalations/" + guestEscalationBBody.escalationId + "/notify", {
+    method: "POST",
+    headers: { cookie: cookieB, "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true", "X-CSRF-Token": csrfB },
+    body: JSON.stringify({}),
+  });
+  assert.equal(retryResolvedEscalation.status, 409, "resolved handoffs must not send another notification");
+
+  // A failed delivery is visible as failed, and a later guest message retries
+  // only that tenant's pending handoff without creating a duplicate escalation.
+  webhookResponseStatus = 503;
+  const failedDelivery = await fetch(baseUrl + "/api/public/" + tenants[0].slug + "/chat", {
+    method: "POST", headers: { "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true" },
+    body: JSON.stringify({ message: "Please get a staff member to help me." }),
+  });
+  assert.equal(failedDelivery.status, 200, await failedDelivery.clone().text());
+  const failedDeliveryBody = await failedDelivery.json();
+  assert.equal(failedDeliveryBody.needsHuman, true);
+  assert.equal(failedDeliveryBody.notificationStatus, "failed");
+  assert.equal(failedDeliveryBody.notificationDelivered, false);
+  const failedEscalationRecord = await pool.query(
+    "SELECT notification_status,notification_attempts FROM escalations WHERE id=$1 AND organization_id=$2",
+    [failedDeliveryBody.escalationId, orgAForPilot.rows[0].id],
+  );
+  assert.equal(failedEscalationRecord.rowCount, 1);
+  assert.equal(failedEscalationRecord.rows[0].notification_status, "failed");
+  assert.equal(failedEscalationRecord.rows[0].notification_attempts, 1);
+
+  webhookResponseStatus = 200;
+  const retriedDelivery = await fetch(baseUrl + "/api/public/" + tenants[0].slug + "/chat", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true",
+      "X-Veyra-Conversation-Token": failedDeliveryBody.conversationToken,
+    },
+    body: JSON.stringify({
+      message: "I still need a staff member, please.",
+      conversationId: failedDeliveryBody.conversationId,
+      conversationToken: failedDeliveryBody.conversationToken,
+    }),
+  });
+  assert.equal(retriedDelivery.status, 200, await retriedDelivery.clone().text());
+  const retriedDeliveryBody = await retriedDelivery.json();
+  assert.equal(retriedDeliveryBody.needsHuman, true);
+  assert.equal(retriedDeliveryBody.notificationStatus, "delivered");
+  assert.equal(retriedDeliveryBody.notificationDelivered, true);
+  assert.equal(retriedDeliveryBody.escalationId, failedDeliveryBody.escalationId, "retry must reuse the existing open escalation");
+  const retryWebhookPayload = JSON.parse(webhookRequests[webhookRequests.length - 1].body);
+  assert.equal(retryWebhookPayload.idempotencyKey, failedDeliveryBody.escalationId, "delivery retries must retain the original escalation idempotency key");
+  const retriedEscalationRecord = await pool.query(
+    "SELECT notification_status,notification_attempts FROM escalations WHERE id=$1 AND organization_id=$2",
+    [failedDeliveryBody.escalationId, orgAForPilot.rows[0].id],
+  );
+  assert.equal(retriedEscalationRecord.rows[0].notification_status, "delivered");
+  assert.equal(retriedEscalationRecord.rows[0].notification_attempts, 2, "successful retry must be recorded as the second attempt");
+  const betaEscalationsAfterAlphaRetry = await pool.query(
+    "SELECT notification_status,notification_attempts FROM escalations WHERE id=$1 AND organization_id=$2",
+    [guestEscalationBBody.escalationId, orgBForPilot.rows[0].id],
+  );
+  assert.equal(betaEscalationsAfterAlphaRetry.rows[0].notification_status, "delivered");
+  assert.equal(betaEscalationsAfterAlphaRetry.rows[0].notification_attempts, 1, "Alpha retry must not alter Beta's notification state");
+
+  // Concurrent manual retries must atomically claim the escalation so only
+  // one request can call the hotel's webhook.
+  webhookResponseStatus = 503;
+  const concurrentFailure = await fetch(baseUrl + "/api/public/" + tenants[0].slug + "/chat", {
+    method: "POST",
+    headers: { "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true" },
+    body: JSON.stringify({ message: "Please have a staff member contact me about an urgent issue." }),
+  });
+  assert.equal(concurrentFailure.status, 200, await concurrentFailure.clone().text());
+  const concurrentFailureBody = await concurrentFailure.json();
+  assert.equal(concurrentFailureBody.notificationStatus, "failed");
+  webhookResponseStatus = 200;
+  webhookDelayMs = 150;
+  const webhookCountBeforeConcurrentRetry = webhookRequests.length;
+  const retryRequest = () => fetch(baseUrl + "/api/admin/escalations/" + concurrentFailureBody.escalationId + "/notify", {
+    method: "POST",
+    headers: { cookie: cookieA, "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true", "X-CSRF-Token": csrfA },
+    body: JSON.stringify({}),
+  });
+  const concurrentRetries = await Promise.all([retryRequest(), retryRequest()]);
+  webhookDelayMs = 0;
+  const retryStatuses = concurrentRetries.map(response => response.status).sort((a, b) => a - b);
+  assert.deepEqual(retryStatuses, [200, 409], "exactly one concurrent retry must claim the notification; the other must be rejected");
+  assert.equal(webhookRequests.length, webhookCountBeforeConcurrentRetry + 1, "concurrent retries must produce exactly one webhook request");
+  const concurrentRetryRecord = await pool.query(
+    "SELECT notification_status,notification_attempts FROM escalations WHERE id=$1 AND organization_id=$2",
+    [concurrentFailureBody.escalationId, orgAForPilot.rows[0].id],
+  );
+  assert.equal(concurrentRetryRecord.rows[0].notification_status, "delivered");
+  assert.equal(concurrentRetryRecord.rows[0].notification_attempts, 2, "only the claimed retry must increment the attempt count");
+
+  // Concurrent guest follow-ups use the same atomic claim as dashboard retries.
+  webhookResponseStatus = 503;
+  const concurrentGuestFailure = await fetch(baseUrl + "/api/public/" + tenants[0].slug + "/chat", {
+    method: "POST",
+    headers: { "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true" },
+    body: JSON.stringify({ message: "Please have the hotel team contact me about an urgent matter." }),
+  });
+  assert.equal(concurrentGuestFailure.status, 200, await concurrentGuestFailure.clone().text());
+  const concurrentGuestFailureBody = await concurrentGuestFailure.json();
+  assert.equal(concurrentGuestFailureBody.notificationStatus, "failed");
+  webhookResponseStatus = 200;
+  webhookDelayMs = 250;
+  const webhookCountBeforeGuestRetries = webhookRequests.length;
+  const guestRetry = message => fetch(baseUrl + "/api/public/" + tenants[0].slug + "/chat", {
+    method: "POST",
+    headers: { "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true", "X-Veyra-Conversation-Token": concurrentGuestFailureBody.conversationToken },
+    body: JSON.stringify({
+      message,
+      conversationId: concurrentGuestFailureBody.conversationId,
+      conversationToken: concurrentGuestFailureBody.conversationToken,
+    }),
+  });
+  const concurrentGuestRetries = await Promise.all([
+    guestRetry("I still need assistance, please."),
+    guestRetry("Please confirm a staff member can help."),
+  ]);
+  webhookDelayMs = 0;
+  assert.deepEqual(concurrentGuestRetries.map(response => response.status), [200, 200]);
+  assert.equal(webhookRequests.length, webhookCountBeforeGuestRetries + 1, "concurrent guest follow-ups must produce only one webhook request");
+  const concurrentGuestRecord = await pool.query(
+    "SELECT notification_status,notification_attempts FROM escalations WHERE id=$1 AND organization_id=$2",
+    [concurrentGuestFailureBody.escalationId, orgAForPilot.rows[0].id],
+  );
+  assert.equal(concurrentGuestRecord.rows[0].notification_status, "delivered");
+  assert.equal(concurrentGuestRecord.rows[0].notification_attempts, 2, "only one concurrent guest follow-up may claim the retry");
+
+
+  // A worker crash must not leave a notification permanently locked in
+  // "sending"; the two-minute lease makes an abandoned claim recoverable.
+  webhookResponseStatus = 503;
+  const abandonedDelivery = await fetch(baseUrl + "/api/public/" + tenants[0].slug + "/chat", {
+    method: "POST",
+    headers: { "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true" },
+    body: JSON.stringify({ message: "Please ask the hotel team to contact me." }),
+  });
+  assert.equal(abandonedDelivery.status, 200, await abandonedDelivery.clone().text());
+  const abandonedDeliveryBody = await abandonedDelivery.json();
+  assert.equal(abandonedDeliveryBody.notificationStatus, "failed");
+  await pool.query(
+    "UPDATE escalations SET notification_status='sending',notification_last_attempt_at=now()-interval '3 minutes' WHERE id=$1 AND organization_id=$2",
+    [abandonedDeliveryBody.escalationId, orgAForPilot.rows[0].id],
+  );
+  webhookResponseStatus = 200;
+  const recoveredDelivery = await fetch(baseUrl + "/api/admin/escalations/" + abandonedDeliveryBody.escalationId + "/notify", {
+    method: "POST",
+    headers: { cookie: cookieA, "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true", "X-CSRF-Token": csrfA },
+    body: JSON.stringify({}),
+  });
+  assert.equal(recoveredDelivery.status, 200, await recoveredDelivery.clone().text());
+  const recoveredDeliveryBody = await recoveredDelivery.json();
+  assert.equal(recoveredDeliveryBody.notificationStatus, "delivered");
+  const recoveredRecord = await pool.query(
+    "SELECT notification_status,notification_attempts FROM escalations WHERE id=$1 AND organization_id=$2",
+    [abandonedDeliveryBody.escalationId, orgAForPilot.rows[0].id],
+  );
+  assert.equal(recoveredRecord.rows[0].notification_status, "delivered");
+  assert.equal(recoveredRecord.rows[0].notification_attempts, 2, "recovering an abandoned claim must count the new attempt");
+
+  const guestStaffPoll = await fetch(baseUrl + "/api/public/" + tenants[0].slug + "/chat?conversationId=" + guestChatBody.conversationId, { headers: { "X-Veyra-Conversation-Token": guestChatBody.conversationToken } });
+  assert.equal(guestStaffPoll.status, 200);
+  assert.deepEqual((await guestStaffPoll.json()).messages, []);
+  await pool.query("UPDATE organization_privacy_approvals SET revoked_at=now() WHERE organization_id=$1", [orgAForPilot.rows[0].id]);
+  const chatAfterRevocation = await fetch(baseUrl + "/api/public/" + tenants[0].slug + "/chat", {
+    method: "POST", headers: { "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true" },
+    body: JSON.stringify({ message: "What time is breakfast?" }),
+  });
+  assert.equal(chatAfterRevocation.status, 503, "revoking a hotel's approval must immediately block new guest chat");
+  assert.match((await chatAfterRevocation.json()).error, /privacy approval/i);
+  const cleanupWhilePrivacyRevoked = await fetch(`${baseUrl}/api/admin/retention/cleanup`, {
+    method: "POST",
+    headers: { cookie: cookieA, "X-CSRF-Token": csrfA, "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true" },
+    body: JSON.stringify({ confirm: true }),
+  });
+  assert.equal(cleanupWhilePrivacyRevoked.status, 409, "retention deletion must be blocked while hotel privacy approval is revoked");
+  await pool.query("UPDATE organization_privacy_approvals SET revoked_at=NULL,approved_at=now() WHERE organization_id=$1", [orgAForPilot.rows[0].id]);
   const staffRotateWebhook = await fetch(`${baseUrl}/api/admin/integrations/revenue-webhook/rotate`, {
     method: "POST",
-    headers: { cookie: staffCookie, "X-CSRF-Token": staffCsrf, "content-type": "application/json" },
+    headers: { cookie: staffCookie, "X-CSRF-Token": staffCsrf, "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true" },
     body: "{}",
   });
   assert.equal(staffRotateWebhook.status, 403, "staff accounts must not rotate financial webhook credentials");
@@ -368,7 +763,7 @@ try {
 
   const disableWebhook = await fetch(`${baseUrl}/api/admin/integrations/revenue-webhook`, {
     method: "DELETE",
-    headers: { cookie: cookieA, "X-CSRF-Token": csrfA, "content-type": "application/json" },
+    headers: { cookie: cookieA, "X-CSRF-Token": csrfA, "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true" },
     body: "{}",
   });
   assert.equal(disableWebhook.status, 200, "owners must be able to disable a revenue webhook");
@@ -430,17 +825,17 @@ try {
     currency: "EUR",
     occurredAt: new Date(Date.now() - 20000).toISOString(),
   };
-  const refundResponse = await fetch(baseUrl + "/api/admin/revenue/adjustments", { method: "POST", headers: { cookie: cookieA, "content-type": "application/json", "X-CSRF-Token": csrfA }, body: JSON.stringify(refundEvent) });
+  const refundResponse = await fetch(baseUrl + "/api/admin/revenue/adjustments", { method: "POST", headers: { cookie: cookieA, "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true", "X-CSRF-Token": csrfA }, body: JSON.stringify(refundEvent) });
   assert.equal(refundResponse.status, 201, await refundResponse.clone().text());
   const refundBody = await refundResponse.json();
   assert.equal(refundBody.adjustment.amount_minor, "5050");
-  const duplicateRefund = await fetch(baseUrl + "/api/admin/revenue/adjustments", { method: "POST", headers: { cookie: cookieA, "content-type": "application/json", "X-CSRF-Token": csrfA }, body: JSON.stringify(refundEvent) });
+  const duplicateRefund = await fetch(baseUrl + "/api/admin/revenue/adjustments", { method: "POST", headers: { cookie: cookieA, "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true", "X-CSRF-Token": csrfA }, body: JSON.stringify(refundEvent) });
   assert.equal(duplicateRefund.status, 409, "duplicate refund references must be rejected");
-  const excessiveRefund = await fetch(baseUrl + "/api/admin/revenue/adjustments", { method: "POST", headers: { cookie: cookieA, "content-type": "application/json", "X-CSRF-Token": csrfA }, body: JSON.stringify({ ...refundEvent, externalReference: "REFUND-" + tag + "-TOO-LARGE", amount: "200.01" }) });
+  const excessiveRefund = await fetch(baseUrl + "/api/admin/revenue/adjustments", { method: "POST", headers: { cookie: cookieA, "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true", "X-CSRF-Token": csrfA }, body: JSON.stringify({ ...refundEvent, externalReference: "REFUND-" + tag + "-TOO-LARGE", amount: "200.01" }) });
   assert.equal(excessiveRefund.status, 400, "refunds must not exceed the original event's remaining amount");
-  const wrongCurrencyRefund = await fetch(baseUrl + "/api/admin/revenue/adjustments", { method: "POST", headers: { cookie: cookieA, "content-type": "application/json", "X-CSRF-Token": csrfA }, body: JSON.stringify({ ...refundEvent, externalReference: "REFUND-" + tag + "-WRONG-CURRENCY", currency: "USD" }) });
+  const wrongCurrencyRefund = await fetch(baseUrl + "/api/admin/revenue/adjustments", { method: "POST", headers: { cookie: cookieA, "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true", "X-CSRF-Token": csrfA }, body: JSON.stringify({ ...refundEvent, externalReference: "REFUND-" + tag + "-WRONG-CURRENCY", currency: "USD" }) });
   assert.equal(wrongCurrencyRefund.status, 400, "refund currency must match the original event");
-  const staffRefund = await fetch(baseUrl + "/api/admin/revenue/adjustments", { method: "POST", headers: { cookie: staffCookie, "content-type": "application/json", "X-CSRF-Token": staffCsrf }, body: JSON.stringify({ ...refundEvent, externalReference: "REFUND-" + tag + "-STAFF" }) });
+  const staffRefund = await fetch(baseUrl + "/api/admin/revenue/adjustments", { method: "POST", headers: { cookie: staffCookie, "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true", "X-CSRF-Token": staffCsrf }, body: JSON.stringify({ ...refundEvent, externalReference: "REFUND-" + tag + "-STAFF" }) });
   assert.equal(staffRefund.status, 403, "staff accounts must not record financial adjustments");
   const afterRefund = await readRevenue(cookieA);
   const afterRefundBody = await afterRefund.json();
@@ -449,7 +844,7 @@ try {
   assert.equal(afterRefundBody.linkedTotals[0].amount_minor, "22000", "linked net revenue must subtract refunds");
   const secondRefund = await fetch(baseUrl + "/api/admin/revenue/adjustments", {
     method: "POST",
-    headers: { cookie: cookieA, "content-type": "application/json", "X-CSRF-Token": csrfA },
+    headers: { cookie: cookieA, "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true", "X-CSRF-Token": csrfA },
     body: JSON.stringify({ ...refundEvent, externalReference: "REFUND-" + tag + "-SECOND", amount: "25.00" }),
   });
   assert.equal(secondRefund.status, 201, await secondRefund.clone().text());
@@ -504,7 +899,7 @@ try {
 
   const missingCsrf = await fetch(`${baseUrl}/api/admin/revenue`, {
     method: "POST",
-    headers: { cookie: cookieA, "content-type": "application/json" },
+    headers: { cookie: cookieA, "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true" },
     body: JSON.stringify(linkedEvent),
   });
   assert.equal(missingCsrf.status, 403, "revenue writes must require CSRF verification");
@@ -552,13 +947,13 @@ try {
 
   const saveRetention = await fetch(`${baseUrl}/api/admin/retention`, {
     method: "PUT",
-    headers: { cookie: cookieA, "X-CSRF-Token": csrfA, "content-type": "application/json" },
+    headers: { cookie: cookieA, "X-CSRF-Token": csrfA, "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true" },
     body: JSON.stringify({ retentionDays: 30 }),
   });
   assert.equal(saveRetention.status, 200, await saveRetention.clone().text());
   const staffRetentionChange = await fetch(`${baseUrl}/api/admin/retention`, {
     method: "PUT",
-    headers: { cookie: staffCookie, "X-CSRF-Token": staffCsrf, "content-type": "application/json" },
+    headers: { cookie: staffCookie, "X-CSRF-Token": staffCsrf, "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true" },
     body: JSON.stringify({ retentionDays: 30 }),
   });
   assert.equal(staffRetentionChange.status, 403, "staff cannot change retention policy");
@@ -568,19 +963,19 @@ try {
   assert.equal(retentionPreviewBody.eligibleConversations, 1, "open escalations must protect old conversations");
   const missingRetentionConfirm = await fetch(`${baseUrl}/api/admin/retention/cleanup`, {
     method: "POST",
-    headers: { cookie: cookieA, "X-CSRF-Token": csrfA, "content-type": "application/json" },
+    headers: { cookie: cookieA, "X-CSRF-Token": csrfA, "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true" },
     body: JSON.stringify({}),
   });
   assert.equal(missingRetentionConfirm.status, 400, "retention deletion requires explicit confirmation");
   const staffRetentionCleanup = await fetch(`${baseUrl}/api/admin/retention/cleanup`, {
     method: "POST",
-    headers: { cookie: staffCookie, "X-CSRF-Token": staffCsrf, "content-type": "application/json" },
+    headers: { cookie: staffCookie, "X-CSRF-Token": staffCsrf, "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true" },
     body: JSON.stringify({ confirm: true }),
   });
   assert.equal(staffRetentionCleanup.status, 403, "staff cannot run retention cleanup");
   const retentionCleanup = await fetch(`${baseUrl}/api/admin/retention/cleanup`, {
     method: "POST",
-    headers: { cookie: cookieA, "X-CSRF-Token": csrfA, "content-type": "application/json" },
+    headers: { cookie: cookieA, "X-CSRF-Token": csrfA, "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true" },
     body: JSON.stringify({ confirm: true }),
   });
   assert.equal(retentionCleanup.status, 200, await retentionCleanup.clone().text());
@@ -604,7 +999,7 @@ try {
   );
   assert.equal(retentionAudit.rows[0].count, 1, "retention cleanup must be audited");
 
-  console.log("PASS: tenant-scoped transcripts, knowledge history and revenue evidence verified for two hotel workspaces.");
+  console.log("PASS: tenant isolation, grounded guest answer, PostgreSQL persistence, signed staff handoff and revenue evidence verified.");
 
 } finally {
   if (serverReady) {
@@ -622,4 +1017,5 @@ try {
     });
   }
   await pool.end();
+  await Promise.all([closeServer(mockAiServer), closeServer(mockWebhookServer)]);
 }

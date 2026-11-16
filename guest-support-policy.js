@@ -20,13 +20,28 @@ function requiresStaffEscalation(message) {
   const bookingChange =
     /\b(cancel|cancell?ation|change|modify|amend|move|reschedule|extend|shorten)\b.{0,55}\b(booking|reservation|stay|dates?|room)\b/i.test(text) ||
     /\b(booking|reservation|stay|dates?|room)\b.{0,55}\b(cancel|cancell?ation|change|modify|amend|move|reschedule|extend|shorten)\b/i.test(text);
+  const newReservation = /\b(?:please book|book me|reserve me|make me a reservation|i want to book|i would like to book|i want to reserve|i would like to reserve)\b/i.test(text);
   const financialOrAccountIssue =
     /\b(refund|chargeback|charged twice|double charged|incorrect charge|payment failed|payment problem|billing dispute|card was declined|fraudulent charge)\b/i.test(text);
   const specialServiceRequest =
     /\b(early check[- ]?in|late check[- ]?out)\b.{0,35}\b(request|please|need|want|arrange)\b/i.test(text) ||
     /\b(request|please arrange|can you arrange|i need)\b.{0,35}\b(early check[- ]?in|late check[- ]?out)\b/i.test(text);
 
-  return bookingChange || financialOrAccountIssue || specialServiceRequest;
+  return bookingChange || newReservation || financialOrAccountIssue || specialServiceRequest;
+}
+
+function requiresLiveAvailabilityCheck(message) {
+  const text = String(message || "").toLowerCase().replace(/\s+/g, " ").trim();
+  if (!text) return false;
+
+  // A request to check current inventory is an operational lookup, not a policy question.
+  const explicitLookup =
+    /\b(?:check|confirm|verify|look up|look\s+for)\b.{0,60}\b(?:room|rooms|availability|vacancy|inventory)\b/i.test(text) ||
+    /\b(?:room|rooms|availability|vacancy|inventory)\b.{0,60}\b(?:check|confirm|verify|look up)\b/i.test(text);
+  const asksIfAvailable =
+    /\b(?:are|is|do you have|have you got)\b.{0,55}\b(?:room|rooms|availability|vacancy)\b.{0,35}\bavailable\b/i.test(text) ||
+    /\b(?:room|rooms)\b.{0,35}\bavailable\b.{0,45}\b(?:on|for|between|from)\b/i.test(text);
+  return explicitLookup || asksIfAvailable;
 }
 
 function buildGuestSupportSystemPrompt(hotelName, approvedKnowledge) {
@@ -51,4 +66,4 @@ function buildGuestSupportSystemPrompt(hotelName, approvedKnowledge) {
   ].join("\n");
 }
 
-module.exports = { requiresStaffEscalation, buildGuestSupportSystemPrompt };
+module.exports = { requiresStaffEscalation, requiresLiveAvailabilityCheck, buildGuestSupportSystemPrompt };

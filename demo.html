@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Veyra AI · Interactive Hotel Demo</title>
+<style>
+:root{color-scheme:dark;--bg:#0b1019;--panel:#111b29;--panel2:#162337;--line:#26374d;--text:#edf3fa;--muted:#9aabc0;--accent:#91c5c2;--gold:#d8bd87;--red:#e5a39b}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at 70% -10%,#20374b 0,transparent 45%),var(--bg);color:var(--text);font:15px/1.5 Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif}
+a{color:var(--accent)}button,input{font:inherit}.shell{max-width:1180px;margin:auto;padding:28px 22px 60px}.top{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:28px}.brand{font-size:20px;letter-spacing:.18em;font-weight:750}.brand span{color:var(--accent)}.pill{border:1px solid #806b44;color:#f0d9a8;border-radius:99px;padding:6px 11px;font-size:11px;letter-spacing:.12em;text-transform:uppercase}
+h1{font-size:clamp(30px,5vw,48px);line-height:1.06;max-width:720px;margin:12px 0}.lead{color:var(--muted);max-width:720px}.hero{margin:30px 0 24px}.notice{background:#2a251b;border:1px solid #655538;color:#f0d9a8;padding:12px 15px;border-radius:12px;font-size:13px;margin:20px 0 24px}
+.metrics{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:12px;margin:22px 0}.metric,.panel{background:linear-gradient(145deg,#152235,#101a28);border:1px solid var(--line);border-radius:16px}.metric{padding:16px}.metric label{display:block;color:var(--muted);font-size:12px;min-height:35px}.metric strong{font-size:27px;display:block;margin-top:5px}.metric small{color:var(--muted);font-size:11px}
+.workspace{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(290px,.8fr);gap:16px;align-items:start}.panel{padding:20px}.panel h2{font-size:17px;margin:0 0 5px}.sub{color:var(--muted);font-size:12px;margin:0 0 16px}
+.chat{height:390px;overflow:auto;display:flex;flex-direction:column;gap:12px;padding:4px 2px 12px}.bubble{max-width:86%;padding:11px 13px;border-radius:14px;font-size:14px;white-space:pre-wrap}.assistant{background:#1a2a3d;border:1px solid #2b425d;align-self:flex-start}.guest{background:#244440;border:1px solid #37615b;align-self:flex-end}.meta{font-size:10px;color:var(--muted);margin-top:5px}.compose{border-top:1px solid var(--line);padding-top:14px}.dates{display:none;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px}.dates.visible{display:grid}.dates label{font-size:11px;color:var(--muted)}input{width:100%;margin-top:4px;background:#0b1420;color:var(--text);border:1px solid var(--line);border-radius:9px;padding:9px}.sendrow{display:flex;gap:8px}.sendrow input{flex:1;min-width:0}.btn{background:var(--accent);color:#0b1719;border:0;border-radius:9px;padding:10px 14px;font-weight:700;cursor:pointer}.btn:disabled{opacity:.5;cursor:wait}.quick{display:flex;flex-wrap:wrap;gap:7px;margin-top:12px}.quick button{background:#17263a;color:#dce8f4;border:1px solid var(--line);border-radius:99px;padding:7px 10px;font-size:11px;cursor:pointer}
+.queue{border:1px dashed #806b44;border-radius:12px;padding:13px;margin-top:14px}.queue strong{color:#f0d9a8}.queue p{color:var(--muted);font-size:12px;margin:5px 0 0}.sideblock{padding:13px 0;border-bottom:1px solid var(--line)}.sideblock:last-child{border:0}.sideblock h3{font-size:13px;margin:0 0 5px}.sideblock p{font-size:12px;color:var(--muted);margin:0}.tag{display:inline-block;border:1px solid var(--line);border-radius:6px;padding:3px 7px;color:var(--muted);font-size:10px;margin-top:8px}.foot{color:var(--muted);font-size:11px;margin-top:22px}.bar{height:7px;background:#24364a;border-radius:10px;overflow:hidden;margin-top:8px}.bar span{display:block;height:100%;width:72%;background:var(--accent)}
+@media(max-width:850px){.metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.workspace{grid-template-columns:1fr}.top{align-items:flex-start;flex-direction:column}}@media(max-width:420px){.shell{padding:18px 13px}.metrics{gap:8px}.metric{padding:12px}.metric strong{font-size:23px}.panel{padding:15px}}
+</style>
+</head>
+<body><main class="shell">
+<header class="top"><div class="brand">VEYRA <span>AI</span></div><div class="pill">Interactive demonstration · synthetic data</div></header>
+<section class="hero"><div class="pill">Hotel guest support</div><h1>See what a guest experiences when support is instant.</h1><p class="lead">Explore a fictional hotel, ask questions, test a sample stay and see how uncertain requests are handed to staff. This environment is isolated from hotel accounts and real guest data.</p></section>
+<div class="notice"><strong>DEMO ONLY.</strong> Aster House Hotel is fictional. Every conversation, inventory count and dashboard metric below is simulated. No Mews account is queried, no booking is created, and no employee is contacted.</div>
+<section class="metrics" aria-label="Illustrative demo metrics">
+<div class="metric"><label>Sample conversations</label><strong id="mConversations">126</strong><small>Illustrative 30-day sample</small></div>
+<div class="metric"><label>Resolved without staff</label><strong id="mResolved">91</strong><small>Synthetic sample</small></div>
+<div class="metric"><label>Staff handoffs</label><strong id="mHandoffs">35</strong><small>Queue simulations</small></div>
+<div class="metric"><label>Hotel-reported booking value</label><strong id="mReported">€3,250</strong><small>Not attributed to Veyra</small></div>
+<div class="metric"><label>Veyra-linked revenue evidence</label><strong id="mLinked">€0</strong><small>No causal claim</small></div><div class="metric"><label>Median first response</label><strong id="mResponse">8 sec</strong><small>Synthetic sample</small></div>
+</section>
+<section class="workspace">
+<div class="panel">
+<h2>Guest conversation</h2><p class="sub">Chat with the scripted sample assistant for Aster House Hotel · Phuket. This is not a live AI model.</p>
+<div class="chat" id="chat" role="log" aria-live="polite"><div class="bubble assistant">Hello and welcome to Aster House Hotel! I can help with check-in, breakfast, the pool, Wi-Fi or a sample room-availability check. How may I help?</div></div>
+<div class="compose">
+<div class="dates" id="dates"><label>Arrival date<input id="arrival" type="date" value="2026-12-10"></label><label>Departure date<input id="departure" type="date" value="2026-12-12"></label></div>
+<form id="chatForm"><div class="sendrow"><input id="message" maxlength="1200" placeholder="Ask about the hotel…" autocomplete="off" required><button class="btn" id="send" type="submit">Send</button></div></form>
+<div class="quick"><button type="button" data-prompt="What time is check-in?">Check-in</button><button type="button" data-prompt="When is breakfast served?">Breakfast</button><button type="button" data-prompt="Is the pool open?">Pool</button><button type="button" data-prompt="Can you check room availability?">Sample availability</button><button type="button" data-prompt="I need to speak to a real person.">Staff handoff</button></div>
+<div class="queue" id="handoff" hidden><strong>Simulated staff handoff</strong><p id="handoffText">A request would appear in the hotel's staff queue. This demo does not send notifications or contact staff.</p></div>
+</div>
+</div>
+<aside class="panel">
+<h2>Hotel operations snapshot</h2><p class="sub">Fictional sample workspace</p>
+<div class="sideblock"><h3>Approved hotel knowledge</h3><p>Check-in 3:00 PM · Check-out 11:00 AM · Breakfast 6:30–10:30 AM · Pool 7:00 AM–9:00 PM · Guest Wi-Fi</p><span class="tag">Sample knowledge base</span></div>
+<div class="sideblock"><h3>Demo engine</h3><p>Scripted and deterministic sample responses. The live AI provider is not called by this page.</p><span class="tag">No model API calls</span></div><div class="sideblock"><h3>Live availability integration</h3><p>Not connected. The one example stay uses hard-coded simulated inventory only.</p><span class="tag">No PMS calls</span></div>
+<div class="sideblock"><h3>Staff handoff</h3><p>Unknown, sensitive or booking-action requests are routed to a simulated queue, never to real staff.</p><span class="tag">Local demo state only</span></div>
+<div class="sideblock"><h3>Illustrative resolution ratio</h3><strong id="resolutionRatio">72%</strong><div class="bar"><span></span></div><p style="margin-top:8px">91 of 126 synthetic conversations in the example dataset.</p></div>
+<div class="sideblock"><h3>Revenue measurement</h3><p>Hotel-reported booking value is separated from Veyra-linked evidence. This demo records no real revenue.</p></div>
+</aside>
+</section>
+<p class="foot">Veyra AI · Demo mode v1 · No personal data is saved. Refreshing the page clears the conversation. <a href="/">Back to Veyra</a></p>
+</main>
+<script>
+"use strict";
+const $=id=>document.getElementById(id);
+const chat=$("chat");
+function addBubble(text,role,meta){const bubble=document.createElement("div");bubble.className="bubble "+role;bubble.textContent=text;if(meta){const small=document.createElement("div");small.className="meta";small.textContent=meta;bubble.appendChild(small);}chat.appendChild(bubble);chat.scrollTop=chat.scrollHeight;}
+function showPrompt(text){$("message").value=text;if(/availability|available|rooms|room/i.test(text))$("dates").classList.add("visible");$("message").focus();}
+document.querySelectorAll("[data-prompt]").forEach(button=>button.addEventListener("click",()=>showPrompt(button.dataset.prompt)));
+$("message").addEventListener("input",()=>{$("dates").classList.toggle("visible",/availability|available|rooms|room/i.test($("message").value));});
+$("chatForm").addEventListener("submit",async event=>{
+ event.preventDefault();const text=$("message").value.trim();if(!text)return;
+ addBubble(text,"guest");$("message").value="";const send=$("send");send.disabled=true;send.textContent="…";
+ try{
+  const response=await fetch("/api/demo/chat",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({message:text,stay:{arrivalDate:$("arrival").value,departureDate:$("departure").value}})});
+  const data=await response.json();if(!response.ok)throw new Error(data.error||"Demo temporarily unavailable.");
+  addBubble(data.reply,"assistant",data.demoOnly?"SIMULATED RESPONSE":"");
+  if(data.needsHuman){$("handoff").hidden=false;$("handoffText").textContent=data.handoffReason+" The simulated queue is visible here only; no real notification was sent.";}
+ }catch(error){addBubble(error.message,"assistant","DEMO ERROR");}
+ finally{send.disabled=false;send.textContent="Send";$("message").focus();}
+});
+(async()=>{try{const response=await fetch("/api/demo/metrics");if(!response.ok)return;const d=await response.json();$("mConversations").textContent=d.conversations;$("mResolved").textContent=d.resolvedWithoutStaff;$("mHandoffs").textContent=d.staffHandoffs;$("mReported").textContent=new Intl.NumberFormat("en",{style:"currency",currency:d.currency,maximumFractionDigits:0}).format(d.hotelReportedBookingValueMinor/100);$("mLinked").textContent=new Intl.NumberFormat("en",{style:"currency",currency:d.currency,maximumFractionDigits:0}).format(d.veyraLinkedRevenueMinor/100);$("mResponse").textContent=d.medianFirstResponseSeconds+" sec";$("resolutionRatio").textContent=Math.round(d.resolvedWithoutStaff/d.conversations*100)+"%";}catch{} })();
+</script></body></html>

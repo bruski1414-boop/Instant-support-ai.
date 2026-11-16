@@ -1,0 +1,45 @@
+const test = require("node:test");
+const assert = require("node:assert/strict");
+const { tenantChatRateLimitKey, normalizeClientIp } = require("../tenant-rate-limit");
+
+test("rate limit key separates hotels sharing the same client IP", () => {
+  const ip = "203.0.113.10";
+  const alpha = tenantChatRateLimitKey({ path: "/api/public/hotel-alpha/chat", ip });
+  const beta = tenantChatRateLimitKey({ path: "/api/public/hotel-beta/chat", ip });
+  assert.notEqual(alpha, beta);
+});
+
+test("actual public hotel chat route extracts the hotel slug", () => {
+  const alpha = tenantChatRateLimitKey({ path: "/api/public/hotel-alpha/chat", ip: "203.0.113.10" });
+  const beta = tenantChatRateLimitKey({ path: "/api/public/hotel-beta/chat", ip: "203.0.113.10" });
+  assert.notEqual(alpha, beta);
+  assert.ok(alpha.startsWith("hotel-alpha:"));
+});
+
+test("extracts tenant from Express-mounted public route using originalUrl", () => {
+  const alpha = tenantChatRateLimitKey({ baseUrl: "/api/public", path: "/hotel-alpha/chat", originalUrl: "/api/public/hotel-alpha/chat?lang=en", ip: "203.0.113.10" });
+  const beta = tenantChatRateLimitKey({ baseUrl: "/api/public", path: "/hotel-beta/chat", originalUrl: "/api/public/hotel-beta/chat", ip: "203.0.113.10" });
+  assert.notEqual(alpha, beta);
+  assert.ok(alpha.startsWith("hotel-alpha:"));
+});
+
+test("same hotel and client IP share a rate limit key", () => {
+  const first = tenantChatRateLimitKey({ path: "/hotel-alpha/chat", ip: "203.0.113.10" });
+  const second = tenantChatRateLimitKey({ path: "/hotel-alpha/chat", ip: "203.0.113.10" });
+  assert.equal(first, second);
+});
+
+test("IPv6 privacy addresses in the same /64 share a rate limit key", () => {
+  const first = tenantChatRateLimitKey({ path: "/hotel-alpha/chat", ip: "2001:db8:abcd:12::1" });
+  const second = tenantChatRateLimitKey({ path: "/hotel-alpha/chat", ip: "2001:db8:abcd:12::2" });
+  assert.equal(first, second);
+});
+
+test("IPv4-mapped IPv6 addresses normalize to their IPv4 address", () => {
+  assert.equal(normalizeClientIp("::ffff:203.0.113.10"), "203.0.113.10");
+});
+
+test("malformed paths use a safe fallback tenant bucket", () => {
+  const key = tenantChatRateLimitKey({ path: "/api/public/not-a-chat-route", ip: "203.0.113.10" });
+  assert.match(key, /^unknown:/);
+});

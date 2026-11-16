@@ -1,80 +1,110 @@
-# Veyra AI — supervised hotel pilot test plan
+# Veyra AI — supervised hotel pilot release test plan
 
-This checklist is a release gate, not a claim that the checks have passed. Use synthetic data only until the hotel has approved privacy, retention, data-processing and hosting arrangements.
+**Release status: BLOCKED pending evidence and authorised hotel sign-off.** This is a checklist, not a statement that every item has passed. Use synthetic data until the hotel has approved privacy, retention, data-processing and hosting arrangements.
 
-## 1. Test environment
+## 1. Test environment and release identity
 
-- [ ] Use two separate test hotel workspaces, Hotel Alpha and Hotel Beta.
-- [ ] Create separate owner, admin and staff accounts for each workspace.
-- [ ] Use synthetic guest messages and fictional hotel policies only.
-- [ ] Configure a test AI provider key and a test staff-notification receiver.
-- [ ] Keep guest-data storage disabled in any environment used for public demonstrations.
-- [ ] Record the deployed commit SHA and database migration state for each test run.
+- [ ] Use a dedicated production-grade test deployment and durable database; do not use the temporary free prototype database for guest data.
+- [ ] Use two separate synthetic hotel workspaces, Hotel Alpha and Hotel Beta.
+- [ ] Create owner, admin, staff and viewer test accounts for each workspace.
+- [ ] Use synthetic guest messages, fictional hotel policies, test AI credentials and a hotel-controlled test notification receiver.
+- [ ] Keep guest-data storage disabled in public demonstrations.
+- [ ] Record the exact commit SHA, deployed SHA, CI workflow links, database migration state and environment configuration evidence.
+- [ ] Confirm the deployed service is not the synthetic `/demo` route and clearly distinguishes test from live hotel operation.
 
-## 2. Tenant-isolation tests — must all pass
+## 2. Tenant isolation — release blocking
 
-- [ ] Alpha owner cannot list, read, edit or delete Beta knowledge documents.
-- [ ] Alpha staff cannot view Beta conversations, transcripts, escalations, members, audit events or settings.
-- [ ] Alpha cannot use a Beta conversation ID and guest token to retrieve or continue a conversation.
-- [ ] Alpha cannot import a file from Beta's connected Google or Microsoft account.
-- [ ] Alpha cannot list, refresh, disconnect or replace Beta's OAuth connection.
-- [ ] Changing a URL ID, slug, request body organization ID or query parameter never changes the authenticated workspace scope.
+The repository now contains a PostgreSQL-backed two-hotel integration suite and tenant-scoped API tests. Passing CI is evidence for the scenarios covered by those tests; it is not proof that every route, role or data path has been independently audited.
+
+- [ ] Alpha cannot list, read, edit or delete Beta knowledge documents or document versions.
+- [ ] Alpha cannot view Beta conversations, transcripts, messages, escalations, revenue records, members, invitations, audit events, integration settings or privacy approvals.
+- [ ] Alpha cannot use Beta conversation IDs and guest tokens to retrieve or continue conversations.
+- [ ] Alpha cannot import, list, refresh, disconnect or replace Beta's Google/Microsoft storage connection.
+- [ ] Alpha cannot access or replace Beta's Mews credentials or configuration.
+- [ ] Changing URL IDs, slugs, request-body organization IDs or query parameters never changes authenticated workspace scope.
 - [ ] Deactivated users lose access immediately, including existing sessions and pending OAuth callbacks.
-- [ ] Suspended workspaces cannot start new guest sessions or storage operations.
-- [ ] Every test is repeated with owner, admin, staff and viewer roles where applicable.
+- [ ] Suspended workspaces cannot start guest sessions or storage operations.
+- [ ] Repeat all applicable authorization tests for owner, admin, staff and viewer roles.
+- [ ] Have an independent reviewer inspect all tenant-scoped queries and new routes before real guest data is enabled.
 
-Any cross-workspace data exposure is a release-blocking security defect.
+Any cross-workspace exposure is a release-blocking defect.
 
-## 3. Knowledge and answer-quality tests
+## 3. Knowledge and answer quality
 
 - [ ] Unapproved knowledge is never used in guest answers.
-- [ ] Editing a previously approved document revokes approval until a hotel manager reviews it again.
+- [ ] Editing an approved document revokes approval until a hotel manager reviews it again.
 - [ ] Overdue knowledge is excluded from answer context.
-- [ ] The assistant answers only facts supported by the active hotel's approved documents.
+- [ ] Answers use only the active hotel's approved and current sources.
 - [ ] Missing, conflicting or ambiguous information produces a clear uncertainty response and staff handoff.
-- [ ] Prompt-injection attempts in guest messages and imported documents do not override system rules or expose another hotel's data.
-- [ ] The assistant never claims to have changed a booking, issued a refund, confirmed availability or completed another action without a verified integration result.
-- [ ] Allergy, safety, medical, urgent, complaint, refund and booking-change messages are handed to staff according to the hotel's approved procedure.
+- [ ] Prompt-injection attempts in guest messages and imported documents do not override system rules or expose hidden instructions or another hotel's data.
+- [ ] Unsupported prices, dates, hours, phone numbers, URLs, policies and numeric claims are not invented.
+- [ ] The assistant never claims to have changed a booking, issued a refund, confirmed availability or completed a payment.
+- [ ] Allergy, safety, medical, urgent, complaint, refund and booking-change messages follow the hotel's approved escalation procedure.
+- [ ] Run at least 30 hotel-approved scenarios, including paraphrases, misspellings, multilingual questions if in scope, long inputs, empty inputs and repeated turns.
+- [ ] Have hotel staff review answer transcripts and source evidence; automated grounding tests alone are not sufficient.
 
 ## 4. Staff handoff and operations
 
-- [ ] A test escalation reaches the configured staff receiver.
-- [ ] Invalid receiver credentials and timeouts are recorded as failures, not reported as successful delivery.
-- [ ] Retry limits are enforced and duplicate alerts are controlled.
-- [ ] Staff can see the right conversation and mark the handoff claimed or resolved.
-- [ ] The hotel has a documented manual fallback if the notification service is unavailable.
-- [ ] Staff understand that a webhook HTTP success means accepted by the receiver, not read by a human.
+- [ ] A signed test escalation reaches the correct hotel-controlled receiver.
+- [ ] Wrong secrets, invalid receiver responses, timeouts and network failures are recorded as failures, not successes.
+- [ ] Retry limits, duplicate alerts and repeat guest messages are tested.
+- [ ] Staff can see the correct conversation, claim it, reply and resolve the escalation.
+- [ ] The hotel names a primary and backup escalation owner and agrees response expectations.
+- [ ] A documented manual fallback works if the dispatcher or Veyra is unavailable.
+- [ ] Staff understand that webhook HTTP success means accepted by the receiver, not read or acted upon by a human.
 
-## 5. Storage connector tests
+## 5. Storage and PMS connectors
 
 - [ ] Google and Microsoft OAuth callbacks use the exact registered HTTPS redirect URI.
-- [ ] OAuth state is single-use, expires, and is bound to the initiating active workspace administrator.
-- [ ] PKCE verification is enforced by the provider.
+- [ ] OAuth state is single-use, expires and is bound to the initiating active workspace administrator.
+- [ ] Provider consent, scopes, PKCE and token refresh/revocation behavior are tested against the actual provider app.
 - [ ] Tokens are encrypted at rest and never returned to the browser.
-- [ ] Expired, revoked and invalid tokens fail safely and require reconnection.
-- [ ] A hotel can browse and import only files its own authorised account can access.
+- [ ] A hotel can access only files its own authorised account can access.
 - [ ] Oversized, empty, unsupported and malformed files are rejected safely.
-- [ ] Imported documents are unapproved until a hotel manager verifies their contents.
+- [ ] Imported documents remain unapproved until a hotel manager verifies their contents.
 - [ ] Disconnecting a provider removes that workspace's stored credentials.
+- [ ] Do not treat Mews demo-host tests as production PMS certification. Production Mews access requires the relevant partner onboarding, credentials, hotel authorisation and end-to-end verification.
+- [ ] Do not enable booking writes, cancellations, payments or inventory promises in this pilot.
 
-## 6. Privacy, reliability and release gates
+## 6. Privacy, security and reliability
 
-- [ ] Hotel approves its privacy notice, data-processing terms, lawful basis/consent where applicable, retention schedule and deletion process.
-- [ ] Durable database hosting, automated backups and a successful restore drill are in place.
-- [ ] Deletion behavior is documented for active records, logs, backups and provider retention.
-- [ ] Secrets are stored only in the hosting provider's secret manager and rotated under an approved procedure.
-- [ ] Rate limits, request-size limits, error handling and abuse controls are tested.
-- [ ] Monitoring and an incident-response contact are documented.
-- [ ] A hotel manager approves the knowledge base and staff escalation workflow.
-- [ ] A supervised pilot is run with synthetic or explicitly approved limited data before broader guest use.
-- [ ] Results are measured against a pre-pilot baseline; do not promise revenue or staffing outcomes without evidence.
+- [ ] An authorised hotel operator approves the privacy notice, data-processing terms, lawful basis/consent where applicable, subprocessors, retention schedule and deletion process.
+- [ ] Each hotel records its current workspace privacy approval; the platform-wide readiness flag is supported by documented evidence.
+- [ ] Durable database hosting and automated backups are configured, and a restore drill succeeds.
+- [ ] Run `npm run retention:cleanup` and review the dry-run counts before any deletion.
+- [ ] Verify the guarded scheduled cleanup command refuses `--apply` unless `RETENTION_CLEANUP_ENABLED=true` is also set.
+- [ ] Test a scheduled cleanup against synthetic records: only current-policy-approved tenants, expired resolved conversations, no unresolved escalations, max 500 per tenant, revenue attribution detached, audit event written.
+- [ ] Configure a daily scheduler only after the hotel owner approves the retention period and the adult platform operator reviews the dry-run; verify scheduler logs and failures.
+- [ ] Deletion behavior is documented for active records, audit logs, provider copies and backup retention.
+- [ ] Secrets are stored only in the hosting secret manager and rotated under an approved procedure.
+- [ ] Request size, rate limits, abuse controls, session security, CORS, CSRF and security headers are tested.
+- [ ] Verify the per-hotel plus client-IP guest-chat limit and the global API limit.
+- [ ] Confirm rate-limit behavior across multiple app instances; the current default store is in-memory per process and is not distributed.
+- [ ] Monitoring, uptime checks, incident response owner and breach/escalation procedure are documented.
+- [ ] Conduct independent security review and remediate all high/critical findings.
+- [ ] Test restart behavior, database outage, AI provider outage, notification outage and sustained expected traffic.
+- [ ] Confirm a safe shutdown/disable path and human contact route.
 
-## Current known limitations
+## 7. Formal pilot approval
 
-- The deployed service and database are on free plans; the database is temporary and scheduled to expire on 11 December 2026.
-- Guest-data storage is disabled by default.
-- Storage import is limited to small text-based documents and Google Docs; full PDF, Word and spreadsheet extraction, broad sync and incremental sync are not complete.
-- Google and Microsoft app registrations, client credentials, consent and live provider flows have not been verified.
-- Current CI runs syntax checks and Node's test discovery, but comprehensive API, frontend, OAuth and two-tenant isolation integration tests are still required.
+- [ ] The exact release commit passes `npm test` and `npm run test:integration`.
+- [ ] All ten `GET /api/readiness` release checks have supporting evidence; do not set environment flags simply to make the endpoint green.
+- [ ] The hotel's authorised operator approves the knowledge base, website widget, data processing and escalation workflow in writing.
+- [ ] The responsible adult platform operator approves hosting, provider accounts, secrets, billing and incident response.
+- [ ] A supervised pilot is approved with synthetic or explicitly approved limited data.
+- [ ] Baseline and success criteria are agreed before launch.
+- [ ] A post-pilot review is scheduled; expansion is blocked until results and incidents are reviewed.
 
-Do not describe Veyra as production-ready or hotel-ready until every applicable release gate has been tested and signed off.
+## Current implementation facts and limitations
+
+- Implemented foundation includes tenant-scoped accounts/roles, knowledge approval/version history, guest chat, conversation evidence, staff escalation records, signed webhook delivery/retries, retention cleanup controls, tenant-specific privacy acknowledgements, encrypted Mews demo credentials, and a synthetic public demo.
+- The current feature branch's latest recorded CI commit passed Node CI including PostgreSQL integration and Veyra CI. Check the exact branch head and workflows again before any release.
+- The public demo uses fictional data, deterministic scripted replies and a simulated on-screen queue. It is not a real hotel deployment.
+- The Mews connector is restricted to the official demo environment; production PMS access is not verified.
+- Real Google/Microsoft OAuth app registration, hotel tenant consent and provider flows are not verified merely by unit tests.
+- The current Render prototype uses free hosting; the database is temporary and scheduled to expire on 11 December 2026. Do not put real guest data there.
+- Guest-data storage is disabled by default. Retention cleanup is manual; it is not an automatic scheduled purge.
+- Production backups/restore, monitoring, incident response, independent security review, sustained load testing, email verification, password recovery, MFA and subscription billing remain outstanding.
+- The current test suite is meaningful but does not replace a hotel operator's acceptance testing or independent security review.
+
+Do not describe Veyra as production-ready or hotel-ready until all applicable gates have passed with evidence and the authorised hotel operator has signed off.

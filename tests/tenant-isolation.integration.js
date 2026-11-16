@@ -1027,6 +1027,18 @@ try {
   assert.equal(afterDeleteBody.linkedTotals.reduce((n, item) => n + Number(item.event_count), 0), 0);
   assert.equal(afterDeleteBody.linkedConversationCount, 0);
 
+  const detachedAttribution = await pool.query(
+    "SELECT conversation_id FROM booking_attribution_matches WHERE organization_id=$1 AND provider_event_id=$2",
+    [orgAForPilot.rows[0].id, confirmedReservation.eventId],
+  );
+  assert.equal(detachedAttribution.rowCount, 1, "deleting a conversation must preserve minimal provider evidence");
+  assert.equal(detachedAttribution.rows[0].conversation_id, null, "deleted transcripts must no longer be linked to provider attribution");
+  const detachedIntent = await pool.query(
+    "SELECT conversation_id FROM booking_attribution_intents WHERE id=$1 AND organization_id=$2",
+    [issuedIntent.intentId, orgAForPilot.rows[0].id],
+  );
+  assert.equal(detachedIntent.rows[0].conversation_id, null, "a deleted conversation must detach its attribution intent");
+
   const orgA = await pool.query("SELECT id FROM organizations WHERE slug=$1", [tenants[0].slug]);
   const retentionOld = await pool.query(
     "INSERT INTO conversations(organization_id,channel,status,started_at,last_message_at) VALUES($1,'website','resolved',now()-interval '45 days',now()-interval '40 days') RETURNING id",

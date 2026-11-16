@@ -66,6 +66,10 @@ test("rejects a reservation outside the configured service and invalid timestamp
     expectedId: reservationId,
     expectedServiceId: serviceId
   }), /valid UTC timestamp/);
+  assert.throws(() => normalizeMewsReservationSnapshot({ ...reservation, scheduledEndUtc: "2026-11-30T11:00:00Z" }, {
+    expectedId: reservationId,
+    expectedServiceId: serviceId
+  }), /end must be later/);
 });
 
 test("uses bounded exponential retry delays", () => {

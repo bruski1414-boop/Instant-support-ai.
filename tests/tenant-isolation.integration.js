@@ -662,6 +662,20 @@ try {
   const guestStaffPoll = await fetch(baseUrl + "/api/public/" + tenants[0].slug + "/chat?conversationId=" + guestChatBody.conversationId, { headers: { "X-Veyra-Conversation-Token": guestChatBody.conversationToken } });
   assert.equal(guestStaffPoll.status, 200);
   assert.deepEqual((await guestStaffPoll.json()).messages, []);
+
+  // Guest polling and message submission must both reject an expired token.
+  await pool.query("UPDATE conversations SET guest_token_expires_at=now()-interval '1 second' WHERE id=$1 AND organization_id=$2", [guestChatBody.conversationId, orgAForPilot.rows[0].id]);
+  const expiredGuestPoll = await fetch(baseUrl + "/api/public/" + tenants[0].slug + "/chat?conversationId=" + guestChatBody.conversationId, {
+    headers: { "X-Veyra-Conversation-Token": guestChatBody.conversationToken },
+  });
+  assert.equal(expiredGuestPoll.status, 404, "expired guest tokens must not read staff replies");
+  const expiredGuestMessage = await fetch(baseUrl + "/api/public/" + tenants[0].slug + "/chat", {
+    method: "POST",
+    headers: { "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true" },
+    body: JSON.stringify({ message: "Can you confirm breakfast?", conversationId: guestChatBody.conversationId, conversationToken: guestChatBody.conversationToken }),
+  });
+  assert.equal(expiredGuestMessage.status, 404, "expired guest tokens must not append messages");
+
   await pool.query("UPDATE organization_privacy_approvals SET revoked_at=now() WHERE organization_id=$1", [orgAForPilot.rows[0].id]);
   const chatAfterRevocation = await fetch(baseUrl + "/api/public/" + tenants[0].slug + "/chat", {
     method: "POST", headers: { "content-type": "application/json", "X-Veyra-Test-Bypass-Rate-Limit": "true" },

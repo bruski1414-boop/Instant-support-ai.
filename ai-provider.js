@@ -2,6 +2,8 @@
 
 const { validateStructuredAnswer } = require("./answer-grounding");
 
+const AI_REQUEST_TIMEOUT_MS = 15000;
+
 const SAFE_FALLBACK = Object.freeze({
   reply: "I can’t prepare a reliable answer right now. I’ll ask the hotel team to help you.",
   needsHuman: true,
@@ -16,7 +18,7 @@ async function generateStructuredGuestAnswer({ client, model, messages }) {
       max_tokens: 500,
       response_format: { type: "json_object" },
       messages
-    });
+    }, { timeout: AI_REQUEST_TIMEOUT_MS, maxRetries: 0 });
     let answer;
     try {
       answer = JSON.parse(completion.choices[0]?.message?.content || "");
@@ -33,4 +35,4 @@ async function generateStructuredGuestAnswer({ client, model, messages }) {
   }
 }
 
-module.exports = { generateStructuredGuestAnswer, SAFE_FALLBACK };
+module.exports = { generateStructuredGuestAnswer, SAFE_FALLBACK, AI_REQUEST_TIMEOUT_MS };

@@ -145,3 +145,18 @@ test("failed match persistence rolls back and leaves the intent unconsumed", asy
   assert.equal(state.intents[0].consumed_at, null);
   assert.ok(state.statements.includes("ROLLBACK"));
 });
+
+test("the same provider reservation cannot be attributed to a second conversation", async () => {
+  const { state, pool } = createMemoryPool();
+  const store = createBookingAttributionStore({ pool });
+  const first = await store.issueIntent({ organizationId: ORG, conversationId: CONVERSATION, issuedAt: "2026-11-15T10:00:00.000Z" });
+  const secondConversation = "44444444-4444-4444-8444-444444444444";
+  state.conversations.add(ORG + ":" + secondConversation);
+  const second = await store.issueIntent({ organizationId: ORG, conversationId: secondConversation, issuedAt: "2026-11-15T10:00:00.000Z" });
+  const event = reservationEvent(first.oneTimeToken);
+  assert.equal((await store.consumeConfirmedReservation({ organizationId: ORG, provider: "trusted-pms-adapter", reservationEvent: event })).status, "matched");
+  const replayWithDifferentToken = reservationEvent(second.oneTimeToken);
+  assert.equal((await store.consumeConfirmedReservation({ organizationId: ORG, provider: "trusted-pms-adapter", reservationEvent: replayWithDifferentToken })).status, "duplicate");
+  assert.equal(state.matches.length, 1);
+  assert.equal(state.intents[1].consumed_at, null);
+});

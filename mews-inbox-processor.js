@@ -81,10 +81,11 @@ function createMewsInboxProcessor({ db, mewsStore, clock = () => new Date(), bat
   async function markFailure(row) {
     const terminal = row.attempt_count >= maxAttempts;
     const nextAttempt = new Date(clock().getTime() + retryDelayMs(row.attempt_count));
-    await db.query(
+    const updated = await db.query(
       "UPDATE mews_webhook_inbox SET status=$2,next_attempt_at=$3,lease_expires_at=NULL,last_error=$4 WHERE id=$1 AND status='processing' AND attempt_count=$5",
       [row.id, terminal ? "failed" : "pending", nextAttempt, "reservation_fetch_failed", row.attempt_count]
     );
+    if (!updated.rowCount) return "stale";
     return terminal ? "failed" : "retried";
   }
 

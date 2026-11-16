@@ -45,7 +45,7 @@ test("rejects incomplete payment evidence and missing tenant identity",()=>{
 });
 
 test("rejects adjustments that do not match provider adjustment references",()=>{
- assert.throws(()=>projectPaidAddonToLedger(event({adjustments:[]})),/Each confirmed adjustment/);
+ assert.throws(()=>projectPaidAddonToLedger(event({adjustments:[]})),/Adjustment evidence is incomplete/);
 });
 
 test("supports currencies with zero decimal places",()=>{

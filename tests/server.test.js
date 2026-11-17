@@ -408,7 +408,8 @@ test("hotel privacy approval is tenant-scoped, owner/admin-only, append-only and
   assert.ok(start >= 0 && end > start, "onboarding route must exist");
   const route = server.slice(start, end);
   assert.match(route, /privacyApproval\.rowCount&&privacyApproval\.rows\[0\]\.retention_days/);
-  assert.match(route, /platform storage switch is not proof/);
+  assert.match(route, /No current hotel-specific attestation matches the saved retention setting/);
+  assert.doesNotMatch(route, /GUEST_DATA_STORAGE_ENABLED/);
   assert.match(route, /readyForPilot=checks.every\(x=>x.done\)/);
   assert.match(dashboard, /id="privacyApprovalForm"/);
   assert.match(dashboard, /id="privacyLawfulBasis"/);

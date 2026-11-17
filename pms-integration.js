@@ -270,7 +270,7 @@ function createPmsRegistry(adapters = []) {
 
 function localDateTimeToUtc(date, time, timeZone) {
   if (typeof date !== "string" || typeof time !== "string" ||
-      !/^\\d{4}-\\d{2}-\\d{2}$/.test(date) ||
+      !/^\d{4}-\d{2}-\d{2}$/.test(date) ||
       !/^([01]\d|2[0-3]):[0-5]\d:[0-5]\d$/.test(time) ||
       typeof timeZone !== "string" || !timeZone.trim()) {
     throw new PmsIntegrationError("INVALID_LOCAL_DATETIME", "A valid local date, time and IANA time zone are required.");
@@ -306,7 +306,8 @@ function localDateTimeToUtc(date, time, timeZone) {
   }
   return new Date(candidate).toISOString();
 }
-\nfunction createMewsConnectorAdapter(options = {}) {
+
+function createMewsConnectorAdapter(options = {}) {
   const fetchImpl = options.fetchImpl || globalThis.fetch;
   const platformAddress = String(options.platformAddress || "https://api.mews.com").replace(/\/$/, "");
   const clientName = String(options.clientName || "Veyra AI/1.0.0");

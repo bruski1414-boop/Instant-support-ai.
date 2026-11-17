@@ -320,3 +320,53 @@ test("Mews retries reuse the existing reservation instead of creating another on
   assert.deepEqual(result, { bookingId: "existing-reservation", status: "confirmed" });
   assert.equal(calls.length, 1);
 });
+
+
+test("Mews reservation creation uses the documented Add reservations request fields", async () => {
+  const calls = [];
+  const adapter = createMewsConnectorAdapter({
+    fetchImpl: async (url, options) => {
+      const payload = JSON.parse(options.body);
+      calls.push({ url, payload });
+      let body = {};
+      if (url.endsWith("/services/getAll")) body = { Services: [] };
+      else if (url.endsWith("/reservations/getAll/2023-06-06")) body = { Reservations: [] };
+      else if (url.endsWith("/customers/add")) body = { Id: "customer-1" };
+      else if (url.endsWith("/reservations/add")) {
+        body = { Reservations: [{ Reservation: { Id: "reservation-1", State: "Confirmed", Number: "42" } }] };
+      } else throw new Error("Unexpected Mews endpoint: " + url);
+      return { ok: true, status: 200, async json() { return body; } };
+    },
+  });
+  const result = await adapter.createBooking({
+    checkIn: "2027-01-10",
+    checkOut: "2027-01-12",
+    roomTypeId: "category-1",
+    guestCount: 2,
+    idempotencyKey: "booking_req_12345",
+    guest: { name: "Ada Lovelace", phone: "+12025550123", email: "ada@example.com" },
+  }, {
+    credentials: { clientToken: "client-token", accessToken: "access-token" },
+    propertyConfig: {
+      serviceId: "service-1",
+      rateId: "rate-1",
+      requestedCategoryId: "category-1",
+      adultAgeCategoryId: "adult-1",
+      timeZone: "UTC",
+      checkInTime: "14:00:00",
+      checkOutTime: "10:00:00",
+    },
+  });
+  const addCall = calls.find(call => call.url.endsWith("/reservations/add"));
+  assert.ok(addCall);
+  assert.equal(addCall.payload.Reservations[0].StartUtc, "2027-01-10T14:00:00.000Z");
+  assert.equal(addCall.payload.Reservations[0].EndUtc, "2027-01-12T10:00:00.000Z");
+  assert.equal("ScheduledStartUtc" in addCall.payload.Reservations[0], false);
+  assert.equal("ScheduledEndUtc" in addCall.payload.Reservations[0], false);
+  assert.deepEqual(result, {
+    bookingId: "reservation-1",
+    status: "confirmed",
+    customerId: "customer-1",
+    confirmationNumber: "42",
+  });
+});

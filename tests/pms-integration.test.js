@@ -257,7 +257,7 @@ test("Mews returns a live daily availability and gross price quote for every nig
     calls.push({ url, payload });
     if (url.endsWith("/services/getAvailability")) return {
       ok: true, async json() { return {
-        TimeUnitStartsUtc: ["2027-01-10T00:00:00.000Z", "2027-01-11T00:00:00.000Z"],
+        TimeUnitStartsUtc: ["2027-01-09T17:00:00Z", "2027-01-10T17:00:00Z"],
         CategoryAvailabilities: [{
           CategoryId: "category-deluxe",
           Availabilities: [4, 2],
@@ -304,7 +304,7 @@ test("Mews availability refuses incomplete daily data and over-capacity guest co
   const fetchImpl = async () => {
     calls += 1;
     return { ok: true, async json() { return {
-      TimeUnitStartsUtc: ["2027-01-10T00:00:00.000Z"],
+      TimeUnitStartsUtc: ["2027-01-09T17:00:00Z"],
       CategoryAvailabilities: [{
         CategoryId: "category-deluxe", Availabilities: [2], Adjustments: [0],
       }],

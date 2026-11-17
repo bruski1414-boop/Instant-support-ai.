@@ -389,3 +389,14 @@ test("staff webhook configuration is encrypted, tenant-scoped and verified befor
   assert.match(dashboard, /id="staffWebhookForm"/);
   assert.match(dashboard, /id="staffWebhookSecret"/);
 });
+
+test("onboarding never treats the platform guest-storage switch as hotel privacy approval", () => {
+  const server = fs.readFileSync("server.js", "utf8");
+  const start = server.indexOf('app.get("/api/admin/onboarding"');
+  const end = server.indexOf('app.get("/api/admin/integrations/pms"', start);
+  assert.ok(start >= 0 && end > start, "onboarding route must exist");
+  const route = server.slice(start, end);
+  assert.match(route, /key:"privacy",label:"Hotel privacy and retention approval",done:false/);
+  assert.match(route, /platform storage switch is not proof of this hotel's written approval/);
+  assert.match(route, /readyForPilot=checks.every\(x=>x.done\)/);
+});

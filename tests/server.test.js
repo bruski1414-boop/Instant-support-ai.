@@ -348,6 +348,12 @@ test("staff notification retry claims an atomic attempt slot and blocks concurre
   assert.match(server, /manualFollowUpRequired:!result\.delivered/);
 });
 
+test("staff handoff dashboard distinguishes an in-progress notification from an unconfigured webhook", () => {
+  const dashboard = fs.readFileSync("dashboard.html", "utf8");
+  assert.match(dashboard, /Notification attempt in progress — check the status again shortly/);
+  assert.match(dashboard, /notification==="sending"/);
+});
+
 test("staff handoff dashboard makes failed and unconfigured notifications require manual follow-up", () => {
   const dashboard = fs.readFileSync("dashboard.html", "utf8");
   assert.match(dashboard, /No staff notification configured — contact hotel staff manually/);

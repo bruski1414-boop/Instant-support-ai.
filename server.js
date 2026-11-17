@@ -15,6 +15,8 @@ const {selectRelevantOffers,buildOfferContext}=require("./hotel-offers");
 const {buildPilotReadiness}=require("./pilot-readiness");
 const {PmsIntegrationError,createPmsRegistry,createSandboxAdapter,createMewsConnectorAdapter}=require("./pms-integration");
 const {createPmsCredentialVault}=require("./pms-credential-vault");
+const {createTokenCipher}=require("./storage-security");
+const {normalizeGuestDetails,createBookingIntent}=require("./booking-workflow");
 const {deliverStaffEscalation}=require("./staff-notifications");
 const {encryptWebhookConfig,decryptWebhookConfig,resolvePublicWebhook,postSignedWebhook}=require("./staff-webhook-security");
 const app=express();
@@ -25,12 +27,13 @@ const ai=process.env.OPENAI_API_KEY?new OpenAI({apiKey:process.env.OPENAI_API_KE
 const db=process.env.DATABASE_URL?new Pool({connectionString:process.env.DATABASE_URL,ssl:process.env.DATABASE_SSL==="false"?false:{rejectUnauthorized:false},max:5,connectionTimeoutMillis:5000}):null;
 const pmsRegistry=createPmsRegistry([createSandboxAdapter(),createMewsConnectorAdapter({platformAddress:process.env.MEWS_PLATFORM_ADDRESS})]);
 const pmsCredentialVault=createPmsCredentialVault();
+const bookingDataCipher=createTokenCipher(process.env.BOOKING_DATA_ENCRYPTION_KEY);
 const scrypt=promisify(crypto.scrypt);
 const prod=process.env.NODE_ENV==="production";
 const cookie=prod?"__Host-veyra_session":"veyra_session";
 app.disable("x-powered-by");
 app.use((_q,r,n)=>{r.setHeader("X-Content-Type-Options","nosniff");r.setHeader("X-Frame-Options","DENY");r.setHeader("Referrer-Policy","strict-origin-when-cross-origin");r.setHeader("Permissions-Policy","camera=(),microphone=(),geolocation=()");n();});
-app.use(cors((req,cb)=>{const o=req.get("Origin");const common={credentials:true,allowedHeaders:["Content-Type","X-CSRF-Token","X-Bootstrap-Token","X-Platform-Provisioning-Token"],methods:["GET","POST","PATCH","DELETE","OPTIONS"]};if(!o||origins.includes(o))return cb(null,{...common,origin:true});const segments=req.path.split("/");if(segments.length!==5||segments[1]!=="api"||segments[2]!=="public"||!["chat","availability"].includes(segments[4])||!db)return cb(null,{...common,origin:false});let hotelSlug;try{hotelSlug=decodeURIComponent(segments[3]);}catch{return cb(null,{...common,origin:false});}db.query("SELECT 1 FROM organizations o JOIN organization_settings s ON s.organization_id=o.id WHERE o.slug=$1 AND s.website_url=$2 LIMIT 1",[hotelSlug,o]).then(x=>cb(null,{...common,origin:x.rowCount>0})).catch(()=>cb(null,{...common,origin:false}));}));
+app.use(cors((req,cb)=>{const o=req.get("Origin");const common={credentials:true,allowedHeaders:["Content-Type","X-CSRF-Token","X-Bootstrap-Token","X-Platform-Provisioning-Token"],methods:["GET","POST","PATCH","DELETE","OPTIONS"]};if(!o||origins.includes(o))return cb(null,{...common,origin:true});const segments=req.path.split("/");if(segments.length!==5||segments[1]!=="api"||segments[2]!=="public"||!["chat","availability","booking-intents"].includes(segments[4])||!db)return cb(null,{...common,origin:false});let hotelSlug;try{hotelSlug=decodeURIComponent(segments[3]);}catch{return cb(null,{...common,origin:false});}db.query("SELECT 1 FROM organizations o JOIN organization_settings s ON s.organization_id=o.id WHERE o.slug=$1 AND s.website_url=$2 LIMIT 1",[hotelSlug,o]).then(x=>cb(null,{...common,origin:x.rowCount>0})).catch(()=>cb(null,{...common,origin:false}));}));
 app.use(express.json({limit:"20kb",verify:(req,res,buf)=>{req.rawBody=Buffer.from(buf);}}));
 app.use("/api/",rateLimit({windowMs:60000,limit:60,standardHeaders:"draft-7",legacyHeaders:false}));
 app.use("/api/auth/",rateLimit({windowMs:900000,limit:10,standardHeaders:"draft-7",legacyHeaders:false}));
@@ -91,6 +94,8 @@ const schema=[
 "ALTER TABLE pms_connections ADD COLUMN IF NOT EXISTS property_config JSONB NOT NULL DEFAULT '{}'::jsonb",
 "CREATE TABLE IF NOT EXISTS pms_availability_quotes(id UUID PRIMARY KEY DEFAULT gen_random_uuid(),organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,provider TEXT NOT NULL,check_in DATE NOT NULL,check_out DATE NOT NULL,guest_count INTEGER NOT NULL CHECK(guest_count BETWEEN 1 AND 20),room_type_id TEXT NOT NULL,room_type_name TEXT NOT NULL,currency CHAR(3) NOT NULL,amount_minor BIGINT NOT NULL CHECK(amount_minor>=0),available_units INTEGER NOT NULL CHECK(available_units>0),expires_at TIMESTAMPTZ NOT NULL,created_at TIMESTAMPTZ NOT NULL DEFAULT now())",
 "CREATE INDEX IF NOT EXISTS pms_availability_quotes_org_expiry_idx ON pms_availability_quotes(organization_id,expires_at)",
+"CREATE TABLE IF NOT EXISTS booking_intents(id UUID PRIMARY KEY DEFAULT gen_random_uuid(),organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,quote_id UUID NOT NULL REFERENCES pms_availability_quotes(id) ON DELETE RESTRICT,provider TEXT NOT NULL,idempotency_key TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'awaiting_payment' CHECK(status IN ('awaiting_payment','deposit_paid','confirmed','failed','expired','requires_manual_review')),check_in DATE NOT NULL,check_out DATE NOT NULL,room_type_id TEXT NOT NULL,room_type_name TEXT NOT NULL,guest_count INTEGER NOT NULL CHECK(guest_count BETWEEN 1 AND 20),guest_data_encrypted TEXT NOT NULL,currency CHAR(3) NOT NULL,total_amount_minor BIGINT NOT NULL CHECK(total_amount_minor>0),deposit_amount_minor BIGINT NOT NULL CHECK(deposit_amount_minor>0),balance_amount_minor BIGINT NOT NULL CHECK(balance_amount_minor>=0),payment_provider TEXT,payment_reference TEXT,pms_reservation_id TEXT,expires_at TIMESTAMPTZ NOT NULL,created_at TIMESTAMPTZ NOT NULL DEFAULT now(),updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),UNIQUE(organization_id,idempotency_key),UNIQUE(organization_id,quote_id))",
+"CREATE INDEX IF NOT EXISTS booking_intents_org_status_idx ON booking_intents(organization_id,status,created_at DESC)",
 "CREATE INDEX IF NOT EXISTS pms_connections_org_status_idx ON pms_connections(organization_id,status)",
 "CREATE TABLE IF NOT EXISTS pms_webhook_events(id UUID PRIMARY KEY DEFAULT gen_random_uuid(),organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,provider TEXT NOT NULL,external_event_id TEXT NOT NULL,event_type TEXT NOT NULL,payload_sha256 CHAR(64) NOT NULL,received_at TIMESTAMPTZ NOT NULL DEFAULT now(),status TEXT NOT NULL DEFAULT 'received' CHECK(status IN ('received','processed','ignored','failed')),processed_at TIMESTAMPTZ,UNIQUE(organization_id,provider,external_event_id))",
 "CREATE INDEX IF NOT EXISTS pms_webhook_events_org_time_idx ON pms_webhook_events(organization_id,received_at DESC)",
@@ -369,6 +374,81 @@ r.json({verified:true,provider:connection.rows[0].provider,options,notice:"Avail
 if(e instanceof PmsIntegrationError)return r.status(e.status).json({verified:false,code:e.code,error:e.message});
 console.error("Public PMS availability lookup failed.");
 r.status(502).json({verified:false,error:"Live hotel availability could not be verified. Please contact hotel staff."});
+}});
+app.post("/api/public/:slug/booking-intents",async(q,r,n)=>{
+try{
+if(!db)return r.status(503).json({error:"Hotel platform is not configured."});
+const body=q.body&&typeof q.body==="object"&&!Array.isArray(q.body)?q.body:{};
+const quoteId=typeof body.quoteId==="string"?body.quoteId.trim():"";
+const idempotencyKey=typeof body.idempotencyKey==="string"?body.idempotencyKey.trim():"";
+if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(quoteId)||
+!/^[A-Za-z0-9_-]{12,100}$/.test(idempotencyKey)||body.guestConfirmed!==true){
+return r.status(400).json({error:"A valid room quote, unique request key and explicit confirmation of the displayed booking details are required."});
+}
+const org=await db.query("SELECT id,status FROM organizations WHERE slug=$1",[q.params.slug]);
+if(!org.rowCount||org.rows[0].status==="suspended")return r.status(404).json({error:"Hotel booking is unavailable."});
+if(process.env.GUEST_DATA_STORAGE_ENABLED!=="true"||!bookingDataCipher.configured){
+return r.status(503).json({error:"Secure guest booking storage is not configured for this hotel."});
+}
+const privacy=await db.query("SELECT retention_days FROM organization_privacy_approvals WHERE organization_id=$1 ORDER BY approved_at DESC LIMIT 1",[org.rows[0].id]);
+if(!privacy.rowCount||privacy.rows[0].retention_days<1){
+return r.status(503).json({error:"The hotel must approve its guest-data privacy and retention settings before booking can continue."});
+}
+let guest;
+try{guest=normalizeGuestDetails(body.guest||{});}catch(error){return r.status(400).json({error:error.message,code:error.code||"INVALID_GUEST_DETAILS"});}
+const existing=await db.query("SELECT id,quote_id,status,check_in,check_out,room_type_id,room_type_name,guest_count,currency,total_amount_minor,deposit_amount_minor,balance_amount_minor,expires_at,guest_data_encrypted FROM booking_intents WHERE organization_id=$1 AND idempotency_key=$2",[org.rows[0].id,idempotencyKey]);
+if(existing.rowCount){
+const row=existing.rows[0];let sameGuest=false;
+try{sameGuest=JSON.stringify(bookingDataCipher.decrypt(row.guest_data_encrypted))===JSON.stringify(guest);}catch{}
+if(row.quote_id!==quoteId||!sameGuest)return r.status(409).json({error:"This request key has already been used for different booking details."});
+return r.json({bookingIntent:{id:row.id,status:row.status,checkIn:String(row.check_in).slice(0,10),checkOut:String(row.check_out).slice(0,10),roomTypeId:row.room_type_id,roomTypeName:row.room_type_name,guestCount:row.guest_count,currency:row.currency,totalAmountMinor:Number(row.total_amount_minor),depositAmountMinor:Number(row.deposit_amount_minor),balanceAmountMinor:Number(row.balance_amount_minor),expiresAt:row.expires_at},checkoutReady:false,reservationConfirmed:row.status==="confirmed",notice:"This is a booking intent only. No payment has been collected and no room has been reserved."});
+}
+const quoteResult=await db.query("SELECT id,provider,check_in,check_out,guest_count,room_type_id,room_type_name,currency,amount_minor,available_units,expires_at FROM pms_availability_quotes WHERE id=$1 AND organization_id=$2 AND expires_at>now() AND available_units>0",[quoteId,org.rows[0].id]);
+if(!quoteResult.rowCount)return r.status(409).json({error:"This room quote has expired or is no longer available. Please check availability again.",code:"QUOTE_EXPIRED"});
+const quote=quoteResult.rows[0];
+if(quote.guest_count<1||quote.guest_count>20||!Number.isSafeInteger(Number(quote.amount_minor))||Number(quote.amount_minor)<=0){
+return r.status(409).json({error:"The saved room quote is incomplete and cannot be used for booking.",code:"INVALID_QUOTE"});
+}
+if(body.guestCount!==undefined&&body.guestCount!==quote.guest_count)return r.status(409).json({error:"The guest count differs from the selected quote. Please check availability again."});
+if(body.checkIn!==undefined&&body.checkIn!==String(quote.check_in).slice(0,10))return r.status(409).json({error:"The check-in date differs from the selected quote."});
+if(body.checkOut!==undefined&&body.checkOut!==String(quote.check_out).slice(0,10))return r.status(409).json({error:"The check-out date differs from the selected quote."});
+if(body.roomTypeId!==undefined&&body.roomTypeId!==quote.room_type_id)return r.status(409).json({error:"The room type differs from the selected quote."});
+if(!pmsCredentialVault.configured)return r.status(503).json({error:"Hotel PMS credential protection is not configured."});
+const connection=await db.query("SELECT c.provider,c.status,c.encrypted_credentials,c.property_config,c.last_tested_at,t.test_passed,t.tested_at FROM pms_connections c LEFT JOIN organization_pms_adapter_tests t ON t.organization_id=c.organization_id AND t.provider=c.provider AND t.mode='production' WHERE c.organization_id=$1 AND c.provider=$2 AND c.mode='production' LIMIT 1",[org.rows[0].id,quote.provider]);
+if(!connection.rowCount||connection.rows[0].status!=="connected"||connection.rows[0].test_passed!==true||
+!connection.rows[0].tested_at||new Date(connection.rows[0].tested_at).getTime()<Date.now()-24*60*60*1000||
+!connection.rows[0].last_tested_at||new Date(connection.rows[0].last_tested_at).getTime()<Date.now()-24*60*60*1000){
+return r.status(503).json({error:"The hotel's live booking connection needs to be reverified. Please contact hotel staff."});
+}
+const credentials=pmsCredentialVault.decrypt(connection.rows[0].encrypted_credentials);
+const liveRows=await pmsRegistry.getAvailability(quote.provider,{checkIn:String(quote.check_in).slice(0,10),checkOut:String(quote.check_out).slice(0,10),guestCount:quote.guest_count},{credentials,organizationId:org.rows[0].id,propertyConfig:connection.rows[0].property_config||{}});
+const live=liveRows.find(item=>item.roomTypeId===quote.room_type_id);
+if(!live||live.availableUnits<1)return r.status(409).json({error:"That room is no longer available for the selected dates. Please choose another room or contact the hotel.",code:"ROOM_NO_LONGER_AVAILABLE"});
+if(live.currency!==quote.currency||live.amountMinor!==Number(quote.amount_minor)){
+return r.status(409).json({error:"The hotel's live price has changed. Please review a fresh quote before confirming.",code:"PRICE_CHANGED"});
+}
+const intent=createBookingIntent({
+guestConfirmed:true,idempotencyKey,guest,
+quote:{availabilityVerified:true,expiresAt:new Date(quote.expires_at),checkIn:String(quote.check_in).slice(0,10),checkOut:String(quote.check_out).slice(0,10),roomTypeId:quote.room_type_id,roomTypeName:quote.room_type_name,guestCount:quote.guest_count,totalAmountMinor:live.amountMinor,currency:live.currency}
+});
+const encryptedGuest=bookingDataCipher.encrypt(guest);
+const saved=await db.query("INSERT INTO booking_intents(organization_id,quote_id,provider,idempotency_key,status,check_in,check_out,room_type_id,room_type_name,guest_count,guest_data_encrypted,currency,total_amount_minor,deposit_amount_minor,balance_amount_minor,expires_at) VALUES($1,$2,$3,$4,'awaiting_payment',$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,now()+interval '10 minutes') ON CONFLICT DO NOTHING RETURNING id,status,check_in,check_out,room_type_id,room_type_name,guest_count,currency,total_amount_minor,deposit_amount_minor,balance_amount_minor,expires_at",
+[org.rows[0].id,quote.id,quote.provider,idempotencyKey,quote.check_in,quote.check_out,quote.room_type_id,quote.room_type_name,quote.guest_count,encryptedGuest,intent.currency,intent.totalAmountMinor,intent.depositAmountMinor,intent.balanceAmountMinor]);
+let row=saved.rows[0];
+if(!row){
+const conflict=await db.query("SELECT id,quote_id,status,check_in,check_out,room_type_id,room_type_name,guest_count,currency,total_amount_minor,deposit_amount_minor,balance_amount_minor,expires_at,guest_data_encrypted FROM booking_intents WHERE organization_id=$1 AND (idempotency_key=$2 OR quote_id=$3)",[org.rows[0].id,idempotencyKey,quote.id]);
+if(!conflict.rowCount)return r.status(409).json({error:"This quote has already been used. Please request a fresh quote."});
+const prior=conflict.rows[0];let sameGuest=false;
+try{sameGuest=JSON.stringify(bookingDataCipher.decrypt(prior.guest_data_encrypted))===JSON.stringify(guest);}catch{}
+if(prior.quote_id!==quoteId||prior.idempotency_key&&prior.idempotency_key!==idempotencyKey||!sameGuest)return r.status(409).json({error:"This quote or request key has already been used for a different booking intent."});
+row=prior;
+}
+r.status(saved.rowCount?201:200).json({bookingIntent:{id:row.id,status:row.status,checkIn:String(row.check_in).slice(0,10),checkOut:String(row.check_out).slice(0,10),roomTypeId:row.room_type_id,roomTypeName:row.room_type_name,guestCount:row.guest_count,currency:row.currency,totalAmountMinor:Number(row.total_amount_minor),depositAmountMinor:Number(row.deposit_amount_minor),balanceAmountMinor:Number(row.balance_amount_minor),expiresAt:row.expires_at},checkoutReady:false,reservationConfirmed:false,notice:"Booking intent created after a fresh PMS availability and price check. This is not a reservation: no payment has been collected and no room has been held. Payment checkout and final PMS confirmation are not enabled yet."});
+}catch(error){
+if(error instanceof PmsIntegrationError)return r.status(error.status).json({error:error.message,code:error.code});
+if(error&&error.code==="23505")return r.status(409).json({error:"This quote has already been used. Please request a fresh quote."});
+console.error("Public booking intent could not be created.");
+return r.status(502).json({error:"The hotel could not verify this booking request. Please contact hotel staff."});
 }});
 app.post("/api/public/:slug/chat",async(q,r,n)=>{
  try{if(!db)return r.status(503).json({error:"Hotel platform is not configured."});const releaseGate=await readinessSnapshot();if(!releaseGate.readyForPilot)return r.status(503).json({error:"Hotel pilot release gates are not all verified. Please contact hotel staff.",readyForPilot:false});const msg=q.body?.message;if(typeof msg!=="string"||!msg.trim()||msg.length>4000)return r.status(400).json({error:"Enter a message under 4,000 characters."});

@@ -75,6 +75,19 @@ main{padding:28px clamp(16px,4vw,48px);max-width:1450px;width:100%;margin:auto}.
    <div class="actions"><button class="btn" id="saveRetention" type="button">Save retention policy</button><button class="btn" id="previewRetention" type="button">Refresh deletion preview</button><button class="btn danger" id="runRetention" type="button" disabled>Run cleanup now</button></div>
    <div id="retentionNotice" class="notice hidden" role="status"></div>
   </div>
+  <div class="sectionrow"><h2>Hotel privacy and retention attestation</h2><span class="muted">Owner/admin only · append-only record</span></div>
+  <div class="card">
+   <p class="muted">An authorised hotel owner/admin records the hotel's own reviewed arrangements. This is an operational attestation only—not legal advice, a privacy certification, or proof that the arrangements are compliant. The retention period must match the saved setting above. A new record is added each time; previous attestations are retained in the audit history.</p>
+   <div id="privacyApprovalStatus" class="notice" role="status">Checking hotel approval record…</div>
+   <form id="privacyApprovalForm">
+    <div class="field"><label for="privacyPolicyVersion">Hotel privacy notice / policy version</label><input id="privacyPolicyVersion" maxlength="120" placeholder="Example: Guest Privacy Notice v3.2" required></div>
+    <div class="field"><label for="privacyBackupPlan">Hotel-approved backup arrangement</label><textarea id="privacyBackupPlan" minlength="20" maxlength="2000" placeholder="Describe who manages backups, where they are stored, and how restoration is checked." required></textarea></div>
+    <div class="field"><label for="privacyDeletionProcess">Hotel-approved deletion process</label><textarea id="privacyDeletionProcess" minlength="20" maxlength="2000" placeholder="Describe how active records, exports and backups are handled when deletion is required." required></textarea></div>
+    <label class="checkline"><input id="privacyLawfulBasis" type="checkbox" required> The hotel has reviewed and documented its lawful basis for this guest-data processing.</label>
+    <label class="checkline"><input id="privacyConfirm" type="checkbox" required> I am authorised to make this attestation for the hotel, and confirm these arrangements have been reviewed and approved by the hotel.</label>
+    <div class="actions"><button class="btn primary" type="submit">Record hotel attestation</button></div>
+   </form>
+  </div>
   <div class="sectionrow"><h2>Hotel-owned staff notifications</h2><span class="muted">Private endpoint for this hotel only</span></div>
   <div class="card" id="staffWebhookCard">
    <p class="muted">Connect the hotel's own HTTPS staff receiver. Veyra encrypts this endpoint and signing secret separately for this hotel. The secret is never displayed again after saving. Your receiver must accept Veyra JSON events and verify the x-veyra-signature HMAC-SHA256 header.</p>
@@ -351,10 +364,12 @@ async function loadSetup(){
  $("hotelLanguage").value=s.settings.language||"en";
  $("fallbackInstructions").value=s.settings.fallback_instructions||"";
  await loadRetention();
+ if(["owner","admin"].includes(currentRole)){const a=o.privacyApproval;$("privacyApprovalStatus").textContent=a?"Latest attestation: "+safe(a.policy_version)+" · retention "+a.retention_days+" days · recorded "+date(a.approved_at)+". Submit a new record if the hotel's approved policy changes.":"No hotel-specific privacy attestation recorded."; }else{$("privacyApprovalForm").classList.add("hidden");$("privacyApprovalStatus").textContent="Only a hotel owner or administrator can record this attestation.";}
  $("readinessSummary").textContent=o.readyForPilot?"All checks passed":"Needs attention";
  $("readinessSummary").className="tag "+(o.readyForPilot?"good":"warn");
  $("readinessList").innerHTML=o.checks.map(x=>'<article class="card" style="display:flex;align-items:flex-start;gap:12px"><span class="tag '+(x.done?"good":"warn")+'">'+(x.done?"Complete":"Action needed")+'</span><div><strong>'+safe(x.label)+'</strong><div class="muted" style="font-size:12px;margin-top:4px">'+safe(x.detail)+'</div></div></article>').join("");
 }
+$("privacyApprovalForm").addEventListener("submit",async e=>{e.preventDefault();if(!confirm("Record this as the hotel's administrator attestation? This does not certify legal or security compliance."))return;const b=e.submitter;if(b)b.disabled=true;try{const x=await api("/api/admin/privacy-approval",{method:"POST",body:JSON.stringify({policyVersion:$("privacyPolicyVersion").value,retentionDays:Number($("retentionDays").value),backupPlan:$("privacyBackupPlan").value,deletionProcess:$("privacyDeletionProcess").value,lawfulBasisConfirmed:$("privacyLawfulBasis").checked,confirmApproval:$("privacyConfirm").checked})});showToast(x.note||"Hotel attestation recorded.");$("privacyApprovalForm").reset();await loadSetup();}catch(err){notice(err.message,"error");}finally{if(b)b.disabled=false;}});
 $("settingsForm").addEventListener("submit",async e=>{e.preventDefault();try{await api("/api/admin/settings",{method:"PUT",body:JSON.stringify({website_url:$("hotelWebsite").value,support_email:$("supportEmail").value,timezone:$("hotelTimezone").value,language:$("hotelLanguage").value,fallback_instructions:$("fallbackInstructions").value})});showToast("Hotel profile saved.");await loadSetup();}catch(err){notice(err.message,"error");}});
 async function loadPmsIntegration(){
  const d=await api("/api/admin/integrations/pms");

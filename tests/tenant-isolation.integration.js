@@ -312,6 +312,40 @@ try {
   assert.equal(persistedEscalation.rowCount, 1, "explicit human request must create a staff escalation");
   assert.equal(persistedEscalation.rows[0].notification_status, "not_configured");
   assert.equal(persistedEscalation.rows[0].notification_attempts, 0, "invalid webhook configuration must not consume a delivery attempt");
+  // Exercise the retry claim against real PostgreSQL row locking. Exactly one
+  // of two simultaneous attempts may acquire the two-minute sending lease.
+  const escalationId = persistedEscalation.rows[0].id;
+  const claimRetrySlot = () => pool.query(
+    "UPDATE escalations SET notification_status='sending',notification_attempts=notification_attempts+1,notification_last_attempt_at=now() WHERE id=$1 AND organization_id=$2 AND notification_attempts<5 AND notification_status<>'delivered' AND (notification_status<>'sending' OR notification_last_attempt_at<now()-interval '2 minutes') RETURNING id",
+    [escalationId, orgAForGuestChat],
+  );
+  const concurrentRetryClaims = await Promise.all([claimRetrySlot(), claimRetrySlot()]);
+  assert.equal(concurrentRetryClaims.filter(result => result.rowCount === 1).length, 1, "only one concurrent PostgreSQL retry claim may succeed");
+  let retryState = await pool.query(
+    "SELECT notification_status,notification_attempts FROM escalations WHERE id=$1 AND organization_id=$2",
+    [escalationId, orgAForGuestChat],
+  );
+  assert.equal(retryState.rows[0].notification_status, "sending");
+  assert.equal(retryState.rows[0].notification_attempts, 1, "concurrent claims must consume only one attempt");
+
+  await pool.query(
+    "UPDATE escalations SET notification_last_attempt_at=now()-interval '3 minutes' WHERE id=$1 AND organization_id=$2",
+    [escalationId, orgAForGuestChat],
+  );
+  const staleLeaseRetry = await claimRetrySlot();
+  assert.equal(staleLeaseRetry.rowCount, 1, "a sending lease older than two minutes may be reclaimed");
+
+  await pool.query(
+    "UPDATE escalations SET notification_status='failed',notification_attempts=5 WHERE id=$1 AND organization_id=$2",
+    [escalationId, orgAForGuestChat],
+  );
+  const exhaustedRetry = await claimRetrySlot();
+  assert.equal(exhaustedRetry.rowCount, 0, "the fifth-attempt limit must block further claims");
+  await pool.query(
+    "UPDATE escalations SET notification_status='not_configured',notification_attempts=0,notification_last_attempt_at=NULL WHERE id=$1 AND organization_id=$2",
+    [escalationId, orgAForGuestChat],
+  );
+
 
   const offersAResponse = await fetch(baseUrl + "/api/admin/offers", { headers: { cookie: cookieA } });
   assert.equal(offersAResponse.status, 200, "tenant A must read its own offers");

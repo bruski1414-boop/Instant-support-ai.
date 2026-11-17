@@ -313,8 +313,15 @@ app.post("/api/public/:slug/chat",async(q,r,n)=>{
  await c.query("INSERT INTO messages(conversation_id,role,content) VALUES($1,'guest',$2),($1,'assistant',$3)",[cid,msg.trim(),reply]);for(const offer of matchedOffers){await c.query("INSERT INTO hotel_offer_attributions(organization_id,offer_id,conversation_id,status) VALUES($1,$2,$3,'enquiry') ON CONFLICT(organization_id,offer_id,conversation_id) DO NOTHING",[org.id,offer.id,cid]);}await c.query("UPDATE conversations SET last_message_at=now(),status=CASE WHEN $2 THEN 'escalated' WHEN status='resolved' THEN 'open' ELSE status END WHERE id=$1 AND organization_id=$3",[cid,flagHuman,org.id]);
  if(flagHuman){const prior=await c.query("SELECT id,notification_status FROM escalations WHERE conversation_id=$1 AND organization_id=$2 AND status<>'resolved' ORDER BY created_at DESC LIMIT 1",[cid,org.id]);if(prior.rowCount){eid=prior.rows[0].id;existingNotificationStatus=prior.rows[0].notification_status;}else{const e=await c.query("INSERT INTO escalations(organization_id,conversation_id,reason) VALUES($1,$2,$3) RETURNING id",[org.id,cid,String(resolvedAnswer.handoffReason||"Staff review required").slice(0,300)]);eid=e.rows[0].id;createdEscalation=true;}}
  await c.query("COMMIT");}catch(e){await c.query("ROLLBACK");throw e;}finally{c.release();}
- const notice=createdEscalation?await notify(org,cid,String(resolvedAnswer.handoffReason||"Staff review required").slice(0,300)):{configured:existingNotificationStatus!=="not_configured",delivered:existingNotificationStatus==="delivered",status:flagHuman?existingNotificationStatus:"not_configured"};
- if(createdEscalation)await db.query("UPDATE escalations SET notification_status=$1,notification_attempts=notification_attempts+CASE WHEN $2 THEN 1 ELSE 0 END,notification_last_attempt_at=CASE WHEN $2 THEN now() ELSE notification_last_attempt_at END WHERE id=$3 AND organization_id=$4",[notice.status,notice.configured,eid,org.id]);
+ let notice=createdEscalation
+  ?{configured:false,delivered:false,status:"failed"}
+  :{configured:existingNotificationStatus!=="not_configured",delivered:existingNotificationStatus==="delivered",status:flagHuman?existingNotificationStatus:"not_configured"};
+ if(createdEscalation){
+  try{notice=await notify(org,cid,String(resolvedAnswer.handoffReason||"Staff review required").slice(0,300));}
+  catch(error){console.error("Staff escalation notification failed:",error.message);notice={configured:false,delivered:false,status:"failed"};}
+  try{await db.query("UPDATE escalations SET notification_status=$1,notification_attempts=notification_attempts+CASE WHEN $2 THEN 1 ELSE 0 END,notification_last_attempt_at=CASE WHEN $2 THEN now() ELSE notification_last_attempt_at END WHERE id=$3 AND organization_id=$4",[notice.status,notice.configured,eid,org.id]);}
+  catch(error){console.error("Staff escalation notification status could not be saved:",error.message);notice={configured:false,delivered:false,status:"failed"};}
+ }
  r.json({reply,needsHuman:flagHuman,handoffConfigured:notice.configured,notificationDelivered:notice.delivered,notificationStatus:notice.status,conversationId:cid,conversationToken:guestToken,escalationId:eid||null});
  }catch(e){n(e);}
 });

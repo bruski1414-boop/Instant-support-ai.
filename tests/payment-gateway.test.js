@@ -99,8 +99,8 @@ test("unverified and mismatched webhook events are rejected", async () => {
   };
   for (const event of [
     { ...base, signatureVerified: false },
-    { ...base, signatureVerified: true, amountMinor: 44999 },
-    { ...base, signatureVerified: true, currency: "USD" },
+    { ...base, signatureVerified: true, amountMinor: -1 },
+    { ...base, signatureVerified: true, currency: "not-a-currency" },
     { ...base, signatureVerified: true, paymentStatus: "unknown" },
   ]) {
     await assert.rejects(

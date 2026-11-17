@@ -428,7 +428,12 @@ function createMewsConnectorAdapter(options = {}) {
             "Mews returned mismatched or invalid daily availability values. No availability claim can be made.", 502);
         }
       }
-      const availableUnits = Math.min(...category.Availabilities);
+      // Mews returns absolute availability and a separate relative adjustment for each time unit.
+      // Apply both before calculating the minimum inventory across the stay.
+      const adjustedAvailabilities = category.Availabilities.map((absolute, index) =>
+        Math.max(0, absolute + category.Adjustments[index])
+      );
+      const availableUnits = Math.min(...adjustedAvailabilities);
 
       const quote = await call("reservations/price", {
         ServiceId: serviceId,

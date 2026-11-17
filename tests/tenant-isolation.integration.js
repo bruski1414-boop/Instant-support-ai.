@@ -306,7 +306,7 @@ try {
   assert.equal(persistedGuestChat.rows[0].status, "escalated");
   assert.equal(persistedGuestChat.rows[0].message_count, 4, "both guest turns and assistant replies must persist in the same conversation");
   const persistedEscalation = await pool.query(
-    "SELECT notification_status,notification_attempts FROM escalations WHERE conversation_id=$1 AND organization_id=$2",
+    "SELECT id,notification_status,notification_attempts FROM escalations WHERE conversation_id=$1 AND organization_id=$2",
     [firstGuestChatBody.conversationId, orgAForGuestChat]
   );
   assert.equal(persistedEscalation.rowCount, 1, "explicit human request must create a staff escalation");

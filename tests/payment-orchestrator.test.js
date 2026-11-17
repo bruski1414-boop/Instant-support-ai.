@@ -82,6 +82,26 @@ test("webhook delegates only signature-verified normalized events to durable rec
   assert.equal(applied.event.eventId, "event-1");
 });
 
+test("webhook acknowledges safely quarantined events for staff review", async () => {
+  const repository = {
+    async getBookingIntent() { return makeIntent(); },
+    async saveCheckout() {},
+    async applyVerifiedPaymentEvent() { return { status: "manual_review" }; },
+  };
+  const adapter = {
+    async verifyWebhook() {
+      return {
+        signatureVerified: true, eventId: "event-review", eventType: "payment.succeeded",
+        paymentStatus: "succeeded", providerReference: "unexpected-reference",
+        bookingIntentId: "intent-123", amountMinor: 50000, currency: "EUR",
+      };
+    },
+  };
+  const service = createPaymentOrchestrator({ repository, adapter, providerName: "test-provider" });
+  const result = await service.handleWebhook({ rawBody: Buffer.from("payload"), headers: {} });
+  assert.equal(result.status, "manual_review");
+});
+
 test("webhook refuses unknown repository outcomes", async () => {
   const repository = {
     async getBookingIntent() {},

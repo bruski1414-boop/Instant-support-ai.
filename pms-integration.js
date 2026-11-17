@@ -426,8 +426,8 @@ function createMewsConnectorAdapter(options = {}) {
         CheckRateApplicability: true,
         Reservations: [{
           State: "Confirmed",
-          StartUtc: localDateTimeToUtc(request.checkIn, checkInTime, timeZone),
-          EndUtc: localDateTimeToUtc(request.checkOut, checkOutTime, timeZone),
+          ScheduledStartUtc: localDateTimeToUtc(request.checkIn, checkInTime, timeZone),
+          ScheduledEndUtc: localDateTimeToUtc(request.checkOut, checkOutTime, timeZone),
           CustomerId: customer.Id,
           RequestedCategoryId: requestedCategoryId,
           RateId: rateId,

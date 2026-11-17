@@ -30,7 +30,7 @@ const prod=process.env.NODE_ENV==="production";
 const cookie=prod?"__Host-veyra_session":"veyra_session";
 app.disable("x-powered-by");
 app.use((_q,r,n)=>{r.setHeader("X-Content-Type-Options","nosniff");r.setHeader("X-Frame-Options","DENY");r.setHeader("Referrer-Policy","strict-origin-when-cross-origin");r.setHeader("Permissions-Policy","camera=(),microphone=(),geolocation=()");n();});
-app.use(cors((req,cb)=>{const o=req.get("Origin");const common={credentials:true,allowedHeaders:["Content-Type","X-CSRF-Token","X-Bootstrap-Token","X-Platform-Provisioning-Token"],methods:["GET","POST","PATCH","DELETE","OPTIONS"]};if(!o||origins.includes(o))return cb(null,{...common,origin:true});const segments=req.path.split("/");if(segments.length!==5||segments[1]!=="api"||segments[2]!=="public"||segments[4]!=="chat"||!db)return cb(null,{...common,origin:false});let hotelSlug;try{hotelSlug=decodeURIComponent(segments[3]);}catch{return cb(null,{...common,origin:false});}db.query("SELECT 1 FROM organizations o JOIN organization_settings s ON s.organization_id=o.id WHERE o.slug=$1 AND s.website_url=$2 LIMIT 1",[hotelSlug,o]).then(x=>cb(null,{...common,origin:x.rowCount>0})).catch(()=>cb(null,{...common,origin:false}));}));
+app.use(cors((req,cb)=>{const o=req.get("Origin");const common={credentials:true,allowedHeaders:["Content-Type","X-CSRF-Token","X-Bootstrap-Token","X-Platform-Provisioning-Token"],methods:["GET","POST","PATCH","DELETE","OPTIONS"]};if(!o||origins.includes(o))return cb(null,{...common,origin:true});const segments=req.path.split("/");if(segments.length!==5||segments[1]!=="api"||segments[2]!=="public"||!["chat","availability"].includes(segments[4])||!db)return cb(null,{...common,origin:false});let hotelSlug;try{hotelSlug=decodeURIComponent(segments[3]);}catch{return cb(null,{...common,origin:false});}db.query("SELECT 1 FROM organizations o JOIN organization_settings s ON s.organization_id=o.id WHERE o.slug=$1 AND s.website_url=$2 LIMIT 1",[hotelSlug,o]).then(x=>cb(null,{...common,origin:x.rowCount>0})).catch(()=>cb(null,{...common,origin:false}));}));
 app.use(express.json({limit:"20kb",verify:(req,res,buf)=>{req.rawBody=Buffer.from(buf);}}));
 app.use("/api/",rateLimit({windowMs:60000,limit:60,standardHeaders:"draft-7",legacyHeaders:false}));
 app.use("/api/auth/",rateLimit({windowMs:900000,limit:10,standardHeaders:"draft-7",legacyHeaders:false}));
@@ -88,6 +88,9 @@ const schema=[
 "CREATE INDEX IF NOT EXISTS hotel_offers_org_active_idx ON hotel_offers(organization_id,status,availability_status,expires_at)",
 "CREATE TABLE IF NOT EXISTS organization_pms_adapter_tests(organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,provider TEXT NOT NULL,mode TEXT NOT NULL CHECK(mode IN ('sandbox','production')),test_passed BOOLEAN NOT NULL DEFAULT false,tested_by UUID REFERENCES users(id) ON DELETE SET NULL,tested_at TIMESTAMPTZ NOT NULL DEFAULT now(),PRIMARY KEY(organization_id,provider))",
 "CREATE TABLE IF NOT EXISTS pms_connections(organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,provider TEXT NOT NULL,mode TEXT NOT NULL CHECK(mode IN ('sandbox','production')),status TEXT NOT NULL DEFAULT 'pending_authorization' CHECK(status IN ('pending_authorization','connected','paused','error')),encrypted_credentials TEXT NOT NULL,scopes TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],connected_by UUID REFERENCES users(id) ON DELETE SET NULL,connected_at TIMESTAMPTZ,last_tested_at TIMESTAMPTZ,last_error TEXT NOT NULL DEFAULT '',updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),PRIMARY KEY(organization_id,provider))",
+"ALTER TABLE pms_connections ADD COLUMN IF NOT EXISTS property_config JSONB NOT NULL DEFAULT '{}'::jsonb",
+"CREATE TABLE IF NOT EXISTS pms_availability_quotes(id UUID PRIMARY KEY DEFAULT gen_random_uuid(),organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,provider TEXT NOT NULL,check_in DATE NOT NULL,check_out DATE NOT NULL,guest_count INTEGER NOT NULL CHECK(guest_count BETWEEN 1 AND 20),room_type_id TEXT NOT NULL,room_type_name TEXT NOT NULL,currency CHAR(3) NOT NULL,amount_minor BIGINT NOT NULL CHECK(amount_minor>=0),available_units INTEGER NOT NULL CHECK(available_units>0),expires_at TIMESTAMPTZ NOT NULL,created_at TIMESTAMPTZ NOT NULL DEFAULT now())",
+"CREATE INDEX IF NOT EXISTS pms_availability_quotes_org_expiry_idx ON pms_availability_quotes(organization_id,expires_at)"
 "CREATE INDEX IF NOT EXISTS pms_connections_org_status_idx ON pms_connections(organization_id,status)",
 "CREATE TABLE IF NOT EXISTS pms_webhook_events(id UUID PRIMARY KEY DEFAULT gen_random_uuid(),organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,provider TEXT NOT NULL,external_event_id TEXT NOT NULL,event_type TEXT NOT NULL,payload_sha256 CHAR(64) NOT NULL,received_at TIMESTAMPTZ NOT NULL DEFAULT now(),status TEXT NOT NULL DEFAULT 'received' CHECK(status IN ('received','processed','ignored','failed')),processed_at TIMESTAMPTZ,UNIQUE(organization_id,provider,external_event_id))",
 "CREATE INDEX IF NOT EXISTS pms_webhook_events_org_time_idx ON pms_webhook_events(organization_id,received_at DESC)",
@@ -244,6 +247,51 @@ const deleted=await db.query("DELETE FROM pms_connections WHERE organization_id=
 await audit(q.actor,"integration.pms_connection_disconnected","pms_connection",q.params.provider);
 r.json({disconnected:deleted.rowCount===1});
 }catch(e){n(e);}});
+app.get("/api/admin/integrations/pms/:provider/property-config",requireDb,auth,role("owner","admin"),async(q,r,n)=>{try{
+const x=await db.query("SELECT property_config,status FROM pms_connections WHERE organization_id=$1 AND provider=$2 AND mode='production'",[q.actor.organization_id,q.params.provider]);
+if(!x.rowCount)return r.status(404).json({error:"Production PMS connection not found."});
+r.json({provider:q.params.provider,status:x.rows[0].status,propertyConfig:x.rows[0].property_config||{}});
+}catch(e){n(e);}});
+app.put("/api/admin/integrations/pms/:provider/property-config",requireDb,auth,role("owner","admin"),async(q,r,n)=>{try{
+if(q.params.provider!=="mews")return r.status(409).json({error:"Property mapping is not supported for this PMS provider yet."});
+const input=q.body?.propertyConfig;
+if(!input||typeof input!=="object"||Array.isArray(input))return r.status(400).json({error:"A propertyConfig object is required."});
+const serviceId=typeof input.serviceId==="string"?input.serviceId.trim():"";
+const timeZone=typeof input.timeZone==="string"?input.timeZone.trim():"";
+const timeUnitPeriod=input.timeUnitPeriod;
+const checkInTime=typeof input.checkInTime==="string"?input.checkInTime:"14:00:00";
+const checkOutTime=typeof input.checkOutTime==="string"?input.checkOutTime:"10:00:00";
+let timezoneValid=false;try{new Intl.DateTimeFormat("en",{timeZone}).format(new Date());timezoneValid=true;}catch{}
+const roomTypes=Array.isArray(input.roomTypes)?input.roomTypes:[];
+if(!serviceId||serviceId.length>120||/[\u0000-\u001f]/.test(serviceId)||!timezoneValid||
+timeUnitPeriod!=="Day"||!/^([01]\d|2[0-3]):[0-5]\d:[0-5]\d$/.test(checkInTime)||
+!/^([01]\d|2[0-3]):[0-5]\d:[0-5]\d$/.test(checkOutTime)||roomTypes.length<1||roomTypes.length>20){
+return r.status(400).json({error:"Configure a valid Mews service, IANA timezone, daily service period, local check-in/out times and 1–20 room mappings."});
+}
+const seenRoomIds=new Set(),seenCategoryIds=new Set();
+const normalizedRooms=[];
+for(const room of roomTypes){
+const roomTypeId=typeof room?.roomTypeId==="string"?room.roomTypeId.trim():"";
+const roomTypeName=typeof room?.roomTypeName==="string"?room.roomTypeName.trim():"";
+const rateId=typeof room?.rateId==="string"?room.rateId.trim():"";
+const requestedCategoryId=typeof room?.requestedCategoryId==="string"?room.requestedCategoryId.trim():"";
+const adultAgeCategoryId=typeof room?.adultAgeCategoryId==="string"?room.adultAgeCategoryId.trim():"";
+const maxOccupancy=room?.maxOccupancy;
+if(!roomTypeId||roomTypeId.length>120||!roomTypeName||roomTypeName.length>160||
+!rateId||rateId.length>120||!requestedCategoryId||requestedCategoryId.length>120||
+!adultAgeCategoryId||adultAgeCategoryId.length>120||!Number.isInteger(maxOccupancy)||
+maxOccupancy<1||maxOccupancy>20||seenRoomIds.has(roomTypeId)||seenCategoryIds.has(requestedCategoryId)){
+return r.status(400).json({error:"Each room mapping needs unique room/category IDs, a name, rate ID, adult age-category ID and capacity from 1 to 20."});
+}
+seenRoomIds.add(roomTypeId);seenCategoryIds.add(requestedCategoryId);
+normalizedRooms.push({roomTypeId,roomTypeName,rateId,requestedCategoryId,adultAgeCategoryId,maxOccupancy});
+}
+const propertyConfig={serviceId,timeZone,timeUnitPeriod,checkInTime,checkOutTime,roomTypes:normalizedRooms};
+const saved=await db.query("UPDATE pms_connections SET property_config=$3::jsonb,updated_at=now() WHERE organization_id=$1 AND provider=$2 AND mode='production' AND status='connected' RETURNING provider",[q.actor.organization_id,q.params.provider,JSON.stringify(propertyConfig)]);
+if(!saved.rowCount)return r.status(409).json({error:"Connect and successfully test the hotel's production PMS credentials before saving property mappings."});
+await audit(q.actor,"integration.pms_property_mapping_updated","pms_connection",q.params.provider);
+r.json({provider:q.params.provider,saved:true,roomTypeCount:normalizedRooms.length,propertyConfig});
+}catch(e){n(e);}});
 app.post("/api/admin/integrations/test-ai",requireDb,auth,role("owner","admin"),integrationTestLimiter,async(q,r,n)=>{try{if(!ai)return r.status(503).json({verified:false,error:"OPENAI_API_KEY is not configured on the server."});const model=await ai.models.retrieve(MODEL,{timeout:10000});await db.query("INSERT INTO organization_integration_checks(organization_id,integration,verified_at,verified_by) VALUES($1,'ai_provider',now(),$2) ON CONFLICT(organization_id,integration) DO UPDATE SET verified_at=now(),verified_by=EXCLUDED.verified_by",[q.actor.organization_id,q.actor.user_id]);await audit(q.actor,"integration.ai_provider_verified","integration",MODEL);r.json({verified:true,model:model.id||MODEL});}catch(e){console.error("AI provider verification failed:",e.message);r.status(502).json({verified:false,error:"The configured AI provider or model could not be verified. Check the server-side key and model access."});}});
 app.get("/api/admin/integrations/staff-webhook",requireDb,auth,role("owner","admin"),async(q,r,n)=>{try{const x=await db.query("SELECT status,updated_at FROM organization_staff_webhooks WHERE organization_id=$1",[q.actor.organization_id]);r.json({configured:Boolean(x.rowCount&&x.rows[0].status==="configured"),updatedAt:x.rows[0]?.updated_at||null,encryptionReady:Boolean(process.env.STAFF_WEBHOOK_ENCRYPTION_KEY)});}catch(e){n(e);}});
 app.put("/api/admin/integrations/staff-webhook",requireDb,auth,role("owner","admin"),async(q,r,n)=>{try{if(!process.env.STAFF_WEBHOOK_ENCRYPTION_KEY)return r.status(503).json({error:"The platform operator must configure the staff webhook encryption key first."});const url=typeof q.body?.url==="string"?q.body.url.trim():"",secret=typeof q.body?.secret==="string"?q.body.secret:"";if(url.length>2048||secret.length<24||secret.length>512)return r.status(400).json({error:"Enter an HTTPS webhook URL and a signing secret between 24 and 512 characters."});await resolvePublicWebhook(url);const encrypted=encryptWebhookConfig({url,secret},process.env.STAFF_WEBHOOK_ENCRYPTION_KEY);await db.query("INSERT INTO organization_staff_webhooks(organization_id,encrypted_config,status,updated_by,updated_at) VALUES($1,$2,'configured',$3,now()) ON CONFLICT(organization_id) DO UPDATE SET encrypted_config=EXCLUDED.encrypted_config,status='configured',updated_by=EXCLUDED.updated_by,updated_at=now()",[q.actor.organization_id,encrypted,q.actor.user_id]);await db.query("DELETE FROM organization_integration_checks WHERE organization_id=$1 AND integration='staff_webhook'",[q.actor.organization_id]);await audit(q.actor,"integration.staff_webhook_configured","integration",q.actor.organization_id);r.json({saved:true,configured:true,requiresVerification:true});}catch(e){r.status(400).json({error:e.message==="STAFF_WEBHOOK_ENCRYPTION_KEY must be a base64-encoded 32-byte key."?e.message:"Webhook URL could not be validated. Use a public HTTPS endpoint with DNS resolving only to public IP addresses."});}});
@@ -294,6 +342,34 @@ app.delete("/api/admin/knowledge/:id",requireDb,auth,role("owner","admin"),async
 app.get("/api/admin/escalations",requireDb,auth,async(q,r,n)=>{try{const x=await db.query("SELECT e.id,e.reason,e.status,e.created_at,e.resolved_at,e.conversation_id,e.notification_status,e.notification_attempts,e.notification_last_attempt_at FROM escalations e WHERE e.organization_id=$1 ORDER BY e.created_at DESC LIMIT 100",[q.actor.organization_id]);r.json({escalations:x.rows});}catch(e){n(e);}});
 app.post("/api/admin/escalations/:id/notify",requireDb,auth,role("owner","admin","staff"),async(q,r,n)=>{try{const x=await db.query("SELECT e.id,e.reason,e.notification_status,e.notification_attempts,e.conversation_id,o.id AS organization_id,o.name,o.slug FROM escalations e JOIN organizations o ON o.id=e.organization_id WHERE e.id=$1 AND e.organization_id=$2",[q.params.id,q.actor.organization_id]);if(!x.rowCount)return r.status(404).json({error:"Handoff not found."});const item=x.rows[0];if(item.notification_status==="delivered")return r.status(409).json({error:"The hotel notification was already delivered."});if(item.notification_attempts>=5)return r.status(429).json({error:"Notification retry limit reached. Use the hotel manual staff contact process."});if(item.notification_status==="sending"&&item.notification_last_attempt_at&&Date.now()-new Date(item.notification_last_attempt_at).getTime()<120000)return r.status(409).json({error:"A staff notification attempt is already in progress. Check the handoff status shortly."});const configured=Boolean(process.env.STAFF_WEBHOOK_ENCRYPTION_KEY)&&(await db.query("SELECT 1 FROM organization_staff_webhooks WHERE organization_id=$1 AND status='configured'",[item.organization_id])).rowCount>0;if(!configured){const result={configured:false,delivered:false,status:"not_configured"};await db.query("UPDATE escalations SET notification_status='not_configured' WHERE id=$1 AND organization_id=$2",[item.id,q.actor.organization_id]);return r.json({notificationStatus:result.status,delivered:false,configured:false,manualFollowUpRequired:true});}const claim=await db.query("UPDATE escalations SET notification_status='sending',notification_attempts=notification_attempts+1,notification_last_attempt_at=now() WHERE id=$1 AND organization_id=$2 AND notification_attempts<5 AND notification_status<>'delivered' AND (notification_status<>'sending' OR notification_last_attempt_at<now()-interval '2 minutes') RETURNING id",[item.id,q.actor.organization_id]);if(!claim.rowCount)return r.status(409).json({error:"Another staff notification attempt is in progress or the retry limit has been reached."});let result;try{result=await notify({id:item.organization_id,name:item.name,slug:item.slug},item.conversation_id,item.reason);}catch{result={configured:true,delivered:false,status:"failed"};}await db.query("UPDATE escalations SET notification_status=$1 WHERE id=$2 AND organization_id=$3",[result.status,item.id,q.actor.organization_id]);await audit(q.actor,"escalation.notification_retry","escalation",item.id);r.json({notificationStatus:result.status,delivered:result.delivered,configured:result.configured,manualFollowUpRequired:!result.delivered});}catch(e){n(e);}});
 app.patch("/api/admin/escalations/:id",requireDb,auth,role("owner","admin","staff"),async(q,r,n)=>{const s=q.body?.status;if(!["open","claimed","resolved"].includes(s))return r.status(400).json({error:"Invalid status."});const c=await db.connect();try{await c.query("BEGIN");const x=await c.query("UPDATE escalations SET status=$1,assigned_to=CASE WHEN $1='claimed' THEN $2 WHEN $1='open' THEN NULL ELSE assigned_to END,resolved_at=CASE WHEN $1='resolved' THEN now() ELSE NULL END WHERE id=$3 AND organization_id=$4 RETURNING id,status,assigned_to,resolved_at,conversation_id",[s,q.actor.user_id,q.params.id,q.actor.organization_id]);if(!x.rowCount){await c.query("ROLLBACK");return r.status(404).json({error:"Escalation not found."});}await c.query("UPDATE conversations SET status=$1 WHERE organization_id=$3 AND id=$2",[s==="resolved"?"resolved":"escalated",x.rows[0].conversation_id,q.actor.organization_id]);await c.query("INSERT INTO audit_logs(organization_id,actor_user_id,action,target_type,target_id) VALUES($1,$2,$3,$4,$5)",[q.actor.organization_id,q.actor.user_id,"escalation."+s,"escalation",q.params.id]);await c.query("COMMIT");r.json({escalation:{id:x.rows[0].id,status:x.rows[0].status,assigned_to:x.rows[0].assigned_to,resolved_at:x.rows[0].resolved_at}});}catch(e){await c.query("ROLLBACK").catch(()=>{});n(e);}finally{c.release();}});
+app.post("/api/public/:slug/availability",async(q,r,n)=>{
+try{
+if(!db)return r.status(503).json({error:"Hotel platform is not configured."});
+const org=await db.query("SELECT id,status FROM organizations WHERE slug=$1",[q.params.slug]);
+if(!org.rowCount||org.rows[0].status==="suspended")return r.status(404).json({error:"Hotel availability is unavailable."});
+if(!pmsCredentialVault.configured)return r.status(503).json({error:"Hotel PMS credential protection is not configured."});
+const connection=await db.query("SELECT c.provider,c.status,c.encrypted_credentials,c.property_config,c.last_tested_at,t.test_passed,t.tested_at FROM pms_connections c LEFT JOIN organization_pms_adapter_tests t ON t.organization_id=c.organization_id AND t.provider=c.provider WHERE c.organization_id=$1 AND c.mode='production' ORDER BY c.updated_at DESC LIMIT 1",[org.rows[0].id]);
+if(!connection.rowCount||connection.rows[0].status!=="connected"||connection.rows[0].test_passed!==true||
+!connection.rows[0].tested_at||new Date(connection.rows[0].tested_at).getTime()<Date.now()-24*60*60*1000||
+!connection.rows[0].last_tested_at||new Date(connection.rows[0].last_tested_at).getTime()<Date.now()-24*60*60*1000){
+return r.status(503).json({error:"Live room availability is not currently verified for this hotel. Please contact the hotel team."});
+}
+const credentials=pmsCredentialVault.decrypt(connection.rows[0].encrypted_credentials);
+const rows=await pmsRegistry.getAvailability(connection.rows[0].provider,q.body||{},{
+credentials,organizationId:org.rows[0].id,propertyConfig:connection.rows[0].property_config||{}
+});
+const options=[];
+for(const row of rows){
+if(row.availableUnits<1)continue;
+const saved=await db.query("INSERT INTO pms_availability_quotes(organization_id,provider,check_in,check_out,guest_count,room_type_id,room_type_name,currency,amount_minor,available_units,expires_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,now()+interval '5 minutes') RETURNING id,expires_at",[org.rows[0].id,connection.rows[0].provider,q.body.checkIn,q.body.checkOut,q.body.guestCount||1,row.roomTypeId,row.roomTypeName,row.currency,row.amountMinor,row.availableUnits]);
+options.push({quoteId:saved.rows[0].id,roomTypeId:row.roomTypeId,roomTypeName:row.roomTypeName,currency:row.currency,amountMinor:row.amountMinor,availableUnits:row.availableUnits,expiresAt:saved.rows[0].expires_at});
+}
+r.json({verified:true,provider:connection.rows[0].provider,options,notice:"Availability and prices were checked against the hotel's PMS. Quotes expire after five minutes and must be rechecked before booking."});
+}catch(e){
+if(e instanceof PmsIntegrationError)return r.status(e.status).json({verified:false,code:e.code,error:e.message});
+console.error("Public PMS availability lookup failed.");
+r.status(502).json({verified:false,error:"Live hotel availability could not be verified. Please contact hotel staff."});
+}});
 app.post("/api/public/:slug/chat",async(q,r,n)=>{
  try{if(!db)return r.status(503).json({error:"Hotel platform is not configured."});const releaseGate=await readinessSnapshot();if(!releaseGate.readyForPilot)return r.status(503).json({error:"Hotel pilot release gates are not all verified. Please contact hotel staff.",readyForPilot:false});const msg=q.body?.message;if(typeof msg!=="string"||!msg.trim()||msg.length>4000)return r.status(400).json({error:"Enter a message under 4,000 characters."});
  const orgR=await db.query("SELECT id,name,slug,status FROM organizations WHERE slug=$1",[q.params.slug]);if(!orgR.rowCount||orgR.rows[0].status==="suspended")return r.status(404).json({error:"Assistant unavailable."});const org=orgR.rows[0];

@@ -596,6 +596,8 @@ function createMewsConnectorAdapter(options = {}) {
       const reservation = {
         ServiceId: serviceId,
         SendConfirmationEmail: false,
+        CheckOverbooking: true,
+        CheckRateApplicability: true,
         Reservations: [{
           State: "Confirmed",
           StartUtc: localDateTimeToUtc(request.checkIn, checkInTime, timeZone),

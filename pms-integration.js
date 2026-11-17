@@ -59,12 +59,12 @@ function normalizeBookingRequest(input = {}) {
     throw new PmsIntegrationError("INVALID_BOOKING_REQUEST", "Room type, guest count and idempotency key are required.");
   }
   const guestInput = input.guest;
-  const guestName = typeof guestInput?.name === "string" ? guestInput.name.trim().replace(/\\s+/g, " ") : "";
+  const guestName = typeof guestInput?.name === "string" ? guestInput.name.trim().replace(/\s+/g, " ") : "";
   const guestPhone = typeof guestInput?.phone === "string" ? guestInput.phone.trim() : "";
   const guestEmail = typeof guestInput?.email === "string" ? guestInput.email.trim().toLowerCase() : "";
-  if (guestName.length < 2 || guestName.length > 120 || /[<>\\u0000-\\u001f]/.test(guestName) ||
-      !/^\\+[1-9]\\d{7,14}$/.test(guestPhone.replace(/[\\s().-]/g, "")) ||
-      (guestEmail && (guestEmail.length > 254 || !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(guestEmail)))) {
+  if (guestName.length < 2 || guestName.length > 120 || /[<>\u0000-\u001f]/.test(guestName) ||
+      !/^\+[1-9]\d{7,14}$/.test(guestPhone.replace(/[\s().-]/g, "")) ||
+      (guestEmail && (guestEmail.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(guestEmail)))) {
     throw new PmsIntegrationError("INVALID_GUEST_DETAILS", "A valid guest name and international phone number are required.");
   }
   const totalAmountMinor = input.totalAmountMinor;
@@ -77,7 +77,7 @@ function normalizeBookingRequest(input = {}) {
     throw new PmsIntegrationError("VERIFIED_DEPOSIT_REQUIRED", "A matching, verified 50% deposit is required before creating the PMS reservation.", 409);
   }
   return { ...dates, roomTypeId, guestCount, idempotencyKey, guest: {
-    name: guestName, phone: guestPhone.replace(/[\\s().-]/g, ""), email: guestEmail || null,
+    name: guestName, phone: guestPhone.replace(/[\s().-]/g, ""), email: guestEmail || null,
   }, totalAmountMinor, depositAmountMinor, currency, depositVerified: true };
 }
 
@@ -271,7 +271,7 @@ function createPmsRegistry(adapters = []) {
 function localDateTimeToUtc(date, time, timeZone) {
   if (typeof date !== "string" || typeof time !== "string" ||
       !/^\\d{4}-\\d{2}-\\d{2}$/.test(date) ||
-      !/^([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d$/.test(time) ||
+      !/^([01]\d|2[0-3]):[0-5]\d:[0-5]\d$/.test(time) ||
       typeof timeZone !== "string" || !timeZone.trim()) {
     throw new PmsIntegrationError("INVALID_LOCAL_DATETIME", "A valid local date, time and IANA time zone are required.");
   }
@@ -377,11 +377,12 @@ function localDateTimeToUtc(date, time, timeZone) {
       const requestedCategoryId = String(config.requestedCategoryId || request.roomTypeId || "").trim();
       const adultAgeCategoryId = String(config.adultAgeCategoryId || "").trim();
       const checkInTime = String(config.checkInTime || "14:00:00");
-      const checkOutTime = String(config.checkOutTime || "10:00:00");\n      const timeZone = String(config.timeZone || "").trim();
+      const checkOutTime = String(config.checkOutTime || "10:00:00");
+      const timeZone = String(config.timeZone || "").trim();
       const enterpriseId = config.enterpriseId ? String(config.enterpriseId) : undefined;
       if (!serviceId || !rateId || !requestedCategoryId || !adultAgeCategoryId || !timeZone ||
-          !/^([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d$/.test(checkInTime) ||
-          !/^([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d$/.test(checkOutTime)) {
+          !/^([01]\d|2[0-3]):[0-5]\d:[0-5]\d$/.test(checkInTime) ||
+          !/^([01]\d|2[0-3]):[0-5]\d:[0-5]\d$/.test(checkOutTime)) {
         throw new PmsIntegrationError("MEWS_PROPERTY_MAPPING_REQUIRED", "The hotel must map its Mews service, rate, room category, adult age category, IANA time zone and local check-in/out times before bookings can be created.", 409);
       }
       const [firstName, ...lastParts] = request.guest.name.split(" ");
@@ -400,12 +401,10 @@ function localDateTimeToUtc(date, time, timeZone) {
       const reservation = {
         ServiceId: serviceId,
         SendConfirmationEmail: false,
-        CheckOverbooking: true,
-        CheckRateApplicability: true,
         Reservations: [{
           State: "Confirmed",
-          StartUtc: new Date(request.checkIn + "T" + checkInTime + "Z").toISOString(),
-          EndUtc: new Date(request.checkOut + "T" + checkOutTime + "Z").toISOString(),
+          ScheduledStartUtc: localDateTimeToUtc(request.checkIn, checkInTime, timeZone),
+          ScheduledEndUtc: localDateTimeToUtc(request.checkOut, checkOutTime, timeZone),
           CustomerId: customer.Id,
           RequestedCategoryId: requestedCategoryId,
           RateId: rateId,

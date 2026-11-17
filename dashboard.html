@@ -113,10 +113,12 @@ main{padding:28px clamp(16px,4vw,48px);max-width:1450px;width:100%;margin:auto}.
   </div>
   <div id="revenueSection">
   <div class="sectionrow"><h2>Revenue evidence</h2><span class="muted" id="revenueWindowLabel">Loading exact reporting window…</span></div>
-  <div class="grid" id="revenueSummary">
-   <div class="card"><div class="metriclabel">Veyra-linked confirmed revenue</div><div id="linkedRevenue" class="metric">—</div><div id="linkedRevenueCount" class="muted">Loading…</div></div>
-   <div class="card"><div class="metriclabel">Hotel-reported, not Veyra-attributed</div><div id="unlinkedRevenue" class="metric">—</div><div id="unlinkedRevenueCount" class="muted">Loading…</div></div>
+  <div class="grid" id="revenueSummary" style="grid-template-columns:repeat(auto-fit,minmax(190px,1fr))">
+   <div class="card"><div class="metriclabel">Hotel-attested confirmed revenue linked to a Veyra conversation</div><div id="linkedRevenue" class="metric">—</div><div id="linkedRevenueCount" class="muted">Loading…</div></div>
+   <div class="card"><div class="metriclabel">Hotel-reported confirmed revenue with no Veyra conversation link</div><div id="unlinkedRevenue" class="metric">—</div><div id="unlinkedRevenueCount" class="muted">Loading…</div></div>
    <div class="card"><div class="metriclabel">Distinct conversations linked by hotel staff</div><div id="linkedConversationCount" class="metric">—</div><div class="muted">A conversation link is not proof of influence or causation.</div></div>
+   <div class="card"><div class="metriclabel">Influenced conversations</div><div id="influencedConversations" class="metric" style="font-size:24px">Not measured</div><div class="muted">No causal definition or controlled comparison is configured.</div></div>
+   <div class="card"><div class="metriclabel">Estimated staff time saved</div><div id="staffTimeSavedEstimate" class="metric" style="font-size:24px">Not calculated</div><div class="muted">Requires a hotel-measured handling-time baseline and validated deflection evidence.</div></div>
   </div>
   <div class="card" style="margin-top:14px">
    <h3 style="margin-top:0">Record a confirmed booking or paid add-on</h3>

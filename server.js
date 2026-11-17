@@ -18,6 +18,8 @@ const {createPmsCredentialVault}=require("./pms-credential-vault");
 const {createTokenCipher}=require("./storage-security");
 const {BookingWorkflowError,normalizeGuestDetails,createBookingIntent}=require("./booking-workflow");
 const {deliverStaffEscalation}=require("./staff-notifications");
+const {createPaymentPostgresRepository}=require("./payment-postgres-repository");
+const {createPaymentOrchestrator}=require("./payment-orchestrator");
 const {encryptWebhookConfig,decryptWebhookConfig,resolvePublicWebhook,postSignedWebhook}=require("./staff-webhook-security");
 const app=express();
 const PORT=Number(process.env.PORT||3000);
@@ -25,6 +27,9 @@ const MODEL=process.env.OPENAI_MODEL||"gpt-4.1-mini";
 const origins=(process.env.ALLOWED_ORIGINS||"http://localhost:3000,http://127.0.0.1:3000").split(",").map(x=>x.trim()).filter(Boolean);
 const ai=process.env.OPENAI_API_KEY?new OpenAI({apiKey:process.env.OPENAI_API_KEY}):null;
 const db=process.env.DATABASE_URL?new Pool({connectionString:process.env.DATABASE_URL,ssl:process.env.DATABASE_SSL==="false"?false:{rejectUnauthorized:false},max:5,connectionTimeoutMillis:5000}):null;
+const paymentRepository=db?createPaymentPostgresRepository({pool:db}):null;
+// Intentionally no provider adapter until a real provider is selected and its signed-webhook contract is implemented.
+const paymentOrchestrator=paymentRepository?createPaymentOrchestrator({repository:paymentRepository}):null;
 const pmsRegistry=createPmsRegistry([createSandboxAdapter(),createMewsConnectorAdapter({platformAddress:process.env.MEWS_PLATFORM_ADDRESS})]);
 const pmsCredentialVault=createPmsCredentialVault();
 const bookingDataCipher=createTokenCipher(process.env.BOOKING_DATA_ENCRYPTION_KEY);
@@ -460,6 +465,32 @@ if(error instanceof BookingWorkflowError)return r.status(error.status).json({err
 if(error&&error.code==="23505")return r.status(409).json({error:"This quote has already been used. Please request a fresh quote."});
 console.error("Public booking intent could not be created.");
 return r.status(502).json({error:"The hotel could not verify this booking request. Please contact hotel staff."});
+}});
+app.post("/api/public/:slug/booking-intents/:intentId/checkout",async(q,r,n)=>{
+try{
+if(!db||!paymentOrchestrator)return r.status(503).json({error:"Secure payment checkout is not configured. No payment has been requested or collected.",code:"PAYMENT_PROVIDER_NOT_CONFIGURED"});
+const org=await db.query("SELECT id,status FROM organizations WHERE slug=$1",[q.params.slug]);
+if(!org.rowCount||org.rows[0].status==="suspended")return r.status(404).json({error:"Hotel booking is unavailable."});
+const checkout=await paymentOrchestrator.startCheckout({organizationId:org.rows[0].id,bookingIntentId:q.params.intentId});
+return r.json({checkout});
+}catch(error){
+if(error&&error.code==="BOOKING_NOT_FOUND")return r.status(404).json({error:"Booking request not found."});
+if(error&&error.code==="PAYMENT_PROVIDER_NOT_CONFIGURED")return r.status(503).json({error:"Secure payment checkout is not configured. No payment has been requested or collected.",code:error.code});
+if(error&&error.code)return r.status(error.status||409).json({error:error.message,code:error.code});
+console.error("Checkout request could not be processed.");
+return r.status(502).json({error:"Checkout could not be created. Please contact hotel staff."});
+}});
+app.post("/api/payments/webhook",async(q,r,n)=>{
+try{
+if(!paymentOrchestrator)return r.status(503).json({error:"Payment webhook processing is not configured.",code:"PAYMENT_PROVIDER_NOT_CONFIGURED"});
+const result=await paymentOrchestrator.handleWebhook({rawBody:q.rawBody,headers:q.headers});
+return r.json({received:true,status:result.status});
+}catch(error){
+if(error&&error.code==="PAYMENT_PROVIDER_NOT_CONFIGURED")return r.status(503).json({error:"Payment webhook processing is not configured.",code:error.code});
+if(error&&error.code==="WEBHOOK_VERIFICATION_FAILED")return r.status(400).json({error:"Payment notification could not be verified."});
+if(error&&error.code==="UNTRUSTED_WEBHOOK_EVENT")return r.status(400).json({error:"Payment notification is invalid."});
+console.error("Payment webhook could not be safely reconciled.");
+return r.status(503).json({error:"Payment notification requires reconciliation. Please contact hotel staff."});
 }});
 app.post("/api/public/:slug/chat",async(q,r,n)=>{
  try{if(!db)return r.status(503).json({error:"Hotel platform is not configured."});const releaseGate=await readinessSnapshot();if(!releaseGate.readyForPilot)return r.status(503).json({error:"Hotel pilot release gates are not all verified. Please contact hotel staff.",readyForPilot:false});const msg=q.body?.message;if(typeof msg!=="string"||!msg.trim()||msg.length>4000)return r.status(400).json({error:"Enter a message under 4,000 characters."});

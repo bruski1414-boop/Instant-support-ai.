@@ -316,8 +316,7 @@ test("Mews prices multiple configured room types and filters by guest capacity",
     if (url.endsWith("/reservations/price")) return {
       ok: true, async json() { return {
         ReservationPrices: [
-          { Identifier: "veyra-quote-0", TotalAmount: { Currency: "THB", GrossValue: 5000 }, AdditionalExpenses: [] },
-          { Identifier: "veyra-quote-1", TotalAmount: { Currency: "THB", GrossValue: 9000 }, AdditionalExpenses: [] },
+          { Identifier: "veyra-quote-0", TotalAmount: { Currency: "THB", GrossValue: 9000 }, AdditionalExpenses: [] },
         ],
       }; },
     };

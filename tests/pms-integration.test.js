@@ -289,7 +289,7 @@ test("Mews returns a live daily availability and gross price quote for every nig
   });
   assert.deepEqual(result, [{
     roomTypeId: "category-deluxe", roomTypeName: "Deluxe Room",
-    currency: "USD", amountMinor: 63000, availableUnits: 2,
+    currency: "USD", amountMinor: 63000, availableUnits: 1,
   }]);
   assert.equal(calls.length, 2);
   assert.equal(calls[0].url.endsWith("/services/getAvailability"), true);

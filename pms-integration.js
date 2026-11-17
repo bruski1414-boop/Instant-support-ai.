@@ -246,6 +246,128 @@ function createPmsRegistry(adapters = []) {
   });
 }
 
+
+function createMewsConnectorAdapter(options = {}) {
+  const fetchImpl = options.fetchImpl || globalThis.fetch;
+  const platformAddress = String(options.platformAddress || "https://api.mews.com").replace(/\/$/, "");
+  const clientName = String(options.clientName || "Veyra AI/1.0.0");
+  if (typeof fetchImpl !== "function" || !/^https:\/\//.test(platformAddress) ||
+      !clientName || clientName.length > 100) {
+    throw new PmsIntegrationError("INVALID_MEWS_CONFIG", "Mews connector configuration is invalid.");
+  }
+
+  function credentials(input = {}) {
+    const clientToken = typeof input.clientToken === "string" ? input.clientToken.trim() : "";
+    const accessToken = typeof input.accessToken === "string" ? input.accessToken.trim() : "";
+    if (!clientToken || !accessToken) {
+      throw new PmsIntegrationError("INVALID_CREDENTIALS", "Mews Client Token and Access Token are required.");
+    }
+    return { clientToken, accessToken };
+  }
+
+  async function call(path, input, auth) {
+    let response;
+    try {
+      response = await fetchImpl(platformAddress + "/api/connector/v1/" + path, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          ClientToken: auth.clientToken,
+          AccessToken: auth.accessToken,
+          Client: clientName,
+          ...input,
+        }),
+        signal: AbortSignal.timeout(15000),
+      });
+    } catch {
+      throw new PmsIntegrationError("MEWS_UNAVAILABLE", "Mews could not be reached. No booking confirmation was issued.", 502);
+    }
+    let body;
+    try { body = await response.json(); } catch { body = null; }
+    if (!response.ok || !body || body.Message || body.ErrorCode) {
+      throw new PmsIntegrationError("MEWS_REQUEST_FAILED", "Mews rejected the request. Check the hotel's integration configuration and permissions.", 502);
+    }
+    return body;
+  }
+
+  function authFromContext(context = {}) {
+    const auth = credentials(context.credentials || {});
+    return auth;
+  }
+
+  return {
+    id: "mews",
+    name: "Mews Connector API",
+    mode: "production",
+    capabilities: { availability: false, booking: true, webhooks: false },
+    async validateCredentials(input) {
+      const auth = credentials(input);
+      await call("services/getAll", { Limitation: { Count: 1 } }, auth);
+      return { credentials: auth, scopes: ["reservations:create", "customers:create"] };
+    },
+    async testConnection(context = {}) {
+      const auth = authFromContext(context);
+      await call("services/getAll", { Limitation: { Count: 1 } }, auth);
+      return { ok: true, mode: "production" };
+    },
+    async createBooking(request, context = {}) {
+      const auth = authFromContext(context);
+      const config = context.propertyConfig || {};
+      const serviceId = String(config.serviceId || "").trim();
+      const rateId = String(config.rateId || "").trim();
+      const requestedCategoryId = String(config.requestedCategoryId || request.roomTypeId || "").trim();
+      const adultAgeCategoryId = String(config.adultAgeCategoryId || "").trim();
+      const checkInTime = String(config.checkInTime || "14:00:00");
+      const checkOutTime = String(config.checkOutTime || "10:00:00");
+      const enterpriseId = config.enterpriseId ? String(config.enterpriseId) : undefined;
+      if (!serviceId || !rateId || !requestedCategoryId || !adultAgeCategoryId ||
+          !/^([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d$/.test(checkInTime) ||
+          !/^([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d$/.test(checkOutTime)) {
+        throw new PmsIntegrationError("MEWS_PROPERTY_MAPPING_REQUIRED", "The hotel must map its Mews service, rate, room category, adult age category and local check-in/out times before bookings can be created.", 409);
+      }
+      const [firstName, ...lastParts] = request.guest.name.split(" ");
+      const lastName = lastParts.join(" ") || firstName;
+      const customerPayload = {
+        FirstName: firstName,
+        LastName: lastName,
+        Phone: request.guest.phone,
+        OverwriteExisting: false,
+      };
+      if (request.guest.email) customerPayload.Email = request.guest.email;
+      const customer = await call("customers/add", customerPayload, auth);
+      if (!customer || typeof customer.Id !== "string" || !customer.Id) {
+        throw new PmsIntegrationError("MEWS_INVALID_CUSTOMER_RESPONSE", "Mews did not return a customer profile ID.", 502);
+      }
+      const reservation = {
+        ServiceId: serviceId,
+        SendConfirmationEmail: false,
+        CheckOverbooking: true,
+        CheckRateApplicability: true,
+        Reservations: [{
+          State: "Confirmed",
+          StartUtc: new Date(request.checkIn + "T" + checkInTime + "Z").toISOString(),
+          EndUtc: new Date(request.checkOut + "T" + checkOutTime + "Z").toISOString(),
+          CustomerId: customer.Id,
+          RequestedCategoryId: requestedCategoryId,
+          RateId: rateId,
+          PersonCounts: [{ AgeCategoryId: adultAgeCategoryId, Count: request.guestCount }],
+          ChannelNumber: request.idempotencyKey.slice(0, 50),
+        }],
+      };
+      if (enterpriseId) reservation.EnterpriseId = enterpriseId;
+      const result = await call("reservations/add", reservation, auth);
+      const added = Array.isArray(result.Reservations) ? result.Reservations[0] : null;
+      const booking = added && added.Reservation ? added.Reservation : added;
+      const bookingId = booking && (booking.Id || booking.Identifier);
+      const status = booking && String(booking.State || "").toLowerCase();
+      if (typeof bookingId !== "string" || !bookingId || !["confirmed", "optional", "inquired"].includes(status)) {
+        throw new PmsIntegrationError("MEWS_RESERVATION_UNVERIFIED", "Mews did not return a usable reservation record. Do not tell the guest the booking is confirmed.", 502);
+      }
+      return { bookingId, status, customerId: customer.Id, confirmationNumber: booking.Number || null };
+    },
+  };
+}
+
 function createSandboxAdapter() {
   return {
     id: "sandbox",

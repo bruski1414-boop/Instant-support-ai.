@@ -413,8 +413,8 @@ test("Mews connector creates a confirmed reservation with guest details and loca
   assert.equal(calls[2].payload.Reservations[0].StartUtc, "2027-01-10T07:00:00.000Z");
   assert.equal(calls[2].payload.Reservations[0].EndUtc, "2027-01-12T03:00:00.000Z");
   assert.equal(calls[2].payload.Reservations[0].ChannelNumber, "booking_req_12345");
-  assert.equal("CheckOverbooking" in calls[2].payload, false);
-  assert.equal("CheckRateApplicability" in calls[2].payload, false);
+  assert.equal(calls[2].payload.CheckOverbooking, true);
+  assert.equal(calls[2].payload.CheckRateApplicability, true);
 });
 
 

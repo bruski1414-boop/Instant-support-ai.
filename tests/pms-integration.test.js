@@ -268,7 +268,7 @@ test("Mews returns a live daily availability and gross price quote for every nig
     if (url.endsWith("/reservations/price")) return {
       ok: true, async json() { return {
         ReservationPrices: [{
-          Identifier: "veyra-availability-quote",
+          Identifier: "veyra-quote-0",
           TotalAmount: { Currency: "USD", GrossValue: 600 },
           AdditionalExpenses: [{ Amount: { Currency: "USD", GrossValue: 30 } }],
         }],
@@ -297,6 +297,52 @@ test("Mews returns a live daily availability and gross price quote for every nig
   assert.equal(calls[0].payload.LastTimeUnitStartUtc, "2027-01-10T17:00:00.000Z");
   assert.equal(calls[1].url.endsWith("/reservations/price"), true);
   assert.equal(calls[1].payload.Reservations[0].PersonCounts[0].Count, 2);
+});
+
+test("Mews prices multiple configured room types and filters by guest capacity", async () => {
+  const calls = [];
+  const fetchImpl = async (url, options) => {
+    const payload = JSON.parse(options.body);
+    calls.push({ url, payload });
+    if (url.endsWith("/services/getAvailability")) return {
+      ok: true, async json() { return {
+        TimeUnitStartsUtc: ["2027-01-09T17:00:00Z"],
+        CategoryAvailabilities: [
+          { CategoryId: "cat-standard", Availabilities: [5], Adjustments: [0] },
+          { CategoryId: "cat-suite", Availabilities: [2], Adjustments: [0] },
+        ],
+      }; },
+    };
+    if (url.endsWith("/reservations/price")) return {
+      ok: true, async json() { return {
+        ReservationPrices: [
+          { Identifier: "veyra-quote-0", TotalAmount: { Currency: "THB", GrossValue: 5000 }, AdditionalExpenses: [] },
+          { Identifier: "veyra-quote-1", TotalAmount: { Currency: "THB", GrossValue: 9000 }, AdditionalExpenses: [] },
+        ],
+      }; },
+    };
+    throw new Error("Unexpected Mews operation: " + url);
+  };
+  const registry = createPmsRegistry([createMewsConnectorAdapter({ fetchImpl })]);
+  const result = await registry.getAvailability("mews", {
+    checkIn: "2027-01-10", checkOut: "2027-01-11", guestCount: 3,
+  }, {
+    credentials: { clientToken: "client-token", accessToken: "access-token" },
+    propertyConfig: {
+      serviceId: "service-1", timeZone: "Asia/Bangkok", timeUnitPeriod: "Day",
+      roomTypes: [
+        { roomTypeId: "standard", roomTypeName: "Standard", rateId: "rate-s", requestedCategoryId: "cat-standard", adultAgeCategoryId: "adult", maxOccupancy: 2 },
+        { roomTypeId: "suite", roomTypeName: "Suite", rateId: "rate-u", requestedCategoryId: "cat-suite", adultAgeCategoryId: "adult", maxOccupancy: 4 },
+      ],
+    },
+  });
+  assert.deepEqual(result, [{
+    roomTypeId: "suite", roomTypeName: "Suite", currency: "THB",
+    amountMinor: 900000, availableUnits: 2,
+  }]);
+  assert.equal(calls.length, 2);
+  assert.equal(calls[1].payload.Reservations.length, 1);
+  assert.equal(calls[1].payload.Reservations[0].RequestedCategoryId, "cat-suite");
 });
 
 test("Mews availability refuses incomplete daily data and over-capacity guest counts", async () => {

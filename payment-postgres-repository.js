@@ -127,11 +127,18 @@ function createPaymentPostgresRepository({ pool } = {}) {
           [row.id],
         );
       } else if (row && resultStatus === "recorded" && event.paymentStatus === "succeeded") {
-        await client.query(
+        const transitioned = await client.query(
           `UPDATE booking_intents SET status='deposit_paid',updated_at=now()
-           WHERE id=$1 AND status='awaiting_payment'`,
+           WHERE id=$1 AND status='awaiting_payment' RETURNING id`,
           [row.id],
         );
+        if (transitioned.rowCount) {
+          await client.query(
+            `INSERT INTO booking_reservation_outbox(booking_intent_id,status)
+             VALUES($1,'pending') ON CONFLICT(booking_intent_id) DO NOTHING`,
+            [row.id],
+          );
+        }
       } else if (row && resultStatus === "recorded" &&
                  ["failed","cancelled"].includes(event.paymentStatus)) {
         await client.query(

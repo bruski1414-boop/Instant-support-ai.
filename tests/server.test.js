@@ -417,3 +417,33 @@ test("hotel privacy approval is tenant-scoped, owner/admin-only, append-only and
   assert.match(dashboard, /\/api\/admin\/privacy-approval/);
   assert.match(dashboard, /not legal advice, a privacy certification/);
 });
+
+
+test("public booking intent fails closed when database is not configured", async () => {
+  const response = await fetch(`${baseUrl}/api/public/sample-hotel/booking-intents`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ quoteId: "123e4567-e89b-42d3-a456-426614174000", idempotencyKey: "booking_request_123", guestConfirmed: true })
+  });
+  assert.equal(response.status, 503);
+});
+
+test("booking intents encrypt guest details, revalidate live PMS price and enforce idempotency", () => {
+  const server = fs.readFileSync("server.js", "utf8");
+  assert.match(server, /BOOKING_DATA_ENCRYPTION_KEY/);
+  assert.match(server, /guest_data_encrypted TEXT NOT NULL/);
+  assert.match(server, /UNIQUE\(organization_id,idempotency_key\),UNIQUE\(organization_id,quote_id\)/);
+  const start = server.indexOf('app.post("/api/public/:slug/booking-intents"');
+  const end = server.indexOf('app.post("/api/public/:slug/chat"', start);
+  assert.ok(start >= 0 && end > start, "public booking intent route exists");
+  const route = server.slice(start, end);
+  assert.match(route, /normalizeGuestDetails/);
+  assert.match(route, /bookingDataCipher\.encrypt\(guest\)/);
+  assert.match(route, /bookingDataCipher\.decrypt/);
+  assert.match(route, /pmsRegistry\.getAvailability/);
+  assert.match(route, /live\.amountMinor!==Number\(quote\.amount_minor\)/);
+  assert.match(route, /PRICE_CHANGED/);
+  assert.match(route, /guestConfirmed!==true/);
+  assert.match(route, /checkoutReady:false/);
+  assert.match(route, /no room has been held/);
+});

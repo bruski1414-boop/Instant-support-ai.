@@ -282,8 +282,8 @@ test("Mews connector creates a confirmed reservation with guest details and loca
   assert.equal(calls[0].url.endsWith("/reservations/getAll/2023-06-06"), true);
   assert.equal(calls[1].payload.Phone, "+12025550123");
   assert.equal(calls[1].payload.Email, "ada@example.com");
-  assert.equal(calls[2].payload.Reservations[0].ScheduledStartUtc, "2027-01-10T07:00:00.000Z");
-  assert.equal(calls[2].payload.Reservations[0].ScheduledEndUtc, "2027-01-12T03:00:00.000Z");
+  assert.equal(calls[2].payload.Reservations[0].StartUtc, "2027-01-10T07:00:00.000Z");
+  assert.equal(calls[2].payload.Reservations[0].EndUtc, "2027-01-12T03:00:00.000Z");
   assert.equal(calls[2].payload.Reservations[0].ChannelNumber, "booking_req_12345");
   assert.equal(calls[2].payload.CheckOverbooking, true);
   assert.equal(calls[2].payload.CheckRateApplicability, true);

@@ -24,13 +24,13 @@ function buildApprovedKnowledgeContext(documents, maxChars = 26000) {
     const content = document.content.trim();
     if (!title || !category || !content) continue;
 
-    const section = "[" + category + "] " + title + "\\n" + content;
-    const separator = sections.length ? "\\n\\n" : "";
+    const section = "[" + category + "] " + title + "\n" + content;
+    const separator = sections.length ? "\n\n" : "";
     if (usedChars + separator.length + section.length > maxChars) break;
     sections.push(section);
     usedChars += separator.length + section.length;
   }
-  return sections.join("\\n\\n");
+  return sections.join("\n\n");
 }
 
 module.exports = { loadApprovedKnowledge, buildApprovedKnowledgeContext };

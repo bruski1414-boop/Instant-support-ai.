@@ -16,7 +16,7 @@ const {buildPilotReadiness}=require("./pilot-readiness");
 const {PmsIntegrationError,createPmsRegistry,createSandboxAdapter,createMewsConnectorAdapter}=require("./pms-integration");
 const {createPmsCredentialVault}=require("./pms-credential-vault");
 const {createTokenCipher}=require("./storage-security");
-const {normalizeGuestDetails,createBookingIntent}=require("./booking-workflow");
+const {BookingWorkflowError,normalizeGuestDetails,createBookingIntent}=require("./booking-workflow");
 const {deliverStaffEscalation}=require("./staff-notifications");
 const {encryptWebhookConfig,decryptWebhookConfig,resolvePublicWebhook,postSignedWebhook}=require("./staff-webhook-security");
 const app=express();
@@ -41,11 +41,15 @@ const setupLimiter=rateLimit({windowMs:3600000,limit:5,standardHeaders:"draft-7"
 const platformProvisionLimiter=rateLimit({windowMs:3600000,limit:10,standardHeaders:"draft-7",legacyHeaders:false});
 const integrationTestLimiter=rateLimit({windowMs:3600000,limit:5,standardHeaders:"draft-7",legacyHeaders:false});
 const publicChatLimiter=rateLimit({windowMs:300000,limit:10,standardHeaders:"draft-7",legacyHeaders:false});
+const publicAvailabilityLimiter=rateLimit({windowMs:300000,limit:20,standardHeaders:"draft-7",legacyHeaders:false});
+const publicBookingIntentLimiter=rateLimit({windowMs:300000,limit:5,standardHeaders:"draft-7",legacyHeaders:false});
 const invitationAcceptLimiter=rateLimit({windowMs:3600000,limit:5,standardHeaders:"draft-7",legacyHeaders:false});
 app.use("/api/invitations/accept",invitationAcceptLimiter);
 app.use("/api/setup/organization",setupLimiter);
 app.use("/api/platform/organizations",platformProvisionLimiter);
-app.use("/api/public/",publicChatLimiter);
+app.use("/api/public/:slug/chat",publicChatLimiter);
+app.use("/api/public/:slug/availability",publicAvailabilityLimiter);
+app.use("/api/public/:slug/booking-intents",publicBookingIntentLimiter);
 const schema=[
 "CREATE EXTENSION IF NOT EXISTS pgcrypto",
 "CREATE TABLE IF NOT EXISTS organizations(id UUID PRIMARY KEY DEFAULT gen_random_uuid(),name TEXT NOT NULL,slug TEXT NOT NULL UNIQUE,status TEXT NOT NULL DEFAULT 'trial' CHECK(status IN ('trial','active','suspended')),created_at TIMESTAMPTZ NOT NULL DEFAULT now())",
@@ -446,6 +450,7 @@ row=prior;
 r.status(saved.rowCount?201:200).json({bookingIntent:{id:row.id,status:row.status,checkIn:String(row.check_in).slice(0,10),checkOut:String(row.check_out).slice(0,10),roomTypeId:row.room_type_id,roomTypeName:row.room_type_name,guestCount:row.guest_count,currency:row.currency,totalAmountMinor:Number(row.total_amount_minor),depositAmountMinor:Number(row.deposit_amount_minor),balanceAmountMinor:Number(row.balance_amount_minor),expiresAt:row.expires_at},checkoutReady:false,reservationConfirmed:false,notice:"Booking intent created after a fresh PMS availability and price check. This is not a reservation: no payment has been collected and no room has been held. Payment checkout and final PMS confirmation are not enabled yet."});
 }catch(error){
 if(error instanceof PmsIntegrationError)return r.status(error.status).json({error:error.message,code:error.code});
+if(error instanceof BookingWorkflowError)return r.status(error.status).json({error:error.message,code:error.code});
 if(error&&error.code==="23505")return r.status(409).json({error:"This quote has already been used. Please request a fresh quote."});
 console.error("Public booking intent could not be created.");
 return r.status(502).json({error:"The hotel could not verify this booking request. Please contact hotel staff."});

@@ -58,7 +58,18 @@ function normalizeBookingRequest(input = {}) {
       !/^[A-Za-z0-9_-]{12,100}$/.test(idempotencyKey)) {
     throw new PmsIntegrationError("INVALID_BOOKING_REQUEST", "Room type, guest count and idempotency key are required.");
   }
-  return { ...dates, roomTypeId, guestCount, idempotencyKey };
+  const guestInput = input.guest;
+  const guestName = typeof guestInput?.name === "string" ? guestInput.name.trim().replace(/\\s+/g, " ") : "";
+  const guestPhone = typeof guestInput?.phone === "string" ? guestInput.phone.trim() : "";
+  const guestEmail = typeof guestInput?.email === "string" ? guestInput.email.trim().toLowerCase() : "";
+  if (guestName.length < 2 || guestName.length > 120 || /[<>\\u0000-\\u001f]/.test(guestName) ||
+      !/^\\+[1-9]\\d{7,14}$/.test(guestPhone.replace(/[\\s().-]/g, "")) ||
+      (guestEmail && (guestEmail.length > 254 || !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(guestEmail)))) {
+    throw new PmsIntegrationError("INVALID_GUEST_DETAILS", "A valid guest name and international phone number are required.");
+  }
+  return { ...dates, roomTypeId, guestCount, idempotencyKey, guest: {
+    name: guestName, phone: guestPhone.replace(/[\\s().-]/g, ""), email: guestEmail || null,
+  } };
 }
 
 function normalizeBooking(value) {

@@ -17,6 +17,8 @@ The dashboard shows these totals separately for a rolling 30 × 24-hour window a
 
 A separate `linkedConversationCount` counts distinct Veyra conversation IDs attached by hotel staff to eligible revenue events in the same reporting window. It is not an “influenced conversations” metric and does not establish that Veyra caused or incrementally generated revenue. Veyra does not yet calculate influenced conversations or staff time saved. Those measures require separately agreed hotel definitions and measured baseline data; no time-saving estimate is displayed until that evidence exists.
 
+The dashboard displays three separate operational concepts: hotel-attested revenue/conversation links, influenced conversations, and estimated staff time saved. The latter two deliberately show **“Not measured”** and **“Not calculated”** rather than zero or an inferred value. Influenced conversations require a hotel-approved definition and a credible causal evaluation; a conversation linked to a booking is not sufficient. A staff-time estimate requires a hotel-measured baseline for comparable manual handling time plus validated evidence that the interaction was resolved without equivalent staff work. No value is produced until those inputs and rules are reviewed and approved by the hotel.
+
 ## Controls
 
 - Revenue entry is limited to workspace owners and administrators.

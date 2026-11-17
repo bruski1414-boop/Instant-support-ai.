@@ -388,6 +388,26 @@ function createMewsConnectorAdapter(options = {}) {
       }
       const [firstName, ...lastParts] = request.guest.name.split(" ");
       const lastName = lastParts.join(" ") || firstName;
+      const channelNumber = request.idempotencyKey.slice(0, 50);
+      const priorResponse = await call("reservations/getAll/2023-06-06", {
+        ServiceIds: [serviceId],
+        ChannelNumbers: [channelNumber],
+        Limitation: { Count: 5 },
+      }, auth);
+      const prior = Array.isArray(priorResponse.Reservations)
+        ? priorResponse.Reservations.find(item => item && item.ChannelNumber === channelNumber)
+        : null;
+      if (prior) {
+        const priorState = String(prior.State || "").toLowerCase();
+        const priorStatus = ({
+          confirmed: "confirmed", optional: "pending", inquired: "pending",
+          canceled: "cancelled", started: "checked_in", processed: "checked_out",
+        })[priorState];
+        if (!prior.Id || !priorStatus || priorStatus === "cancelled") {
+          throw new PmsIntegrationError("MEWS_IDEMPOTENCY_CONFLICT", "This booking request key already exists in Mews and cannot safely be reused.", 409);
+        }
+        return { bookingId: prior.Id, status: priorStatus, customerId: prior.AccountId || null, confirmationNumber: prior.Number || null };
+      }
       const customerPayload = {
         FirstName: firstName,
         LastName: lastName,
@@ -402,15 +422,17 @@ function createMewsConnectorAdapter(options = {}) {
       const reservation = {
         ServiceId: serviceId,
         SendConfirmationEmail: false,
+        CheckOverbooking: true,
+        CheckRateApplicability: true,
         Reservations: [{
           State: "Confirmed",
-          ScheduledStartUtc: localDateTimeToUtc(request.checkIn, checkInTime, timeZone),
-          ScheduledEndUtc: localDateTimeToUtc(request.checkOut, checkOutTime, timeZone),
+          StartUtc: localDateTimeToUtc(request.checkIn, checkInTime, timeZone),
+          EndUtc: localDateTimeToUtc(request.checkOut, checkOutTime, timeZone),
           CustomerId: customer.Id,
           RequestedCategoryId: requestedCategoryId,
           RateId: rateId,
           PersonCounts: [{ AgeCategoryId: adultAgeCategoryId, Count: request.guestCount }],
-          ChannelNumber: request.idempotencyKey.slice(0, 50),
+          ChannelNumber: channelNumber,
         }],
       };
       if (enterpriseId) reservation.EnterpriseId = enterpriseId;
@@ -418,8 +440,12 @@ function createMewsConnectorAdapter(options = {}) {
       const added = Array.isArray(result.Reservations) ? result.Reservations[0] : null;
       const booking = added && added.Reservation ? added.Reservation : added;
       const bookingId = booking && (booking.Id || booking.Identifier);
-      const status = booking && String(booking.State || "").toLowerCase();
-      if (typeof bookingId !== "string" || !bookingId || !["confirmed", "optional", "inquired"].includes(status)) {
+      const rawState = booking && String(booking.State || "").toLowerCase();
+      const status = ({
+        confirmed: "confirmed", optional: "pending", inquired: "pending",
+        canceled: "cancelled", started: "checked_in", processed: "checked_out",
+      })[rawState];
+      if (typeof bookingId !== "string" || !bookingId || !status || status !== "confirmed") {
         throw new PmsIntegrationError("MEWS_RESERVATION_UNVERIFIED", "Mews did not return a usable reservation record. Do not tell the guest the booking is confirmed.", 502);
       }
       return { bookingId, status, customerId: customer.Id, confirmationNumber: booking.Number || null };

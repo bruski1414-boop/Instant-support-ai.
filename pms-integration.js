@@ -483,7 +483,7 @@ function createMewsConnectorAdapter(options = {}) {
     async validateCredentials(input) {
       const auth = credentials(input);
       await call("services/getAll", { Limitation: { Count: 1 } }, auth);
-      return { credentials: auth, scopes: ["reservations:create", "customers:create"] };
+      return { credentials: auth, scopes: ["availability:read", "reservations:price", "reservations:create", "customers:create"] };
     },
     async testConnection(context = {}) {
       const auth = authFromContext(context);

@@ -543,14 +543,19 @@ function createMewsConnectorAdapter(options = {}) {
       const auth = authFromContext(context);
       const config = context.propertyConfig || {};
       const serviceId = String(config.serviceId || "").trim();
-      const rateId = String(config.rateId || "").trim();
-      const requestedCategoryId = String(config.requestedCategoryId || request.roomTypeId || "").trim();
-      const adultAgeCategoryId = String(config.adultAgeCategoryId || "").trim();
+      const roomTypes = Array.isArray(config.roomTypes) ? config.roomTypes : [];
+      const selectedRoom = roomTypes.find(room => room && room.roomTypeId === request.roomTypeId);
+      const rateId = String(selectedRoom?.rateId || config.rateId || "").trim();
+      const requestedCategoryId = String(selectedRoom?.requestedCategoryId || config.requestedCategoryId || request.roomTypeId || "").trim();
+      const adultAgeCategoryId = String(selectedRoom?.adultAgeCategoryId || config.adultAgeCategoryId || "").trim();
+      const maxOccupancy = Number(selectedRoom?.maxOccupancy || config.maxOccupancy || 20);
       const checkInTime = String(config.checkInTime || "14:00:00");
       const checkOutTime = String(config.checkOutTime || "10:00:00");
       const timeZone = String(config.timeZone || "").trim();
       const enterpriseId = config.enterpriseId ? String(config.enterpriseId) : undefined;
       if (!serviceId || !rateId || !requestedCategoryId || !adultAgeCategoryId || !timeZone ||
+          !Number.isInteger(maxOccupancy) || maxOccupancy < 1 || maxOccupancy > 20 ||
+          request.guestCount > maxOccupancy ||
           !/^([01]\d|2[0-3]):[0-5]\d:[0-5]\d$/.test(checkInTime) ||
           !/^([01]\d|2[0-3]):[0-5]\d:[0-5]\d$/.test(checkOutTime)) {
         throw new PmsIntegrationError("MEWS_PROPERTY_MAPPING_REQUIRED", "The hotel must map its Mews service, rate, room category, adult age category, IANA time zone and local check-in/out times before bookings can be created.", 409);

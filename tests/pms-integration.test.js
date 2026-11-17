@@ -278,11 +278,45 @@ test("Mews connector creates a confirmed reservation with guest details and loca
     },
   });
   assert.deepEqual(result, { bookingId: "reservation-1", status: "confirmed" });
-  assert.equal(calls.length, 2);
-  assert.equal(calls[0].payload.Phone, "+12025550123");
-  assert.equal(calls[0].payload.Email, "ada@example.com");
-  assert.equal(calls[1].payload.Reservations[0].ScheduledStartUtc, "2027-01-10T07:00:00.000Z");
-  assert.equal(calls[1].payload.Reservations[0].ScheduledEndUtc, "2027-01-12T03:00:00.000Z");
-  assert.equal(calls[1].payload.Reservations[0].ChannelNumber, "booking_req_12345");
-  assert.equal("CheckOverbooking" in calls[1].payload, false);
+  assert.equal(calls.length, 3);
+  assert.equal(calls[0].url.endsWith("/reservations/getAll/2023-06-06"), true);
+  assert.equal(calls[1].payload.Phone, "+12025550123");
+  assert.equal(calls[1].payload.Email, "ada@example.com");
+  assert.equal(calls[2].payload.Reservations[0].StartUtc, "2027-01-10T07:00:00.000Z");
+  assert.equal(calls[2].payload.Reservations[0].EndUtc, "2027-01-12T03:00:00.000Z");
+  assert.equal(calls[2].payload.Reservations[0].ChannelNumber, "booking_req_12345");
+  assert.equal(calls[2].payload.CheckOverbooking, true);
+  assert.equal(calls[2].payload.CheckRateApplicability, true);
+});
+
+
+test("Mews retries reuse the existing reservation instead of creating another one", async () => {
+  const calls = [];
+  const fetchImpl = async (url, options) => {
+    const payload = JSON.parse(options.body);
+    calls.push({ url, payload });
+    if (url.endsWith("/reservations/getAll/2023-06-06")) return {
+      ok: true, async json() { return { Reservations: [{
+        Id: "existing-reservation", Number: "77", State: "Confirmed", ChannelNumber: "booking_req_12345",
+      }] }; },
+    };
+    throw new Error("A retry must not create a new customer or reservation.");
+  };
+  const registry = createPmsRegistry([createMewsConnectorAdapter({ fetchImpl })]);
+  const request = {
+    checkIn: "2027-01-10", checkOut: "2027-01-12", roomTypeId: "category-deluxe",
+    guestCount: 1, idempotencyKey: "booking_req_12345",
+    guest: { name: "Ada Lovelace", phone: "+12025550123" },
+    totalAmountMinor: 10000, depositAmountMinor: 5000, currency: "USD",
+    depositVerified: true, paidAmountMinor: 5000, paidCurrency: "USD",
+  };
+  const result = await registry.createBooking("mews", request, {
+    credentials: { clientToken: "client-token", accessToken: "access-token" },
+    propertyConfig: {
+      serviceId: "service-1", rateId: "rate-1", requestedCategoryId: "category-deluxe",
+      adultAgeCategoryId: "adult-1", timeZone: "Asia/Bangkok",
+    },
+  });
+  assert.deepEqual(result, { bookingId: "existing-reservation", status: "confirmed" });
+  assert.equal(calls.length, 1);
 });

@@ -448,5 +448,7 @@ module.exports = {
   createHmacSha256Verifier,
   recordWebhookEvent,
   createPmsRegistry,
+  createMewsConnectorAdapter,
+  localDateTimeToUtc,
   createSandboxAdapter,
 };

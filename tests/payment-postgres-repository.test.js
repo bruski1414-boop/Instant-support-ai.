@@ -108,6 +108,7 @@ test("verified successful deposit is atomically recorded and moves intent to dep
   assert.equal(pool.state.status, "deposit_paid");
   assert.ok(pool.statements.some(x => x.sql === "BEGIN"));
   assert.ok(pool.statements.some(x => x.sql === "COMMIT"));
+  assert.ok(pool.statements.some(x => x.sql.includes("INSERT INTO booking_reservation_outbox")));
   assert.ok(pool.statements.some(x => x.released));
 });
 

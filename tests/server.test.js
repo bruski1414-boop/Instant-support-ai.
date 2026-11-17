@@ -339,6 +339,15 @@ test("staff notification retries are capped and direct staff to manual fallback"
 });
 
 
+test("staff notification retry claims an atomic attempt slot and blocks concurrent duplicate sends", () => {
+  const server = fs.readFileSync("server.js", "utf8");
+  assert.match(server, /notification_status='sending',notification_attempts=notification_attempts\+1/);
+  assert.match(server, /notification_attempts<5 AND notification_status<>'delivered'/);
+  assert.match(server, /notification_last_attempt_at<now\(\)-interval '2 minutes'/);
+  assert.match(server, /Another staff notification attempt is in progress/);
+  assert.match(server, /manualFollowUpRequired:!result\.delivered/);
+});
+
 test("staff handoff dashboard makes failed and unconfigured notifications require manual follow-up", () => {
   const dashboard = fs.readFileSync("dashboard.html", "utf8");
   assert.match(dashboard, /No staff notification configured — contact hotel staff manually/);

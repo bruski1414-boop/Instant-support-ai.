@@ -278,8 +278,9 @@ try {
   assert.match(firstGuestChatBody.conversationToken, /^[A-Za-z0-9_-]{40,64}$/);
   assert.ok(mockAiRequests.length >= 1, "guest chat must call the isolated mock AI provider");
   const firstAiMessages = mockAiRequests.at(-1)?.messages || [];
-  assert.ok(firstAiMessages[0]?.content.includes(tenants[0].approvedKnowledge), "AI context must include the hotel's approved knowledge");
-  assert.equal(firstAiMessages[0]?.content.includes(tenants[1].approvedKnowledge), false, "AI context must not include another hotel's knowledge");
+  assert.ok(firstAiMessages[0]?.content.includes("APPROVED KNOWLEDGE FOR " + tenants[0].name), "AI context must include the hotel's approved knowledge");
+  assert.ok(firstAiMessages[0]?.content.includes("Breakfast is served daily from 7:00 AM to 10:00 AM"), "AI context must include the approved breakfast detail");
+  assert.equal(firstAiMessages[0]?.content.includes("APPROVED KNOWLEDGE FOR " + tenants[1].name), false, "AI context must not include another hotel's knowledge");
 
   const followUpGuestChat = await fetch(baseUrl + "/api/public/" + tenants[0].slug + "/chat", {
     method: "POST",

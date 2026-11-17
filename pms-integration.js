@@ -243,7 +243,11 @@ function createPmsRegistry(adapters = []) {
       const adapter = get(provider);
       if (!adapter.capabilities.availability) throw new PmsIntegrationError("CAPABILITY_UNAVAILABLE", "This provider adapter does not support availability lookup.", 409);
       const dates = validateDateRange(input);
-      const rows = await adapter.getAvailability(dates, context);
+      const guestCount = input.guestCount === undefined ? 1 : input.guestCount;
+      if (!Number.isInteger(guestCount) || guestCount < 1 || guestCount > 20) {
+        throw new PmsIntegrationError("INVALID_GUEST_COUNT", "Guest count must be between 1 and 20.");
+      }
+      const rows = await adapter.getAvailability({ ...dates, guestCount }, context);
       if (!Array.isArray(rows) || rows.length > 200) throw new PmsIntegrationError("INVALID_PROVIDER_RESPONSE", "Provider returned an invalid availability list.", 502);
       return rows.map(normalizeAvailability);
     },
@@ -417,7 +421,7 @@ function createMewsConnectorAdapter(options = {}) {
         const expectedDate = new Date(Date.parse(dates.checkIn + "T00:00:00.000Z") + index * 86400000)
           .toISOString().slice(0, 10);
         const expectedUtc = localDateTimeToUtc(expectedDate, "00:00:00", timeZone);
-        if (starts[index] !== expectedUtc ||
+        if (Date.parse(starts[index]) !== Date.parse(expectedUtc) ||
             !Number.isSafeInteger(category.Availabilities[index]) || category.Availabilities[index] < 0 ||
             !Number.isSafeInteger(category.Adjustments[index])) {
           throw new PmsIntegrationError("MEWS_AVAILABILITY_UNVERIFIED",

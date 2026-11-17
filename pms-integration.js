@@ -368,28 +368,56 @@ function createMewsConnectorAdapter(options = {}) {
       const auth = authFromContext(context);
       const config = context.propertyConfig || {};
       const serviceId = String(config.serviceId || "").trim();
-      const rateId = String(config.rateId || "").trim();
-      const requestedCategoryId = String(config.requestedCategoryId || "").trim();
-      const adultAgeCategoryId = String(config.adultAgeCategoryId || "").trim();
-      const roomTypeName = String(config.roomTypeName || "").trim();
       const timeZone = String(config.timeZone || "").trim();
       const timeUnitPeriod = String(config.timeUnitPeriod || "");
       const checkInTime = String(config.checkInTime || "14:00:00");
       const checkOutTime = String(config.checkOutTime || "10:00:00");
-      const maxOccupancy = Number(config.maxOccupancy);
-      if (!serviceId || !rateId || !requestedCategoryId || !adultAgeCategoryId ||
-          !roomTypeName || roomTypeName.length > 160 || !timeZone ||
-          timeUnitPeriod !== "Day" || !Number.isInteger(maxOccupancy) ||
-          maxOccupancy < 1 || maxOccupancy > 20 ||
+      const roomTypes = Array.isArray(config.roomTypes) ? config.roomTypes :
+        (config.requestedCategoryId ? [{
+          roomTypeId: config.roomTypeId || config.requestedCategoryId,
+          roomTypeName: config.roomTypeName,
+          rateId: config.rateId,
+          requestedCategoryId: config.requestedCategoryId,
+          adultAgeCategoryId: config.adultAgeCategoryId,
+          maxOccupancy: config.maxOccupancy,
+        }] : []);
+      if (!serviceId || !timeZone || timeUnitPeriod !== "Day" ||
           !/^([01]\d|2[0-3]):[0-5]\d:[0-5]\d$/.test(checkInTime) ||
-          !/^([01]\d|2[0-3]):[0-5]\d:[0-5]\d$/.test(checkOutTime)) {
+          !/^([01]\d|2[0-3]):[0-5]\d:[0-5]\d$/.test(checkOutTime) ||
+          !Array.isArray(roomTypes) || roomTypes.length < 1 || roomTypes.length > 20) {
         throw new PmsIntegrationError("MEWS_PROPERTY_MAPPING_REQUIRED",
-          "The hotel must map its Mews service, rate, room category, adult age category, room name, maximum occupancy, IANA time zone and daily service period before live quotes can be returned.", 409);
+          "The hotel must configure a Mews accommodation service, IANA time zone, daily service period, local check-in/out times and at least one room/rate mapping.", 409);
       }
-      if (dates.guestCount !== undefined &&
-          (!Number.isInteger(dates.guestCount) || dates.guestCount < 1 || dates.guestCount > maxOccupancy)) {
+      const normalizedRooms = roomTypes.map(room => ({
+        roomTypeId: String(room?.roomTypeId || "").trim(),
+        roomTypeName: String(room?.roomTypeName || "").trim(),
+        rateId: String(room?.rateId || "").trim(),
+        requestedCategoryId: String(room?.requestedCategoryId || "").trim(),
+        adultAgeCategoryId: String(room?.adultAgeCategoryId || "").trim(),
+        maxOccupancy: Number(room?.maxOccupancy),
+      }));
+      const seenRoomIds = new Set();
+      const seenCategoryIds = new Set();
+      for (const room of normalizedRooms) {
+        if (!room.roomTypeId || room.roomTypeId.length > 120 ||
+            !room.roomTypeName || room.roomTypeName.length > 160 ||
+            !room.rateId || !room.requestedCategoryId || !room.adultAgeCategoryId ||
+            !Number.isInteger(room.maxOccupancy) || room.maxOccupancy < 1 || room.maxOccupancy > 20 ||
+            seenRoomIds.has(room.roomTypeId) || seenCategoryIds.has(room.requestedCategoryId)) {
+          throw new PmsIntegrationError("MEWS_PROPERTY_MAPPING_REQUIRED",
+            "Every room mapping needs unique room and category IDs, a display name, rate, adult age category and maximum occupancy.", 409);
+        }
+        seenRoomIds.add(room.roomTypeId);
+        seenCategoryIds.add(room.requestedCategoryId);
+      }
+      const guestCount = dates.guestCount || 1;
+      if (!Number.isInteger(guestCount) || guestCount < 1 || guestCount > 20) {
+        throw new PmsIntegrationError("INVALID_GUEST_COUNT", "Guest count must be between 1 and 20.");
+      }
+      const eligibleRooms = normalizedRooms.filter(room => guestCount <= room.maxOccupancy);
+      if (!eligibleRooms.length) {
         throw new PmsIntegrationError("GUEST_COUNT_EXCEEDS_ROOM_CAPACITY",
-          "The requested guest count exceeds the mapped room capacity.", 400);
+          "No configured room type can accommodate the requested guest count.", 400);
       }
 
       const lastOccupiedDate = new Date(Date.parse(dates.checkOut + "T00:00:00.000Z") - 86400000)
@@ -403,87 +431,103 @@ function createMewsConnectorAdapter(options = {}) {
       }, auth);
       const categories = Array.isArray(availability.CategoryAvailabilities)
         ? availability.CategoryAvailabilities : [];
-      const category = categories.find(item => item && item.CategoryId === requestedCategoryId);
       const starts = availability.TimeUnitStartsUtc;
       const expectedNights = Math.round(
         (Date.parse(dates.checkOut + "T00:00:00.000Z") -
          Date.parse(dates.checkIn + "T00:00:00.000Z")) / 86400000
       );
-      if (!category || !Array.isArray(category.Availabilities) ||
-          !Array.isArray(category.Adjustments) ||
-          !Array.isArray(starts) || starts.length !== expectedNights ||
-          category.Availabilities.length !== expectedNights ||
-          category.Adjustments.length !== expectedNights) {
+      if (!Array.isArray(starts) || starts.length !== expectedNights) {
         throw new PmsIntegrationError("MEWS_AVAILABILITY_UNVERIFIED",
-          "Mews did not return a complete availability result for every night. No availability claim can be made.", 502);
+          "Mews did not return a complete availability calendar for every night.", 502);
       }
       for (let index = 0; index < expectedNights; index += 1) {
         const expectedDate = new Date(Date.parse(dates.checkIn + "T00:00:00.000Z") + index * 86400000)
           .toISOString().slice(0, 10);
         const expectedUtc = localDateTimeToUtc(expectedDate, "00:00:00", timeZone);
-        if (Date.parse(starts[index]) !== Date.parse(expectedUtc) ||
-            !Number.isSafeInteger(category.Availabilities[index]) || category.Availabilities[index] < 0 ||
-            !Number.isSafeInteger(category.Adjustments[index])) {
+        if (!starts[index] || Date.parse(starts[index]) !== Date.parse(expectedUtc)) {
           throw new PmsIntegrationError("MEWS_AVAILABILITY_UNVERIFIED",
-            "Mews returned mismatched or invalid daily availability values. No availability claim can be made.", 502);
+            "Mews returned mismatched or invalid daily availability dates.", 502);
         }
       }
-      // Mews returns absolute availability and a separate relative adjustment for each time unit.
-      // Apply both before calculating the minimum inventory across the stay.
-      const adjustedAvailabilities = category.Availabilities.map((absolute, index) =>
-        Math.max(0, absolute + category.Adjustments[index])
-      );
-      const availableUnits = Math.min(...adjustedAvailabilities);
 
+      const availableRooms = [];
+      for (const room of eligibleRooms) {
+        const category = categories.find(item => item && item.CategoryId === room.requestedCategoryId);
+        if (!category || !Array.isArray(category.Availabilities) ||
+            !Array.isArray(category.Adjustments) ||
+            category.Availabilities.length !== expectedNights ||
+            category.Adjustments.length !== expectedNights) {
+          throw new PmsIntegrationError("MEWS_AVAILABILITY_UNVERIFIED",
+            "Mews did not return complete inventory for every configured room type.", 502);
+        }
+        const adjustedAvailabilities = category.Availabilities.map((absolute, index) => {
+          const adjustment = category.Adjustments[index];
+          if (!Number.isSafeInteger(absolute) || absolute < 0 || !Number.isSafeInteger(adjustment)) {
+            throw new PmsIntegrationError("MEWS_AVAILABILITY_UNVERIFIED",
+              "Mews returned invalid inventory values. No availability claim can be made.", 502);
+          }
+          return Math.max(0, absolute + adjustment);
+        });
+        const availableUnits = Math.min(...adjustedAvailabilities);
+        if (availableUnits > 0) availableRooms.push({ ...room, availableUnits });
+      }
+      if (!availableRooms.length) return [];
+
+      const quoteRequests = availableRooms.map((room, index) => ({
+        Identifier: "veyra-quote-" + index,
+        StartUtc: localDateTimeToUtc(dates.checkIn, checkInTime, timeZone),
+        EndUtc: localDateTimeToUtc(dates.checkOut, checkOutTime, timeZone),
+        RequestedCategoryId: room.requestedCategoryId,
+        RateId: room.rateId,
+        PersonCounts: [{ AgeCategoryId: room.adultAgeCategoryId, Count: guestCount }],
+      }));
       const quote = await call("reservations/price", {
         ServiceId: serviceId,
-        Reservations: [{
-          Identifier: "veyra-availability-quote",
-          StartUtc: localDateTimeToUtc(dates.checkIn, checkInTime, timeZone),
-          EndUtc: localDateTimeToUtc(dates.checkOut, checkOutTime, timeZone),
-          RequestedCategoryId: requestedCategoryId,
-          RateId: rateId,
-          PersonCounts: [{ AgeCategoryId: adultAgeCategoryId, Count: dates.guestCount || 1 }],
-        }],
+        Reservations: quoteRequests,
       }, auth);
       const prices = Array.isArray(quote.ReservationPrices) ? quote.ReservationPrices : [];
-      const price = prices.find(item => item && item.Identifier === "veyra-availability-quote") ||
-        (prices.length === 1 ? prices[0] : null);
-      const total = price && price.TotalAmount;
-      const currency = total && typeof total.Currency === "string" ? total.Currency.toUpperCase() : "";
-      if (!total || !/^[A-Z]{3}$/.test(currency) ||
-          typeof total.GrossValue !== "number" || !Number.isFinite(total.GrossValue) ||
-          total.GrossValue < 0 || !Array.isArray(price.AdditionalExpenses)) {
+      if (prices.length !== availableRooms.length) {
         throw new PmsIntegrationError("MEWS_PRICE_UNVERIFIED",
-          "Mews did not return a complete gross reservation price. No price can be quoted.", 502);
+          "Mews did not return a price for every available room type.", 502);
       }
-      let grossTotal = total.GrossValue;
-      for (const expense of price.AdditionalExpenses) {
-        const amount = expense && expense.Amount;
-        if (!amount || String(amount.Currency || "").toUpperCase() !== currency ||
-            typeof amount.GrossValue !== "number" || !Number.isFinite(amount.GrossValue) ||
-            amount.GrossValue < 0) {
+      return availableRooms.map((room, index) => {
+        const identifier = "veyra-quote-" + index;
+        const price = prices.find(item => item && item.Identifier === identifier);
+        const total = price && price.TotalAmount;
+        const currency = total && typeof total.Currency === "string" ? total.Currency.toUpperCase() : "";
+        if (!price || !total || !/^[A-Z]{3}$/.test(currency) ||
+            typeof total.GrossValue !== "number" || !Number.isFinite(total.GrossValue) ||
+            total.GrossValue < 0 || !Array.isArray(price.AdditionalExpenses)) {
           throw new PmsIntegrationError("MEWS_PRICE_UNVERIFIED",
-            "Mews returned an incomplete or mixed-currency additional expense. No price can be quoted.", 502);
+            "Mews did not return a complete gross reservation price. No price can be quoted.", 502);
         }
-        grossTotal += amount.GrossValue;
-      }
-      const fractionDigits = new Intl.NumberFormat("en", {
-        style: "currency", currency,
-      }).resolvedOptions().maximumFractionDigits;
-      const amountMinor = Math.round(grossTotal * (10 ** fractionDigits));
-      if (!Number.isSafeInteger(amountMinor) || amountMinor < 0 ||
-          Math.abs(grossTotal * (10 ** fractionDigits) - amountMinor) > 0.00001) {
-        throw new PmsIntegrationError("MEWS_PRICE_UNVERIFIED",
-          "Mews returned a price that cannot be represented safely in the hotel's currency. No price can be quoted.", 502);
-      }
-      return [{
-        roomTypeId: requestedCategoryId,
-        roomTypeName,
-        currency,
-        amountMinor,
-        availableUnits,
-      }];
+        let grossTotal = total.GrossValue;
+        for (const expense of price.AdditionalExpenses) {
+          const amount = expense && expense.Amount;
+          if (!amount || String(amount.Currency || "").toUpperCase() !== currency ||
+              typeof amount.GrossValue !== "number" || !Number.isFinite(amount.GrossValue)) {
+            throw new PmsIntegrationError("MEWS_PRICE_UNVERIFIED",
+              "Mews returned an incomplete or mixed-currency additional expense. No price can be quoted.", 502);
+          }
+          grossTotal += amount.GrossValue;
+        }
+        const fractionDigits = new Intl.NumberFormat("en", {
+          style: "currency", currency,
+        }).resolvedOptions().maximumFractionDigits;
+        const amountMinor = Math.round(grossTotal * (10 ** fractionDigits));
+        if (!Number.isSafeInteger(amountMinor) || amountMinor < 0 ||
+            Math.abs(grossTotal * (10 ** fractionDigits) - amountMinor) > 0.00001) {
+          throw new PmsIntegrationError("MEWS_PRICE_UNVERIFIED",
+            "Mews returned a price that cannot be represented safely in the hotel's currency.", 502);
+        }
+        return {
+          roomTypeId: room.roomTypeId,
+          roomTypeName: room.roomTypeName,
+          currency,
+          amountMinor,
+          availableUnits: room.availableUnits,
+        };
+      });
     },
     async validateCredentials(input) {
       const auth = credentials(input);

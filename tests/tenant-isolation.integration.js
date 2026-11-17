@@ -346,6 +346,36 @@ try {
     [escalationId, orgAForGuestChat],
   );
 
+  // Verify the full staff handoff lifecycle through the authenticated API.
+  const claimHandoff = await fetch(baseUrl + "/api/admin/escalations/" + escalationId, {
+    method: "PATCH",
+    headers: { cookie: cookieA, "X-CSRF-Token": tenants[0].csrfToken, "content-type": "application/json" },
+    body: JSON.stringify({ status: "claimed" }),
+  });
+  assert.equal(claimHandoff.status, 200, "hotel staff must be able to claim a guest handoff");
+  const claimedHandoff = await claimHandoff.json();
+  assert.equal(claimedHandoff.escalation.status, "claimed");
+  const claimedConversation = await pool.query(
+    "SELECT status FROM conversations WHERE id=$1 AND organization_id=$2",
+    [firstGuestChatBody.conversationId, orgAForGuestChat],
+  );
+  assert.equal(claimedConversation.rows[0].status, "escalated", "claiming a handoff must keep the guest conversation escalated");
+
+  const resolveHandoff = await fetch(baseUrl + "/api/admin/escalations/" + escalationId, {
+    method: "PATCH",
+    headers: { cookie: cookieA, "X-CSRF-Token": tenants[0].csrfToken, "content-type": "application/json" },
+    body: JSON.stringify({ status: "resolved" }),
+  });
+  assert.equal(resolveHandoff.status, 200, "hotel staff must be able to resolve the guest handoff");
+  const resolvedHandoff = await resolveHandoff.json();
+  assert.equal(resolvedHandoff.escalation.status, "resolved");
+  assert.ok(resolvedHandoff.escalation.resolved_at, "resolution timestamp must be recorded");
+  const resolvedConversation = await pool.query(
+    "SELECT status FROM conversations WHERE id=$1 AND organization_id=$2",
+    [firstGuestChatBody.conversationId, orgAForGuestChat],
+  );
+  assert.equal(resolvedConversation.rows[0].status, "resolved", "resolving the handoff must resolve the guest conversation");
+
 
   const offersAResponse = await fetch(baseUrl + "/api/admin/offers", { headers: { cookie: cookieA } });
   assert.equal(offersAResponse.status, 200, "tenant A must read its own offers");

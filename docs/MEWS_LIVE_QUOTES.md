@@ -43,9 +43,19 @@ A successful response contains `verified: true` and an `options` array. Each opt
 
 The guest widget now includes a “Check room availability” form and displays these quotes. It clearly tells the guest that a quote is not a confirmed reservation.
 
+## Booking intent endpoint
+
+`POST /api/public/:slug/booking-intents`
+
+After a guest has reviewed the quote and explicitly confirmed the displayed details, the backend accepts the quote ID, an idempotency key, and guest contact details. It rechecks live Mews availability and price before creating a short-lived booking intent. If the room is no longer available or the price has changed, it rejects the request and asks the guest to obtain a fresh quote.
+
+Guest contact details are encrypted with a separate AES-256-GCM key. Booking intents are unique per hotel and quote, and repeat requests with the same idempotency key cannot create duplicates. The endpoint is disabled unless guest-data storage, the encryption key, an approved hotel privacy/retention record, and the scheduled cleanup job are configured.
+
+Run `npm run cleanup:booking-data` daily using a monitored scheduler. It marks expired unpaid intents as expired, scrubs encrypted guest details at the hotel's approved retention limit, and deletes old unused quotes. Configure `BOOKING_PII_CLEANUP_ENABLED=true` only after this scheduled job is active and monitored.
+
 ## Important booking limitation
 
-The guest-facing quote flow is connected. A complete public booking transaction is not yet enabled: payment-provider checkout, signed payment webhooks, durable booking-intent orchestration, deposit verification, PMS reservation creation, and final confirmation still need to be connected and tested end to end.
+The guest-facing quote and short-lived booking-intent backend are connected. A complete public booking transaction is not yet enabled: payment-provider checkout, signed payment webhooks, deposit verification, final PMS reservation creation, and final guest confirmation still need to be connected and tested end to end.
 
 The Mews reservation adapter has a booking method and explicitly keeps Mews' overbooking and rate-applicability checks enabled. That adapter capability alone does not mean a guest can complete a booking through the public widget.
 

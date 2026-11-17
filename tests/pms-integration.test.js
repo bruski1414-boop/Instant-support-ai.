@@ -349,12 +349,15 @@ test("Mews availability refuses incomplete daily data and over-capacity guest co
   let calls = 0;
   const fetchImpl = async () => {
     calls += 1;
-    return { ok: true, async json() { return {
-      TimeUnitStartsUtc: ["2027-01-09T17:00:00Z"],
-      CategoryAvailabilities: [{
-        CategoryId: "category-deluxe", Availabilities: [2], Adjustments: [0],
-      }],
-    }; },
+    return {
+      ok: true,
+      json: async () => ({
+        TimeUnitStartsUtc: ["2027-01-09T17:00:00Z"],
+        CategoryAvailabilities: [{
+          CategoryId: "category-deluxe", Availabilities: [2], Adjustments: [0],
+        }],
+      }),
+    };
   };
   const registry = createPmsRegistry([createMewsConnectorAdapter({ fetchImpl })]);
   const context = {

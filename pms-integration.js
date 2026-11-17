@@ -67,9 +67,18 @@ function normalizeBookingRequest(input = {}) {
       (guestEmail && (guestEmail.length > 254 || !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(guestEmail)))) {
     throw new PmsIntegrationError("INVALID_GUEST_DETAILS", "A valid guest name and international phone number are required.");
   }
+  const totalAmountMinor = input.totalAmountMinor;
+  const depositAmountMinor = input.depositAmountMinor;
+  const currency = typeof input.currency === "string" ? input.currency : "";
+  if (input.depositVerified !== true || !Number.isSafeInteger(totalAmountMinor) || totalAmountMinor <= 0 ||
+      !Number.isSafeInteger(depositAmountMinor) || depositAmountMinor !== Math.ceil(totalAmountMinor / 2) ||
+      !CURRENCIES.test(currency) || input.paidAmountMinor !== depositAmountMinor ||
+      input.paidCurrency !== currency) {
+    throw new PmsIntegrationError("VERIFIED_DEPOSIT_REQUIRED", "A matching, verified 50% deposit is required before creating the PMS reservation.", 409);
+  }
   return { ...dates, roomTypeId, guestCount, idempotencyKey, guest: {
     name: guestName, phone: guestPhone.replace(/[\\s().-]/g, ""), email: guestEmail || null,
-  } };
+  }, totalAmountMinor, depositAmountMinor, currency, depositVerified: true };
 }
 
 function normalizeBooking(value) {

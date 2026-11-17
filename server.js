@@ -436,11 +436,11 @@ const saved=await db.query("INSERT INTO booking_intents(organization_id,quote_id
 [org.rows[0].id,quote.id,quote.provider,idempotencyKey,quote.check_in,quote.check_out,quote.room_type_id,quote.room_type_name,quote.guest_count,encryptedGuest,intent.currency,intent.totalAmountMinor,intent.depositAmountMinor,intent.balanceAmountMinor]);
 let row=saved.rows[0];
 if(!row){
-const conflict=await db.query("SELECT id,quote_id,status,check_in,check_out,room_type_id,room_type_name,guest_count,currency,total_amount_minor,deposit_amount_minor,balance_amount_minor,expires_at,guest_data_encrypted FROM booking_intents WHERE organization_id=$1 AND (idempotency_key=$2 OR quote_id=$3)",[org.rows[0].id,idempotencyKey,quote.id]);
+const conflict=await db.query("SELECT id,quote_id,idempotency_key,status,check_in,check_out,room_type_id,room_type_name,guest_count,currency,total_amount_minor,deposit_amount_minor,balance_amount_minor,expires_at,guest_data_encrypted FROM booking_intents WHERE organization_id=$1 AND (idempotency_key=$2 OR quote_id=$3)",[org.rows[0].id,idempotencyKey,quote.id]);
 if(!conflict.rowCount)return r.status(409).json({error:"This quote has already been used. Please request a fresh quote."});
 const prior=conflict.rows[0];let sameGuest=false;
 try{sameGuest=JSON.stringify(bookingDataCipher.decrypt(prior.guest_data_encrypted))===JSON.stringify(guest);}catch{}
-if(prior.quote_id!==quoteId||prior.idempotency_key&&prior.idempotency_key!==idempotencyKey||!sameGuest)return r.status(409).json({error:"This quote or request key has already been used for a different booking intent."});
+if(prior.quote_id!==quoteId||prior.idempotency_key!==idempotencyKey||!sameGuest)return r.status(409).json({error:"This quote or request key has already been used for a different booking intent."});
 row=prior;
 }
 r.status(saved.rowCount?201:200).json({bookingIntent:{id:row.id,status:row.status,checkIn:String(row.check_in).slice(0,10),checkOut:String(row.check_out).slice(0,10),roomTypeId:row.room_type_id,roomTypeName:row.room_type_name,guestCount:row.guest_count,currency:row.currency,totalAmountMinor:Number(row.total_amount_minor),depositAmountMinor:Number(row.deposit_amount_minor),balanceAmountMinor:Number(row.balance_amount_minor),expiresAt:row.expires_at},checkoutReady:false,reservationConfirmed:false,notice:"Booking intent created after a fresh PMS availability and price check. This is not a reservation: no payment has been collected and no room has been held. Payment checkout and final PMS confirmation are not enabled yet."});

@@ -73,7 +73,7 @@ function createPaymentOrchestrator({ repository, adapter, providerName } = {}) {
         provider,
         event,
       });
-      if (!result || !["recorded", "duplicate", "ignored"].includes(result.status)) {
+      if (!result || !["recorded", "duplicate", "ignored", "manual_review"].includes(result.status)) {
         throw new PaymentOrchestrationError("PAYMENT_EVENT_NOT_APPLIED", "The verified payment event could not be safely reconciled. Staff review is required.", 503);
       }
       return Object.freeze({ status: result.status, bookingIntentId: event.bookingIntentId });

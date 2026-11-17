@@ -431,7 +431,7 @@ test("public booking intent fails closed when database is not configured", async
 test("booking intents encrypt guest details, revalidate live PMS price and enforce idempotency", () => {
   const server = fs.readFileSync("server.js", "utf8");
   assert.match(server, /BOOKING_DATA_ENCRYPTION_KEY/);
-  assert.match(server, /guest_data_encrypted TEXT NOT NULL/);
+  assert.match(server, /guest_data_encrypted TEXT,guest_data_purged_at TIMESTAMPTZ/);
   assert.match(server, /UNIQUE\(organization_id,idempotency_key\),UNIQUE\(organization_id,quote_id\)/);
   const start = server.indexOf('app.post("/api/public/:slug/booking-intents"');
   const end = server.indexOf('app.post("/api/public/:slug/chat"', start);

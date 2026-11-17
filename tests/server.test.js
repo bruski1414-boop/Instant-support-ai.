@@ -116,6 +116,18 @@ test("initial workspace bootstrap has a dedicated attempt limit", async () => {
   assert.equal(last.status, 429);
 });
 
+test("guest escalation still returns its safe reply if staff notification handling fails after persistence", () => {
+  const server = fs.readFileSync("server.js", "utf8");
+  assert.match(server, /await c\.query\("COMMIT"\)/);
+  assert.match(server, /catch\(error\)\{console\.error\("Staff escalation notification failed:"/);
+  assert.match(server, /notice=\{configured:false,delivered:false,status:"failed"\}/);
+  assert.match(server, /catch\(error\)\{console\.error\("Staff escalation notification status could not be saved:"/);
+  const notificationStart = server.indexOf("let notice=createdEscalation");
+  const responseStart = server.indexOf("r.json({reply,needsHuman:flagHuman", notificationStart);
+  assert.ok(notificationStart >= 0 && responseStart > notificationStart);
+  assert.match(server.slice(notificationStart, responseStart), /catch\(error\)/);
+});
+
 test("guest widget reuses its server-issued conversation id", () => {
   const widget = fs.readFileSync("widget.js", "utf8");
   const server = fs.readFileSync("server.js", "utf8");

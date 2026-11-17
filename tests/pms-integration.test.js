@@ -389,7 +389,7 @@ test("Mews connector creates a confirmed reservation with guest details and loca
   const adapter = createMewsConnectorAdapter({ fetchImpl });
   const registry = createPmsRegistry([adapter]);
   const request = {
-    checkIn: "2027-01-10", checkOut: "2027-01-12", roomTypeId: "category-deluxe",
+    checkIn: "2027-01-10", checkOut: "2027-01-12", roomTypeId: "deluxe-room",
     guestCount: 2, idempotencyKey: "booking_req_12345",
     guest: { name: "Ada Lovelace", phone: "+12025550123", email: "ada@example.com" },
     totalAmountMinor: 10000, depositAmountMinor: 5000, currency: "USD",
@@ -398,8 +398,11 @@ test("Mews connector creates a confirmed reservation with guest details and loca
   const result = await registry.createBooking("mews", request, {
     credentials: { clientToken: "client-token", accessToken: "access-token" },
     propertyConfig: {
-      serviceId: "service-1", rateId: "rate-1", requestedCategoryId: "category-deluxe",
-      adultAgeCategoryId: "adult-1", timeZone: "Asia/Bangkok",
+      serviceId: "service-1", timeZone: "Asia/Bangkok",
+      roomTypes: [{
+        roomTypeId: "deluxe-room", roomTypeName: "Deluxe Room", rateId: "rate-1",
+        requestedCategoryId: "category-deluxe", adultAgeCategoryId: "adult-1", maxOccupancy: 3,
+      }],
     },
   });
   assert.deepEqual(result, { bookingId: "reservation-1", status: "confirmed" });

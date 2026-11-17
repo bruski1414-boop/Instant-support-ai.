@@ -267,7 +267,46 @@ function createPmsRegistry(adapters = []) {
 }
 
 
-function createMewsConnectorAdapter(options = {}) {
+
+function localDateTimeToUtc(date, time, timeZone) {
+  if (typeof date !== "string" || typeof time !== "string" ||
+      !/^\\d{4}-\\d{2}-\\d{2}$/.test(date) ||
+      !/^([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d$/.test(time) ||
+      typeof timeZone !== "string" || !timeZone.trim()) {
+    throw new PmsIntegrationError("INVALID_LOCAL_DATETIME", "A valid local date, time and IANA time zone are required.");
+  }
+  const [year, month, day] = date.split("-").map(Number);
+  const [hour, minute, second] = time.split(":").map(Number);
+  const desired = Date.UTC(year, month - 1, day, hour, minute, second);
+  if (!Number.isFinite(desired) || new Date(desired).toISOString().slice(0, 10) !== date) {
+    throw new PmsIntegrationError("INVALID_LOCAL_DATETIME", "The local date is invalid.");
+  }
+  let formatter;
+  try {
+    formatter = new Intl.DateTimeFormat("en-CA", {
+      timeZone, year: "numeric", month: "2-digit", day: "2-digit",
+      hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23",
+    });
+    formatter.format(new Date(desired));
+  } catch {
+    throw new PmsIntegrationError("INVALID_TIME_ZONE", "The hotel's IANA time zone is invalid.");
+  }
+  let candidate = desired;
+  for (let i = 0; i < 4; i += 1) {
+    const parts = Object.fromEntries(formatter.formatToParts(new Date(candidate))
+      .filter(part => part.type !== "literal").map(part => [part.type, Number(part.value)]));
+    const represented = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second);
+    candidate += desired - represented;
+  }
+  const finalParts = Object.fromEntries(formatter.formatToParts(new Date(candidate))
+    .filter(part => part.type !== "literal").map(part => [part.type, Number(part.value)]));
+  if (finalParts.year !== year || finalParts.month !== month || finalParts.day !== day ||
+      finalParts.hour !== hour || finalParts.minute !== minute || finalParts.second !== second) {
+    throw new PmsIntegrationError("INVALID_LOCAL_DATETIME", "The requested local time does not exist in the hotel's time zone.");
+  }
+  return new Date(candidate).toISOString();
+}
+\nfunction createMewsConnectorAdapter(options = {}) {
   const fetchImpl = options.fetchImpl || globalThis.fetch;
   const platformAddress = String(options.platformAddress || "https://api.mews.com").replace(/\/$/, "");
   const clientName = String(options.clientName || "Veyra AI/1.0.0");
@@ -338,12 +377,12 @@ function createMewsConnectorAdapter(options = {}) {
       const requestedCategoryId = String(config.requestedCategoryId || request.roomTypeId || "").trim();
       const adultAgeCategoryId = String(config.adultAgeCategoryId || "").trim();
       const checkInTime = String(config.checkInTime || "14:00:00");
-      const checkOutTime = String(config.checkOutTime || "10:00:00");
+      const checkOutTime = String(config.checkOutTime || "10:00:00");\n      const timeZone = String(config.timeZone || "").trim();
       const enterpriseId = config.enterpriseId ? String(config.enterpriseId) : undefined;
-      if (!serviceId || !rateId || !requestedCategoryId || !adultAgeCategoryId ||
+      if (!serviceId || !rateId || !requestedCategoryId || !adultAgeCategoryId || !timeZone ||
           !/^([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d$/.test(checkInTime) ||
           !/^([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d$/.test(checkOutTime)) {
-        throw new PmsIntegrationError("MEWS_PROPERTY_MAPPING_REQUIRED", "The hotel must map its Mews service, rate, room category, adult age category and local check-in/out times before bookings can be created.", 409);
+        throw new PmsIntegrationError("MEWS_PROPERTY_MAPPING_REQUIRED", "The hotel must map its Mews service, rate, room category, adult age category, IANA time zone and local check-in/out times before bookings can be created.", 409);
       }
       const [firstName, ...lastParts] = request.guest.name.split(" ");
       const lastName = lastParts.join(" ") || firstName;

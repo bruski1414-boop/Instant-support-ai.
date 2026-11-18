@@ -12,6 +12,8 @@ The revenue-offers panel uses a rolling **30 × 24-hour UTC window**. The API re
 
 The window uses enquiry creation time for enquiry counts and the supplied sale time for conversion value. This avoids treating the date a staff member entered a record as the date the sale happened.
 
+Offer prices shown in the editor and guest-answer context use the same currency-specific minor-unit precision. Zero-priced offers are allowed, while a converted sale must have a positive value.
+
 ## Evidence and attribution limits
 
 A staff member must provide:

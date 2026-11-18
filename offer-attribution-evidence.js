@@ -23,7 +23,7 @@ function currencyDigits(currency) {
   }
 }
 
-function toMinorUnits(amount, currency) {
+function toMinorUnits(amount, currency, options = {}) {
   if (typeof amount !== "string" && typeof amount !== "number") {
     throw new OfferAttributionEvidenceError("Enter a valid sale amount.");
   }
@@ -39,7 +39,7 @@ function toMinorUnits(amount, currency) {
   const factor = 10n ** BigInt(digits);
   const paddedFraction = (fraction + "0".repeat(digits)).slice(0, digits) || "0";
   const minor = BigInt(whole) * factor + BigInt(paddedFraction);
-  if (minor <= 0n || minor > BigInt(Number.MAX_SAFE_INTEGER)) {
+  if (minor < 0n || (minor === 0n && options.allowZero !== true) || minor > BigInt(Number.MAX_SAFE_INTEGER)) {
     throw new OfferAttributionEvidenceError("Sale value must be a positive, safely representable amount.");
   }
   return Number(minor);

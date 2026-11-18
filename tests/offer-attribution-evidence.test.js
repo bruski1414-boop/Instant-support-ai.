@@ -46,7 +46,7 @@ test("requires a supported ISO currency code", () => {
 
 test("requires a supported evidence type and an opaque source reference", () => {
   assert.throws(() => normalizeOfferAttributionUpdate(validConversion({ evidence_type: "guest_note" })));
-  for (const reference of ["", "   ", "guest@example.com", "record\nnext", "x".repeat(181)]) {
+  for (const reference of ["", "   ", "guest@example.com", "John Smith", "record\nnext", "x".repeat(181)]) {
     assert.throws(() => normalizeOfferAttributionUpdate(validConversion({ evidence_source_reference: reference })));
   }
 });

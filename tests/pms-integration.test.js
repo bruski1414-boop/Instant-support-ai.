@@ -239,6 +239,7 @@ test("production provider operations require validated server-side hotel credent
     mode: "production",
     capabilities: { availability: true, booking: true },
     async validateCredentials(input) {
+      if (!input || input.accessToken !== "server-only-token") throw new Error("invalid or revoked token");
       return { credentials: { accessToken: input.accessToken }, scopes: ["availability:read", "booking:write"] };
     },
     async testConnection(context) { calls.push(["test", context.credentials]); return { ok: true }; },
@@ -263,6 +264,9 @@ test("production provider operations require validated server-side hotel credent
     error.code === "PROVIDER_CREDENTIALS_REQUIRED" && error.status === 401);
   await assert.rejects(() => registry.getAvailability("securedprovider", input, { credentials: {} }), error =>
     error.code === "PROVIDER_CREDENTIALS_REQUIRED");
+  await assert.rejects(() => registry.getAvailability("securedprovider", input, {
+    credentials: { accessToken: "forged-or-revoked-token" },
+  }), error => error.code === "INVALID_CREDENTIALS" && error.status === 401);
 
   const validated = await registry.validateCredentials("securedprovider", { accessToken: "server-only-token" });
   const context = { credentials: validated.credentials };

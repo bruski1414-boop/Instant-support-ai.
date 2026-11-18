@@ -195,17 +195,34 @@ function createPmsRegistry(adapters = []) {
     return adapter;
   }
 
-  function requireProductionCredentials(adapter, context) {
-    if (adapter.mode !== "production") return;
+  async function requireProductionCredentials(adapter, context, requiredScopes = []) {
+    if (adapter.mode !== "production") return context;
     const credentials = context && context.credentials;
     if (!credentials || typeof credentials !== "object" || Array.isArray(credentials) ||
         Object.keys(credentials).length === 0) {
       throw new PmsIntegrationError(
         "PROVIDER_CREDENTIALS_REQUIRED",
-        "Validated hotel credentials are required for this production provider operation.",
+        "Hotel credentials must be supplied and revalidated for this production provider operation.",
         401,
       );
     }
+    let result;
+    try {
+      result = await adapter.validateCredentials(credentials);
+    } catch {
+      throw new PmsIntegrationError("INVALID_CREDENTIALS", "Provider rejected the hotel's stored connection credentials.", 401);
+    }
+    if (!result || typeof result !== "object" || Array.isArray(result) ||
+        !result.credentials || typeof result.credentials !== "object" || Array.isArray(result.credentials) ||
+        !Array.isArray(result.scopes) ||
+        result.scopes.some(scope => typeof scope !== "string" || !/^[a-zA-Z0-9:._-]{1,100}$/.test(scope))) {
+      throw new PmsIntegrationError("INVALID_CREDENTIALS", "Provider rejected the hotel's stored connection credentials.", 401);
+    }
+    const scopes = [...new Set(result.scopes)];
+    if (requiredScopes.some(scope => !scopes.includes(scope))) {
+      throw new PmsIntegrationError("PROVIDER_SCOPE_MISSING", "The hotel's PMS connection is missing a permission required for this operation.", 403);
+    }
+    return { ...context, credentials: result.credentials, scopes };
   }
   return Object.freeze({
     register,
@@ -228,26 +245,26 @@ function createPmsRegistry(adapters = []) {
     },
     testConnection: async (provider, context = {}) => {
       const adapter = get(provider);
-      requireProductionCredentials(adapter, context);
-      const result = await adapter.testConnection(context);
+      const securedContext = await requireProductionCredentials(adapter, context);
+      const result = await adapter.testConnection(securedContext);
       if (!result || result.ok !== true) throw new PmsIntegrationError("CONNECTION_TEST_FAILED", "PMS provider connection test failed.", 502);
       return { provider: adapter.id, providerName: adapter.name, mode: adapter.mode, ok: true, productionReady: adapter.mode === "production" };
     },
     getAvailability: async (provider, input, context = {}) => {
       const adapter = get(provider);
       if (!adapter.capabilities.availability) throw new PmsIntegrationError("CAPABILITY_UNAVAILABLE", "This provider adapter does not support availability lookup.", 409);
-      requireProductionCredentials(adapter, context);
+      const securedContext = await requireProductionCredentials(adapter, context, ["availability:read"]);
       const dates = validateDateRange(input);
-      const rows = await adapter.getAvailability(dates, context);
+      const rows = await adapter.getAvailability(dates, securedContext);
       if (!Array.isArray(rows) || rows.length > 200) throw new PmsIntegrationError("INVALID_PROVIDER_RESPONSE", "Provider returned an invalid availability list.", 502);
       return rows.map(normalizeAvailability);
     },
     createBooking: async (provider, input, context = {}) => {
       const adapter = get(provider);
       if (!adapter.capabilities.booking) throw new PmsIntegrationError("CAPABILITY_UNAVAILABLE", "This provider adapter does not support booking creation.", 409);
-      requireProductionCredentials(adapter, context);
+      const securedContext = await requireProductionCredentials(adapter, context, ["booking:write"]);
       const request = normalizeBookingRequest(input);
-      return normalizeBooking(await adapter.createBooking(request, context));
+      return normalizeBooking(await adapter.createBooking(request, securedContext));
     },
     verifyWebhook: async (provider, input) => {
       const adapter = get(provider);

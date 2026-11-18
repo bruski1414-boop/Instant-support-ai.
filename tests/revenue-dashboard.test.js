@@ -16,4 +16,6 @@ assert.match(html, /Hotel-attested sale value/);
 assert.match(html, /Not measured/);
 assert.match(html, /Not calculated/);
 assert.match(html, /not independently verified/i);
+assert.match(html, /sale_occurred_at:saleRaw/);
+assert.doesNotMatch(html, /sale_occurred_at:saleDate\.toISOString/);
 assert.doesNotMatch(html, /Only staff-confirmed sales count as generated revenue/);

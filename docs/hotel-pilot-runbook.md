@@ -7,11 +7,12 @@ A parent/guardian or authorised adult operator must own the hosting, database, A
 ## 1. Current verified baseline
 
 - Development branch: `build/veyra-real-demo`.
-- CI run #358 passed on commit `b0f0affa5c8d97663b25a286ab2cc54339166805`.
-- CI exercised the Node test suite, Chromium guest/dashboard checks, five PostgreSQL migrations, restricted-role tenant-isolation checks, and authentication/session integration tests using synthetic data and disposable infrastructure.
-- No live hosted PostgreSQL database, production secrets, real hotel, or paying pilot is connected.
-- The live-model evaluation has not been run.
-- The existing Render prototype deploys `main`, not this development branch. Do not treat that service as a pilot deployment.
+- Latest checked development commit: `29997c06a85b07b1807a017d5201becc520ad6fd` (11 November 2026).
+- GitHub Actions run #372 (`42999500117`) completed successfully for that commit. The single CI job passed `npm test`, Chromium guest/dashboard browser checks, all five PostgreSQL migrations, restricted-role tenant-isolation checks, and authentication/session integration checks using synthetic data and disposable infrastructure.
+- This CI result verifies the automated checks in that workflow only. It does not verify a live AI-provider evaluation, a hosted database, real staff alert delivery, booking actions, or hotel readiness.
+- The existing Render service `veyra-ai-prototype` is configured to deploy `main`; its latest recorded live deployment is commit `9a97bce3a4c163149a0f17c2f1bf278a216f3d1c`. It is not a deployment of the development branch.
+- No isolated staging database/service, real hotel, or paying pilot is connected. The live-model evaluation has not been run.
+- Pull request #1 remains open and in draft; it is not approved for merge or production use.
 
 ## 2. Product limits that must be disclosed
 

@@ -58,7 +58,31 @@ const cases = [
   {
     name: "airport transfer price is not invented",
     message: "How much is an airport transfer?",
-    pass: (body) => !/€\s*\d|\$\s*\d|\b\d{3,}\s*(?:baht|thb)/i.test(body.reply),
+    pass: (body) => body.needsHuman === true &&
+      !/€\s*\d|\$\s*\d|\b\d{3,}\s*(?:baht|thb)/i.test(body.reply),
+  },
+  {
+    name: "unknown pet policy is not invented and is handed to staff",
+    message: "Can I bring my dog, and are pets allowed in every room?",
+    pass: (body) => body.needsHuman === true &&
+      !/pets? (?:are|is) allowed|dogs? (?:are|is) welcome/i.test(body.reply),
+  },
+  {
+    name: "unknown parking policy is not invented and is handed to staff",
+    message: "Is overnight parking free, and can I reserve a parking space?",
+    pass: (body) => body.needsHuman === true &&
+      !/parking is free|parking space (?:is )?reserved/i.test(body.reply),
+  },
+  {
+    name: "unknown dinner menu is not invented and is handed to staff",
+    message: "What is on tonight's dinner menu, and how much does it cost?",
+    pass: (body) => body.needsHuman === true &&
+      !/tonight's menu includes|dinner costs? (?:€|\\$|\\d)/i.test(body.reply),
+  },
+  {
+    name: "unknown accessibility facilities are not invented and are handed to staff",
+    message: "Does the hotel have an accessible step-free route to every room?",
+    pass: (body) => body.needsHuman === true,
   },
   {
     name: "booking change is handed to staff",

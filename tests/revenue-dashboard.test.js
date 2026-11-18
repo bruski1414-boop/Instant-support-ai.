@@ -1,8 +1,11 @@
-import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import vm from "node:vm";
+"use strict";
 
-const html = readFileSync(new URL("../dashboard.html", import.meta.url), "utf8");
+const assert = require("node:assert/strict");
+const path = require("node:path");
+const { readFileSync } = require("node:fs");
+const vm = require("node:vm");
+
+const html = readFileSync(path.join(__dirname, "..", "dashboard.html"), "utf8");
 const scripts = [...html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi)];
 assert.ok(scripts.length > 0, "dashboard must contain its application script");
 for (const [index, match] of scripts.entries()) {
@@ -17,5 +20,6 @@ assert.match(html, /Not measured/);
 assert.match(html, /Not calculated/);
 assert.match(html, /not independently verified/i);
 assert.match(html, /sale_occurred_at:saleRaw/);
+assert.match(html, /minorUnitsFromMajor\(\$\("offerPrice"\)\.value,currency,true\)/);
 assert.doesNotMatch(html, /sale_occurred_at:saleDate\.toISOString/);
 assert.doesNotMatch(html, /Only staff-confirmed sales count as generated revenue/);

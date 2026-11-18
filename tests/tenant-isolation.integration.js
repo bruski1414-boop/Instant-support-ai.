@@ -238,6 +238,21 @@ try {
   const offersBBody = await offersBResponse.json();
   assert.equal(offersBBody.offers.length, 1);
   assert.equal(offersBBody.offers[0].id, tenants[1].offerId);
+  const unsupportedCurrencyOffer = await fetch(baseUrl + "/api/admin/offers", {
+    method: "POST",
+    headers: { cookie: cookieA, "X-CSRF-Token": tenants[0].csrfToken, "content-type": "application/json" },
+    body: JSON.stringify({
+      name: "Synthetic invalid currency offer",
+      description: "A test offer that must not accept an unknown currency code.",
+      category: "spa",
+      amount_minor: 100,
+      currency: "ABC",
+      status: "paused",
+      verify_availability: false,
+      expires_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+    }),
+  });
+  assert.equal(unsupportedCurrencyOffer.status, 400, "offer creation must reject unsupported ISO currency codes");
   const attributionAResponse = await fetch(baseUrl + "/api/admin/offer-attributions", { headers: { cookie: cookieA } });
   assert.equal(attributionAResponse.status, 200, "tenant A can view its revenue attribution");
   const attributionABody = await attributionAResponse.json();

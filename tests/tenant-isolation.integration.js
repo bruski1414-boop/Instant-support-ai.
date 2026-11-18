@@ -317,6 +317,19 @@ try {
   assert.equal(conversionAudit.rows[0].details.previous.status, "enquiry");
   assert.equal(conversionAudit.rows[0].details.current.evidence_source_reference, validSaleEvidence.evidence_source_reference);
   assert.equal(conversionAudit.rows[0].details.current.amount_minor, 235000);
+  await assert.rejects(
+    pool.query(
+      "UPDATE hotel_offer_attributions SET evidence_source_reference='' WHERE id=$1 AND organization_id=(SELECT id FROM organizations WHERE slug=$2)",
+      [tenants[0].attributionId, tenants[0].slug]
+    ),
+    /hotel_offer_attributions_converted_evidence_check/,
+    "the database must reject a converted row after its evidence reference is removed"
+  );
+  const protectedEvidence = await pool.query(
+    "SELECT evidence_source_reference FROM hotel_offer_attributions WHERE id=$1 AND organization_id=(SELECT id FROM organizations WHERE slug=$2)",
+    [tenants[0].attributionId, tenants[0].slug]
+  );
+  assert.equal(protectedEvidence.rows[0].evidence_source_reference, validSaleEvidence.evidence_source_reference);
 
   const attributionBAfter = await fetch(baseUrl + "/api/admin/offer-attributions", { headers: { cookie: cookieB } });
   const attributionBBody = await attributionBAfter.json();

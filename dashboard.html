@@ -154,7 +154,7 @@ main{padding:28px clamp(16px,4vw,48px);max-width:1450px;width:100%;margin:auto}.
     </div>
     <div class="field"><label for="offerDescription">Description and conditions</label><textarea id="offerDescription" required maxlength="400" placeholder="Describe exactly what is included and any important conditions."></textarea></div>
     <div class="formrow">
-     <div class="field"><label for="offerPrice">Price (major currency units)</label><input id="offerPrice" type="number" min="0" step="0.01" required placeholder="e.g. 2500"></div>
+     <div class="field"><label for="offerPrice">Price (major currency units)</label><input id="offerPrice" type="number" min="0" step="any" required placeholder="e.g. 2500"></div>
      <div class="field"><label for="offerCurrency">Currency code</label><input id="offerCurrency" required minlength="3" maxlength="3" value="THB"></div>
      <div class="field"><label for="offerExpiry">Offer expires</label><input id="offerExpiry" type="datetime-local" required></div>
     </div>
@@ -257,7 +257,7 @@ async function loadOffers(){
  const d=await api("/api/admin/offers");
  const offers=d.offers||[];
  $("offerList").innerHTML=offers.map(x=>{
-  const price=(Number(x.amount_minor||0)/100).toFixed(2)+" "+safe(x.currency);
+  const price=moneyMinor(x.amount_minor,x.currency);
   const verified=x.availability_status==="available"&&x.availability_verified_at;
   const fresh=verified&&(Date.now()-new Date(x.availability_verified_at).getTime()<=15*60*1000);
   const status=fresh?"availability verified":x.availability_status==="unavailable"?"unavailable":"not verified";
@@ -449,7 +449,7 @@ $("inviteForm").addEventListener("submit",async e=>{e.preventDefault();const res
 $("memberList").addEventListener("click",async e=>{const b=e.target.closest('button[data-action="toggle-user"]');if(!b)return;const active=b.dataset.active==="true";if(!confirm((active?"Reactivate":"Deactivate")+" this team member? "+(!active?"Their active sessions will be revoked.":"")))return;b.disabled=true;try{await api("/api/admin/users/"+encodeURIComponent(b.dataset.id),{method:"PATCH",body:JSON.stringify({active})});showToast(active?"Team account reactivated.":"Team access revoked.");await loadUsers();}catch(err){notice(err.message,"error");b.disabled=false;}});
 $("invitationList").addEventListener("click",async e=>{const b=e.target.closest('button[data-action="revoke-invitation"]');if(!b)return;if(!confirm("Revoke this unused invitation?"))return;b.disabled=true;try{await api("/api/admin/invitations/"+encodeURIComponent(b.dataset.id),{method:"DELETE",body:"{}"});showToast("Invitation revoked.");await loadInvitations();}catch(err){notice(err.message,"error");b.disabled=false;}});
 
-$("offerForm").addEventListener("submit",async e=>{e.preventDefault();try{const price=Number($("offerPrice").value);if(!Number.isFinite(price)||price<0)throw new Error("Enter a valid price.");const expiry=new Date($("offerExpiry").value);if(!Number.isFinite(expiry.getTime())||expiry<=new Date())throw new Error("Choose a future expiry date.");await api("/api/admin/offers",{method:"POST",body:JSON.stringify({name:$("offerName").value,description:$("offerDescription").value,category:$("offerCategory").value,amount_minor:Math.round(price*100),currency:$("offerCurrency").value,status:$("offerStatus").value,verify_availability:$("offerVerify").checked,expires_at:expiry.toISOString()})});$("offerForm").reset();$("offerCurrency").value="THB";showToast("Offer saved. It will only be recommended when availability verification is fresh.");await loadOffers();}catch(err){notice(err.message,"error");}});
+$("offerForm").addEventListener("submit",async e=>{e.preventDefault();try{const currency=$("offerCurrency").value.trim().toUpperCase();const amountMinor=minorUnitsFromMajor($("offerPrice").value,currency);const expiry=new Date($("offerExpiry").value);if(!Number.isFinite(expiry.getTime())||expiry<=new Date())throw new Error("Choose a future expiry date.");await api("/api/admin/offers",{method:"POST",body:JSON.stringify({name:$("offerName").value,description:$("offerDescription").value,category:$("offerCategory").value,amount_minor:amountMinor,currency,status:$("offerStatus").value,verify_availability:$("offerVerify").checked,expires_at:expiry.toISOString()})});$("offerForm").reset();$("offerCurrency").value="THB";showToast("Offer saved. It will only be recommended when availability verification is fresh.");await loadOffers();}catch(err){notice(err.message,"error");}});
 
 $("attributionList").addEventListener("click",async e=>{
  const b=e.target.closest("button[data-attribution-action]");if(!b)return;

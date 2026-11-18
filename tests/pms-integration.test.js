@@ -229,3 +229,46 @@ test("sandbox adapters cannot accept arbitrary hotel credentials", async () => {
   await assert.rejects(() => registry.validateCredentials("sandbox", { clientSecret: "secret" }),
     error => error.code === "CREDENTIAL_VALIDATION_UNAVAILABLE");
 });
+
+
+test("production provider operations require validated server-side hotel credentials", async () => {
+  const calls = [];
+  const adapter = {
+    id: "securedprovider",
+    name: "Secured provider",
+    mode: "production",
+    capabilities: { availability: true, booking: true },
+    async validateCredentials(input) {
+      return { credentials: { accessToken: input.accessToken }, scopes: ["availability:read", "booking:write"] };
+    },
+    async testConnection(context) { calls.push(["test", context.credentials]); return { ok: true }; },
+    async getAvailability(_dates, context) {
+      calls.push(["availability", context.credentials]);
+      return [{ roomTypeId: "suite", roomTypeName: "Suite", currency: "EUR", amountMinor: 12000, availableUnits: 1 }];
+    },
+    async createBooking(_request, context) {
+      calls.push(["booking", context.credentials]);
+      return { bookingId: "booking-1", status: "confirmed" };
+    },
+  };
+  const registry = createPmsRegistry([adapter]);
+  const input = { checkIn: "2027-01-10", checkOut: "2027-01-11" };
+  const booking = { ...input, roomTypeId: "suite", guestCount: 2, idempotencyKey: "booking_req_12345" };
+
+  await assert.rejects(() => registry.testConnection("securedprovider"), error =>
+    error.code === "PROVIDER_CREDENTIALS_REQUIRED" && error.status === 401);
+  await assert.rejects(() => registry.getAvailability("securedprovider", input), error =>
+    error.code === "PROVIDER_CREDENTIALS_REQUIRED" && error.status === 401);
+  await assert.rejects(() => registry.createBooking("securedprovider", booking), error =>
+    error.code === "PROVIDER_CREDENTIALS_REQUIRED" && error.status === 401);
+  await assert.rejects(() => registry.getAvailability("securedprovider", input, { credentials: {} }), error =>
+    error.code === "PROVIDER_CREDENTIALS_REQUIRED");
+
+  const validated = await registry.validateCredentials("securedprovider", { accessToken: "server-only-token" });
+  const context = { credentials: validated.credentials };
+  assert.equal((await registry.testConnection("securedprovider", context)).productionReady, true);
+  assert.equal((await registry.getAvailability("securedprovider", input, context)).length, 1);
+  assert.equal((await registry.createBooking("securedprovider", booking, context)).bookingId, "booking-1");
+  assert.equal(calls.length, 3);
+  assert.ok(calls.every(([, credentials]) => credentials.accessToken === "server-only-token"));
+});

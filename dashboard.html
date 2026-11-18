@@ -464,7 +464,7 @@ $("attributionList").addEventListener("click",async e=>{
   const saleDate=new Date(saleRaw);if(!Number.isFinite(saleDate.getTime())){notice("Enter a valid sale date/time.","error");return;}
   const evidenceTypeRaw=prompt("Evidence source type: pms_record, payment_receipt, invoice, or hotel_report","pms_record");if(evidenceTypeRaw===null)return;const evidenceType=evidenceTypeRaw.trim();
   const evidenceReferenceRaw=prompt("Opaque hotel evidence record reference (do not enter guest personal or payment-card data):");if(evidenceReferenceRaw===null)return;const evidenceReference=evidenceReferenceRaw.trim();
-  payload={status:action,amount_minor:amountMinor,currency,sale_occurred_at:saleDate.toISOString(),evidence_type:evidenceType,evidence_source_reference:evidenceReference,notes:""};
+  payload={status:action,amount_minor:amountMinor,currency,sale_occurred_at:saleRaw,evidence_type:evidenceType,evidence_source_reference:evidenceReference,notes:""};
  }
  if(!confirm(action==="converted"?"Record this completed sale as hotel-attested evidence? Veyra does not independently verify the source or payment.":"Close this enquiry as not converted?"))return;
  b.disabled=true;

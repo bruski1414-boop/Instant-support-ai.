@@ -3,31 +3,24 @@
 const { PmsIntegrationError, validateDateRange } = require("./pms-integration");
 
 const BOOKING_STATES = Object.freeze([
-  "draft",
-  "awaiting_payment",
-  "payment_pending",
-  "payment_verified",
-  "booking_pending",
-  "confirmed",
-  "payment_failed",
-  "booking_failed",
-  "cancelled",
+  "draft", "awaiting_payment", "payment_pending", "payment_verified",
+  "booking_pending", "confirmed", "payment_failed", "booking_failed", "cancelled",
 ]);
 
 function normalizeGuestDetails(input = {}) {
   if (!input || typeof input !== "object" || Array.isArray(input)) {
     throw new PmsIntegrationError("INVALID_GUEST_DETAILS", "Guest details are required.");
   }
-  const name = typeof input.name === "string" ? input.name.trim().replace(/\\s+/g, " ") : "";
+  const name = typeof input.name === "string" ? input.name.trim().replace(/\s+/g, " ") : "";
   const phone = typeof input.phone === "string" ? input.phone.trim() : "";
   const email = typeof input.email === "string" ? input.email.trim().toLowerCase() : "";
-  if (name.length < 2 || name.length > 120 || /[<>\\u0000-\\u001f]/.test(name)) {
+  if (name.length < 2 || name.length > 120 || /[<>\u0000-\u001f]/.test(name)) {
     throw new PmsIntegrationError("INVALID_GUEST_NAME", "Enter a valid guest name.");
   }
-  if (!/^\\+[1-9]\\d{7,14}$/.test(phone)) {
+  if (!/^\+[1-9]\d{7,14}$/.test(phone)) {
     throw new PmsIntegrationError("INVALID_GUEST_PHONE", "Enter a phone number in international format, including country code.");
   }
-  if (email && (email.length > 254 || !/^[-.+\\w]+@[-.\\w]+\\.[A-Za-z]{2,}$/.test(email))) {
+  if (email && (email.length > 254 || !/^[-.+\w]+@[-.\w]+\.[A-Za-z]{2,}$/.test(email))) {
     throw new PmsIntegrationError("INVALID_GUEST_EMAIL", "Enter a valid email address or leave it blank.");
   }
   return { name, phone, email: email || null };
@@ -40,9 +33,7 @@ function calculateDeposit(totalAmountMinor, depositPercent = 50) {
   }
   const depositAmountMinor = Math.ceil(totalAmountMinor * depositPercent / 100);
   return {
-    totalAmountMinor,
-    depositPercent,
-    depositAmountMinor,
+    totalAmountMinor, depositPercent, depositAmountMinor,
     balanceAmountMinor: totalAmountMinor - depositAmountMinor,
   };
 }
@@ -61,23 +52,15 @@ function buildBookingIntent(input = {}) {
       !/^[A-Za-z0-9_-]{12,100}$/.test(idempotencyKey)) {
     throw new PmsIntegrationError("INVALID_BOOKING_INTENT", "A valid room, guest count, currency and unique request key are required.");
   }
-  if (input.availabilityVerified !== true || typeof input.availabilityVerifiedAt !== "string" ||
-      !Number.isFinite(Date.parse(input.availabilityVerifiedAt)) ||
-      Date.now() - Date.parse(input.availabilityVerifiedAt) > 5 * 60 * 1000 ||
-      Date.parse(input.availabilityVerifiedAt) > Date.now()) {
+  const verifiedAt = typeof input.availabilityVerifiedAt === "string" ? Date.parse(input.availabilityVerifiedAt) : NaN;
+  if (input.availabilityVerified !== true || !Number.isFinite(verifiedAt) ||
+      Date.now() - verifiedAt > 5 * 60 * 1000 || verifiedAt > Date.now()) {
     throw new PmsIntegrationError("AVAILABILITY_NOT_VERIFIED", "Live room availability must be rechecked immediately before taking a deposit.", 409);
   }
   const amounts = calculateDeposit(totalAmountMinor, 50);
   return {
-    ...dates,
-    guest,
-    roomTypeId,
-    guestCount,
-    currency,
-    ...amounts,
-    idempotencyKey,
-    state: "awaiting_payment",
-    createdAt: new Date().toISOString(),
+    ...dates, guest, roomTypeId, guestCount, currency, ...amounts,
+    idempotencyKey, state: "awaiting_payment", createdAt: new Date().toISOString(),
   };
 }
 
@@ -107,9 +90,5 @@ function assertBookingTransition(currentState, nextState, evidence = {}) {
 }
 
 module.exports = {
-  BOOKING_STATES,
-  normalizeGuestDetails,
-  calculateDeposit,
-  buildBookingIntent,
-  assertBookingTransition,
+  BOOKING_STATES, normalizeGuestDetails, calculateDeposit, buildBookingIntent, assertBookingTransition,
 };

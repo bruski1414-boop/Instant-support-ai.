@@ -46,5 +46,5 @@ test("live evaluation uses the shared fictional fixture and covers guest-to-staf
   assert.match(source, /food allergy/i);
   assert.match(source, /prompt injection/i);
   assert.match(source, /const cases = \[/);
-  assert.equal((source.match(/name: "/g) || []).length, 15);
+  assert.equal((source.match(/name: "/g) || []).length, 19);
 });

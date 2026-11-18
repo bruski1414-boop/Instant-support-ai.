@@ -194,6 +194,19 @@ function createPmsRegistry(adapters = []) {
     if (!adapter) throw new PmsIntegrationError("PROVIDER_UNAVAILABLE", "This PMS provider has no installed adapter.", 404);
     return adapter;
   }
+
+  function requireProductionCredentials(adapter, context) {
+    if (adapter.mode !== "production") return;
+    const credentials = context && context.credentials;
+    if (!credentials || typeof credentials !== "object" || Array.isArray(credentials) ||
+        Object.keys(credentials).length === 0) {
+      throw new PmsIntegrationError(
+        "PROVIDER_CREDENTIALS_REQUIRED",
+        "Validated hotel credentials are required for this production provider operation.",
+        401,
+      );
+    }
+  }
   return Object.freeze({
     register,
     list: () => [...registered.values()].map(({ id, name, mode, capabilities }) => ({ id, name, mode, capabilities })),
@@ -215,6 +228,7 @@ function createPmsRegistry(adapters = []) {
     },
     testConnection: async (provider, context = {}) => {
       const adapter = get(provider);
+      requireProductionCredentials(adapter, context);
       const result = await adapter.testConnection(context);
       if (!result || result.ok !== true) throw new PmsIntegrationError("CONNECTION_TEST_FAILED", "PMS provider connection test failed.", 502);
       return { provider: adapter.id, providerName: adapter.name, mode: adapter.mode, ok: true, productionReady: adapter.mode === "production" };
@@ -222,6 +236,7 @@ function createPmsRegistry(adapters = []) {
     getAvailability: async (provider, input, context = {}) => {
       const adapter = get(provider);
       if (!adapter.capabilities.availability) throw new PmsIntegrationError("CAPABILITY_UNAVAILABLE", "This provider adapter does not support availability lookup.", 409);
+      requireProductionCredentials(adapter, context);
       const dates = validateDateRange(input);
       const rows = await adapter.getAvailability(dates, context);
       if (!Array.isArray(rows) || rows.length > 200) throw new PmsIntegrationError("INVALID_PROVIDER_RESPONSE", "Provider returned an invalid availability list.", 502);
@@ -230,6 +245,7 @@ function createPmsRegistry(adapters = []) {
     createBooking: async (provider, input, context = {}) => {
       const adapter = get(provider);
       if (!adapter.capabilities.booking) throw new PmsIntegrationError("CAPABILITY_UNAVAILABLE", "This provider adapter does not support booking creation.", 409);
+      requireProductionCredentials(adapter, context);
       const request = normalizeBookingRequest(input);
       return normalizeBooking(await adapter.createBooking(request, context));
     },

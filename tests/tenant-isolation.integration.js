@@ -244,7 +244,7 @@ try {
   assert.equal(attributionABody.attributions.length, 1);
   assert.equal(attributionABody.attributions[0].id, tenants[0].attributionId);
   assert.equal(JSON.stringify(attributionABody).includes(tenants[1].name), false, "tenant A must not see tenant B attribution");
-  const saleOccurredAt = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+  const saleOccurredAt = new Date().toISOString();
   const validSaleEvidence = {
     status: "converted",
     amount_minor: 250000,
@@ -265,6 +265,12 @@ try {
     body: JSON.stringify({ ...validSaleEvidence, evidence_source_reference: "" }),
   });
   assert.equal(invalidConversion.status, 400, "a converted offer requires a traceable evidence reference");
+  const saleBeforeEnquiry = await fetch(baseUrl + "/api/admin/offer-attributions/" + tenants[0].attributionId, {
+    method: "PATCH",
+    headers: { cookie: cookieA, "X-CSRF-Token": tenants[0].csrfToken, "content-type": "application/json" },
+    body: JSON.stringify({ ...validSaleEvidence, sale_occurred_at: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString() }),
+  });
+  assert.equal(saleBeforeEnquiry.status, 400, "a sale dated before the offer enquiry must not be attributed to it");
   const ownAttributionUpdate = await fetch(baseUrl + "/api/admin/offer-attributions/" + tenants[0].attributionId, {
     method: "PATCH",
     headers: { cookie: cookieA, "X-CSRF-Token": tenants[0].csrfToken, "content-type": "application/json" },

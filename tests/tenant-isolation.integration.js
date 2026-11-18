@@ -238,36 +238,105 @@ try {
   const offersBBody = await offersBResponse.json();
   assert.equal(offersBBody.offers.length, 1);
   assert.equal(offersBBody.offers[0].id, tenants[1].offerId);
+  const unsupportedCurrencyOffer = await fetch(baseUrl + "/api/admin/offers", {
+    method: "POST",
+    headers: { cookie: cookieA, "X-CSRF-Token": tenants[0].csrfToken, "content-type": "application/json" },
+    body: JSON.stringify({
+      name: "Synthetic invalid currency offer",
+      description: "A test offer that must not accept an unknown currency code.",
+      category: "spa",
+      amount_minor: 100,
+      currency: "ABC",
+      status: "paused",
+      verify_availability: false,
+      expires_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+    }),
+  });
+  assert.equal(unsupportedCurrencyOffer.status, 400, "offer creation must reject unsupported ISO currency codes");
   const attributionAResponse = await fetch(baseUrl + "/api/admin/offer-attributions", { headers: { cookie: cookieA } });
   assert.equal(attributionAResponse.status, 200, "tenant A can view its revenue attribution");
   const attributionABody = await attributionAResponse.json();
   assert.equal(attributionABody.attributions.length, 1);
   assert.equal(attributionABody.attributions[0].id, tenants[0].attributionId);
   assert.equal(JSON.stringify(attributionABody).includes(tenants[1].name), false, "tenant A must not see tenant B attribution");
+  const saleOccurredAt = new Date().toISOString();
+  const validSaleEvidence = {
+    status: "converted",
+    amount_minor: 250000,
+    currency: "THB",
+    sale_occurred_at: saleOccurredAt,
+    evidence_type: "pms_record",
+    evidence_source_reference: "PMS-SALE-" + tag,
+  };
   const crossAttributionUpdate = await fetch(baseUrl + "/api/admin/offer-attributions/" + tenants[1].attributionId, {
     method: "PATCH",
     headers: { cookie: cookieA, "X-CSRF-Token": tenants[0].csrfToken, "content-type": "application/json" },
-    body: JSON.stringify({ status: "converted", amount_minor: 250000, currency: "THB" }),
+    body: JSON.stringify(validSaleEvidence),
   });
   assert.equal(crossAttributionUpdate.status, 404, "tenant A must not confirm tenant B's sale");
   const invalidConversion = await fetch(baseUrl + "/api/admin/offer-attributions/" + tenants[0].attributionId, {
     method: "PATCH",
     headers: { cookie: cookieA, "X-CSRF-Token": tenants[0].csrfToken, "content-type": "application/json" },
-    body: JSON.stringify({ status: "converted", amount_minor: -1, currency: "THB" }),
+    body: JSON.stringify({ ...validSaleEvidence, evidence_source_reference: "" }),
   });
-  assert.equal(invalidConversion.status, 400, "completed sale requires a valid non-negative actual amount");
+  assert.equal(invalidConversion.status, 400, "a converted offer requires a traceable evidence reference");
+  const saleBeforeEnquiry = await fetch(baseUrl + "/api/admin/offer-attributions/" + tenants[0].attributionId, {
+    method: "PATCH",
+    headers: { cookie: cookieA, "X-CSRF-Token": tenants[0].csrfToken, "content-type": "application/json" },
+    body: JSON.stringify({ ...validSaleEvidence, sale_occurred_at: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString() }),
+  });
+  assert.equal(saleBeforeEnquiry.status, 400, "a sale dated before the offer enquiry must not be attributed to it");
   const ownAttributionUpdate = await fetch(baseUrl + "/api/admin/offer-attributions/" + tenants[0].attributionId, {
     method: "PATCH",
     headers: { cookie: cookieA, "X-CSRF-Token": tenants[0].csrfToken, "content-type": "application/json" },
-    body: JSON.stringify({ status: "converted", amount_minor: 235000, currency: "THB", notes: "Confirmed by hotel staff" }),
+    body: JSON.stringify({ ...validSaleEvidence, amount_minor: 235000, notes: "Checked against the hotel record" }),
   });
-  assert.equal(ownAttributionUpdate.status, 200, "tenant A can confirm its own sale");
+  assert.equal(ownAttributionUpdate.status, 200, "tenant A can confirm its own sale with evidence");
   const confirmedAttribution = await ownAttributionUpdate.json();
   assert.equal(confirmedAttribution.attribution.amount_minor, "235000");
   assert.equal(confirmedAttribution.attribution.status, "converted");
+  assert.equal(confirmedAttribution.attribution.evidence_type, "pms_record");
+  assert.equal(confirmedAttribution.attribution.evidence_source_reference, validSaleEvidence.evidence_source_reference);
+  assert.ok(confirmedAttribution.attribution.sale_occurred_at);
+
+  const attributionAAfter = await fetch(baseUrl + "/api/admin/offer-attributions", { headers: { cookie: cookieA } });
+  const attributionAAfterBody = await attributionAAfter.json();
+  assert.equal(attributionAAfterBody.windowDays, 30);
+  assert.equal(Date.parse(attributionAAfterBody.windowEnd) - Date.parse(attributionAAfterBody.windowStart), 30 * 24 * 60 * 60 * 1000);
+  assert.equal(attributionAAfterBody.enquiryCount, 1);
+  assert.equal(attributionAAfterBody.distinctEnquiryConversationCount, 1);
+  assert.equal(attributionAAfterBody.legacyUnreferencedConversionCount, 0);
+  assert.equal(attributionAAfterBody.evidenceBackedTotals.length, 1);
+  assert.equal(attributionAAfterBody.evidenceBackedTotals[0].amount_minor, "235000");
+  assert.equal(attributionAAfterBody.evidenceBackedTotals[0].count, 1);
+  const conversionAudit = await pool.query(
+    "SELECT details FROM audit_logs WHERE organization_id=(SELECT id FROM organizations WHERE slug=$1) AND action='offer_attribution.converted' AND target_id=$2 ORDER BY created_at DESC LIMIT 1",
+    [tenants[0].slug, tenants[0].attributionId]
+  );
+  assert.equal(conversionAudit.rows.length, 1, "the evidence update and its audit record must both persist");
+  assert.equal(conversionAudit.rows[0].details.previous.status, "enquiry");
+  assert.equal(conversionAudit.rows[0].details.current.evidence_source_reference, validSaleEvidence.evidence_source_reference);
+  assert.equal(conversionAudit.rows[0].details.current.amount_minor, 235000);
+  await assert.rejects(
+    pool.query(
+      "UPDATE hotel_offer_attributions SET evidence_source_reference='' WHERE id=$1 AND organization_id=(SELECT id FROM organizations WHERE slug=$2)",
+      [tenants[0].attributionId, tenants[0].slug]
+    ),
+    /hotel_offer_attributions_converted_evidence_check/,
+    "the database must reject a converted row after its evidence reference is removed"
+  );
+  const protectedEvidence = await pool.query(
+    "SELECT evidence_source_reference FROM hotel_offer_attributions WHERE id=$1 AND organization_id=(SELECT id FROM organizations WHERE slug=$2)",
+    [tenants[0].attributionId, tenants[0].slug]
+  );
+  assert.equal(protectedEvidence.rows[0].evidence_source_reference, validSaleEvidence.evidence_source_reference);
+
   const attributionBAfter = await fetch(baseUrl + "/api/admin/offer-attributions", { headers: { cookie: cookieB } });
   const attributionBBody = await attributionBAfter.json();
   assert.equal(attributionBBody.attributions[0].status, "enquiry", "tenant A's confirmation must not affect tenant B");
+  assert.equal(attributionBBody.evidenceBackedTotals.length, 0, "tenant B must not see tenant A's evidence-backed value");
+  assert.equal(attributionBBody.distinctEnquiryConversationCount, 1);
+  assert.equal(JSON.stringify(attributionBBody).includes(validSaleEvidence.evidence_source_reference), false, "tenant B must not see tenant A's evidence reference");
 
   const crossOfferVerify = await fetch(baseUrl + "/api/admin/offers/" + tenants[1].offerId + "/verify", {
     method: "POST",

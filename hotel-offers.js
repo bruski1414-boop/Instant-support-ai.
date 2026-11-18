@@ -1,5 +1,7 @@
 "use strict";
 
+const { currencyDigits } = require("./offer-attribution-evidence");
+
 const MAX_AVAILABILITY_AGE_MS = 15 * 60 * 1000;
 const MAX_RECOMMENDATIONS = 3;
 
@@ -33,7 +35,8 @@ function normalizeOffer(offer, now = Date.now()) {
   if (!id || id.length > 80 || !name || name.length > 120) return null;
   if (!description || description.length > 400) return null;
   if (!Object.hasOwn(INTENT_KEYWORDS, category)) return null;
-  if (!/^[A-Z]{3}$/.test(currency)) return null;
+  let minorUnitDigits;
+  try { minorUnitDigits = currencyDigits(currency); } catch { return null; }
   if (!Number.isSafeInteger(amountMinor) || amountMinor < 0) return null;
   if (offer.status !== "active" || offer.availabilityStatus !== "available") return null;
   if (verifiedAt === null || verifiedAt > now || now - verifiedAt > MAX_AVAILABILITY_AGE_MS) return null;
@@ -46,6 +49,7 @@ function normalizeOffer(offer, now = Date.now()) {
     category,
     amountMinor,
     currency,
+    minorUnitDigits,
     availabilityVerifiedAt: new Date(verifiedAt).toISOString(),
     expiresAt: new Date(expiresAt).toISOString(),
   };
@@ -79,7 +83,7 @@ function buildOfferContext(offers) {
       name: offer.name,
       description: offer.description,
       category: offer.category,
-      price_major_units: Number((offer.amountMinor / 100).toFixed(2)),
+      price_major_units: Number((offer.amountMinor / (10 ** currencyDigits(offer.currency))).toFixed(currencyDigits(offer.currency))),
       currency: offer.currency,
       availability_verified_at: offer.availabilityVerifiedAt,
       offer_expires_at: offer.expiresAt,

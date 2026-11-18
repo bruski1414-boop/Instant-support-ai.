@@ -26,6 +26,7 @@ test("normalizes a current, available, fully priced offer", () => {
   assert.equal(result.name, "Relaxation massage");
   assert.equal(result.amountMinor, 250000);
   assert.equal(result.currency, "THB");
+  assert.equal(result.minorUnitDigits, 2);
 });
 
 test("rejects offers with stale or future availability verification", () => {
@@ -39,6 +40,7 @@ test("rejects unavailable, inactive, expired, or malformed offers", () => {
   assert.equal(normalizeOffer(offer({ expiresAt: new Date(now).toISOString() }), now), null);
   assert.equal(normalizeOffer(offer({ amountMinor: -1 }), now), null);
   assert.equal(normalizeOffer(offer({ currency: "THB!" }), now), null);
+  assert.equal(normalizeOffer(offer({ currency: "ABC" }), now), null);
 });
 
 test("selects only offers matching the guest's expressed intent", () => {
@@ -71,4 +73,13 @@ test("caps recommendations at three and includes only verified offer context", (
   assert.match(context, /price_major_units/);
   assert.match(context, /2500/);
   assert.match(context, /availability_verified_at/);
+});
+
+test("formats offer context with zero- and three-decimal currency precision", () => {
+  const yen = normalizeOffer(offer({ currency: "JPY", amountMinor: 2500 }), now);
+  const dinar = normalizeOffer(offer({ currency: "KWD", amountMinor: 2500 }), now);
+  assert.equal(yen.minorUnitDigits, 0);
+  assert.equal(dinar.minorUnitDigits, 3);
+  assert.equal(JSON.parse(buildOfferContext([yen])).price_major_units, 2500);
+  assert.equal(JSON.parse(buildOfferContext([dinar])).price_major_units, 2.5);
 });

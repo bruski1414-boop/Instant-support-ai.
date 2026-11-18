@@ -30,6 +30,7 @@ The web service and database are currently on Render's free plans. The database 
 - Per-hotel staff notification endpoints: each hotel owner/admin configures its own HTTPS receiver and signing secret. Endpoint and secret are encrypted at rest with a dedicated AES-256-GCM key, never returned by dashboard APIs, verified by a signed test event, and removed independently per hotel. Webhook DNS is checked against private/reserved IP ranges and the outbound HTTPS request pins the validated public IP and refuses redirects.
 - Knowledge source references and review dates, with overdue documents automatically excluded from guest-answer context until reviewed.
 - Owner dashboard for conversations, knowledge approval and escalation status.
+- Hotel-attested offer-conversion evidence with a rolling 30-day UTC report, currency-aware minor units, tenant-scoped transactional audit updates, and explicit unmeasured influence/staff-time metrics. Evidence references are not independently verified provider or payment events.
 - Embeddable guest chat widget with multi-turn conversation continuity, bounded history and a per-conversation access token stored only as a hash server-side.
 - Public file allowlist so source files, tests and internal documentation are not served as website assets.
 - Baseline browser security headers (content-type sniffing, framing, referrer and permissions policies).

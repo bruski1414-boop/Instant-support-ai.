@@ -40,3 +40,19 @@ The PMS connections table stores only encrypted credential material plus non-sec
 - Mews getting started and demo environment: https://docs.mews.com/getting-started
 - Cloudbeds partner integration guide: https://developers.cloudbeds.com/docs/integration-guide
 - Cloudbeds sandbox request: https://developers.cloudbeds.com/docs/request-your-sandbox
+
+
+## PMS credential encryption key operations
+
+The current credential vault uses one active AES-256-GCM key and does not yet support automatic multi-key rotation. Replacing `PMS_CREDENTIAL_ENCRYPTION_KEY` before re-encrypting every stored connection will make existing credentials undecryptable.
+
+For a planned rotation:
+
+1. Have the authorised platform operator schedule a maintenance window and pause PMS operations.
+2. Take and verify a protected database backup. Keep the old key available in the approved secrets manager; never put either key in GitHub, a ticket, or chat.
+3. Run a reviewed migration process that decrypts each hotel's credential using the old key and encrypts it with the new key. Keep each update scoped by both `organization_id` and `provider`.
+4. Verify every row can be decrypted with the new key and that no plaintext credential is written to logs, temporary files, or migration output.
+5. Only after verification, update the runtime secret to the new key, restart the service, and test each provider connection with its authorised hotel administrator.
+6. Retain the old key only for the approved rollback window, then revoke and securely destroy it under the operator's key-management policy.
+
+Do not attempt an ad-hoc key replacement. A dedicated, tested rotation utility and recovery procedure are still required before production hotels rely on this vault.

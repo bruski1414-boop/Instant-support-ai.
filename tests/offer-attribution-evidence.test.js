@@ -36,6 +36,7 @@ test("requires a positive safely representable amount", () => {
     assert.throws(() => normalizeOfferAttributionUpdate(validConversion({ amount_minor: amount })));
   }
   assert.throws(() => toMinorUnits("0", "EUR"));
+  assert.equal(toMinorUnits("0", "EUR", { allowZero: true }), 0);
 });
 
 test("requires a supported ISO currency code", () => {

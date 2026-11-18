@@ -310,10 +310,13 @@ try {
   assert.equal(attributionAAfterBody.evidenceBackedTotals[0].amount_minor, "235000");
   assert.equal(attributionAAfterBody.evidenceBackedTotals[0].count, 1);
   const conversionAudit = await pool.query(
-    "SELECT count(*)::int AS count FROM audit_logs WHERE organization_id=(SELECT id FROM organizations WHERE slug=$1) AND action='offer_attribution.converted' AND target_id=$2",
+    "SELECT details FROM audit_logs WHERE organization_id=(SELECT id FROM organizations WHERE slug=$1) AND action='offer_attribution.converted' AND target_id=$2 ORDER BY created_at DESC LIMIT 1",
     [tenants[0].slug, tenants[0].attributionId]
   );
-  assert.equal(conversionAudit.rows[0].count, 1, "the evidence update and its audit record must both persist");
+  assert.equal(conversionAudit.rows.length, 1, "the evidence update and its audit record must both persist");
+  assert.equal(conversionAudit.rows[0].details.previous.status, "enquiry");
+  assert.equal(conversionAudit.rows[0].details.current.evidence_source_reference, validSaleEvidence.evidence_source_reference);
+  assert.equal(conversionAudit.rows[0].details.current.amount_minor, 235000);
 
   const attributionBAfter = await fetch(baseUrl + "/api/admin/offer-attributions", { headers: { cookie: cookieB } });
   const attributionBBody = await attributionBAfter.json();

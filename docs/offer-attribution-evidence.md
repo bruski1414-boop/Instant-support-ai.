@@ -40,7 +40,7 @@ Neither metric is populated with zero or a proxy.
 
 - All reads and writes are scoped to the authenticated hotel organization.
 - The existing owner/admin/staff role policy and session CSRF check remain in force.
-- A conversion update locks the tenant-scoped attribution row and writes the updated evidence and audit record in one database transaction.
+- A conversion update locks the tenant-scoped attribution row and writes the updated evidence and audit record in one database transaction. The audit snapshot retains the previous and current status, amount, currency, evidence type/reference and sale timestamp.
 - The database adds a NOT VALID check constraint: existing legacy rows are not rewritten or deleted, while new and updated converted rows must include complete evidence fields.
 - Evidence references are restricted to a bounded opaque-reference character set. Keep actual provider credentials out of records and logs.
 

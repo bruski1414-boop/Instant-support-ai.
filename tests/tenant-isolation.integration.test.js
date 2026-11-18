@@ -183,6 +183,128 @@ test("two hotel workspaces remain isolated across live API resources", { skip: !
   const alphaSession = await login("hotel-alpha", "owner@alpha.test");
   const betaSession = await login("hotel-beta", "owner@beta.test");
 
+  const staffSalt = crypto.randomBytes(16).toString("hex");
+  const staffPasswordHash = staffSalt + ":" + crypto.scryptSync(password, staffSalt, 64).toString("hex");
+  await pool.query(
+    "INSERT INTO users(organization_id,email,password_hash,role) VALUES($1,'staff@alpha.test',$2,'staff')",
+    [alphaId, staffPasswordHash]
+  );
+  const alphaStaffSession = await login("hotel-alpha", "staff@alpha.test");
+
+  const unauthenticatedPrivacyRead = await request("/api/admin/privacy-approval");
+  assert.equal(unauthenticatedPrivacyRead.status, 401, "privacy approvals must require an authenticated session");
+  const staffPrivacyRead = await request("/api/admin/privacy-approval", {}, alphaStaffSession);
+  assert.equal(staffPrivacyRead.status, 403, "staff members must not read administrator privacy attestations");
+  const staffPrivacyWrite = await request("/api/admin/privacy-approval", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      policyVersion: "Hotel Alpha policy v1",
+      retentionDays: 0,
+      backupPlan: "Backups are managed and restoration is checked by the hotel operator.",
+      deletionProcess: "The hotel reviews deletion requests and records completed removal steps.",
+      lawfulBasisConfirmed: true,
+      confirmApproval: true
+    })
+  }, alphaStaffSession);
+  assert.equal(staffPrivacyWrite.status, 403, "staff members must not create administrator privacy attestations");
+
+  const invalidPrivacyApproval = await request("/api/admin/privacy-approval", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      policyVersion: "",
+      retentionDays: 0,
+      backupPlan: "too short",
+      deletionProcess: "too short",
+      lawfulBasisConfirmed: false,
+      confirmApproval: false
+    })
+  }, alphaSession);
+  assert.equal(invalidPrivacyApproval.status, 400, "incomplete privacy attestations must be rejected");
+
+  const mismatchedRetentionApproval = await request("/api/admin/privacy-approval", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      policyVersion: "Hotel Alpha policy v1",
+      retentionDays: 30,
+      backupPlan: "Backups are managed and restoration is checked by the hotel operator.",
+      deletionProcess: "The hotel reviews deletion requests and records completed removal steps.",
+      lawfulBasisConfirmed: true,
+      confirmApproval: true
+    })
+  }, alphaSession);
+  assert.equal(mismatchedRetentionApproval.status, 409, "an attestation must match the hotel's saved retention period");
+
+  const saveAlphaRetention = await request("/api/admin/retention", {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ retentionDays: 30 })
+  }, alphaSession);
+  assert.equal(saveAlphaRetention.status, 200);
+
+  async function submitPrivacyApproval(session, policyVersion, retentionDays, extra = {}) {
+    return request("/api/admin/privacy-approval", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        policyVersion,
+        retentionDays,
+        backupPlan: "Backups are managed and restoration is checked by the hotel operator.",
+        deletionProcess: "The hotel reviews deletion requests and records completed removal steps.",
+        lawfulBasisConfirmed: true,
+        confirmApproval: true,
+        ...extra
+      })
+    }, session);
+  }
+
+  const alphaApprovalCreated = await submitPrivacyApproval(alphaSession, "Hotel Alpha policy v1", 30);
+  assert.equal(alphaApprovalCreated.status, 201, "an authorised owner can record a valid hotel attestation");
+  const alphaApprovalBody = await alphaApprovalCreated.json();
+  assert.equal(alphaApprovalBody.approval.retention_days, 30);
+
+  const alphaApprovalRead = await request("/api/admin/privacy-approval", {}, alphaSession);
+  const betaApprovalBefore = await request("/api/admin/privacy-approval", {}, betaSession);
+  assert.equal(alphaApprovalRead.status, 200);
+  assert.equal((await alphaApprovalRead.json()).approval.policy_version, "Hotel Alpha policy v1");
+  assert.equal(betaApprovalBefore.status, 200);
+  assert.equal((await betaApprovalBefore.json()).approval, null, "Hotel Beta must not see Hotel Alpha's attestation");
+
+  const betaApprovalCreated = await submitPrivacyApproval(betaSession, "Hotel Beta policy v1", 0, { organizationId: alphaId });
+  assert.equal(betaApprovalCreated.status, 201);
+  const betaApprovalRow = await pool.query(
+    "SELECT organization_id FROM organization_privacy_approvals WHERE id=$1",
+    [(await betaApprovalCreated.json()).approval.id]
+  );
+  assert.equal(betaApprovalRow.rows[0].organization_id, betaId, "a client-supplied organization ID must never override the signed-in tenant");
+
+  const alphaSecondApproval = await submitPrivacyApproval(alphaSession, "Hotel Alpha policy v2", 30);
+  assert.equal(alphaSecondApproval.status, 201, "a revised policy should create a new append-only attestation");
+  const alphaApprovalCount = await pool.query(
+    "SELECT count(*)::int AS count FROM organization_privacy_approvals WHERE organization_id=$1",
+    [alphaId]
+  );
+  assert.equal(alphaApprovalCount.rows[0].count, 2, "previous attestations must remain in the audit history");
+
+  const changedAlphaRetention = await request("/api/admin/retention", {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ retentionDays: 60 })
+  }, alphaSession);
+  assert.equal(changedAlphaRetention.status, 200);
+  const staleApprovalReadiness = await request("/api/admin/onboarding", {}, alphaSession);
+  const staleApprovalState = await staleApprovalReadiness.json();
+  assert.equal(staleApprovalState.checks.find((item) => item.key === "privacy").done, false, "changing retention must invalidate the prior attestation for pilot readiness");
+  const staleRetentionResubmission = await submitPrivacyApproval(alphaSession, "Hotel Alpha policy v3", 30);
+  assert.equal(staleRetentionResubmission.status, 409, "a stale retention period must not be re-attested");
+  const currentRetentionApproval = await submitPrivacyApproval(alphaSession, "Hotel Alpha policy v3", 60);
+  assert.equal(currentRetentionApproval.status, 201);
+  const currentApprovalReadiness = await request("/api/admin/onboarding", {}, alphaSession);
+  const currentApprovalState = await currentApprovalReadiness.json();
+  assert.equal(currentApprovalState.checks.find((item) => item.key === "privacy").done, true, "a new attestation matching the current retention period restores this readiness check");
+
   const normalizedAlphaSettings = await request("/api/admin/settings", {
     method: "PUT",
     headers: { "content-type": "application/json" },

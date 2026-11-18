@@ -1,6 +1,7 @@
 "use strict";
 
 const EVIDENCE_TYPES = new Set(["pms_record", "payment_receipt", "invoice", "hotel_report"]);
+const SUPPORTED_CURRENCIES = new Set(typeof Intl.supportedValuesOf === "function" ? Intl.supportedValuesOf("currency") : ["EUR", "USD", "GBP", "THB", "AED", "JPY", "KWD"]);
 const REFERENCE = /^[A-Za-z0-9][A-Za-z0-9._:/# -]{0,179}$/;
 
 class OfferAttributionEvidenceError extends Error {
@@ -12,7 +13,7 @@ class OfferAttributionEvidenceError extends Error {
 
 function currencyDigits(currency) {
   const code = typeof currency === "string" ? currency.trim().toUpperCase() : "";
-  if (!/^[A-Z]{3}$/.test(code)) {
+  if (!/^[A-Z]{3}$/.test(code) || !SUPPORTED_CURRENCIES.has(code)) {
     throw new OfferAttributionEvidenceError("A supported ISO 4217 currency code is required.");
   }
   try {

@@ -104,6 +104,10 @@ The shared demo fixture is in `fixtures/northstar-hotel.js`. It defines fictiona
 
 The CI workflow installs a pinned Playwright version and Chromium to exercise the guest chat and hosted launcher in a real browser. These tests use a local static server and mocked chat responses; they do not verify the live hotel database, live AI provider, real Slack delivery, production hosting, or a hotel's actual website.
 
+## Booking integration
+
+The provider-neutral requirements for a future hotel PMS/CRS connector are documented in [`docs/booking-integration-spec.md`](docs/booking-integration-spec.md). This is a design specification only: no booking, availability, reservation-change, cancellation, or payment connector is implemented. A hotel/operator must first identify its actual PMS/CRS/booking engine and approve its official sandbox/API access. Never claim a reservation is confirmed without an authoritative provider confirmation.
+
 ## Next engineering milestones
 
 1. Prepare an isolated staging environment with a hosted database, dedicated restricted runtime login, secrets, and a first owner provisioned by an authorised adult/operator.

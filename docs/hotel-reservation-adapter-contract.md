@@ -47,3 +47,16 @@ The current provider-neutral service is a draft orchestration contract, not a pr
 - Apply the property's privacy notice, data-retention policy and access controls, and use a hotel-approved secure credential vault.
 
 These quote and reconciliation gates are not yet implemented in the shared booking service. Until they are, do not enable guest-facing reservation writes. Use sandbox-only synthetic guest data during development.
+
+## Implemented quote-consent workflow (provider-neutral)
+
+`quote-consent-workflow.js` now provides a provider-neutral two-stage workflow:
+
+1. `issue()` requests a quote for one tenant, exact dates, room type, rate plan and occupancy.
+2. It validates the returned quote's currency, integer minor-unit amounts, tax/fee/deposit bounds, cancellation text, scope and expiry.
+3. It returns the exact terms and a short-lived HMAC-signed token. The signing secret is server-side only.
+4. `confirm()` requires explicit acceptance, verifies the signed token, validates the guest contact fields, and requests the quote again immediately before writing.
+5. If any quoted term changes, it refuses the write and requires a fresh quote and fresh guest acceptance.
+6. If a reservation write throws, it looks up the original idempotency key once. It never blindly repeats the write. Unresolved outcomes are handed to staff.
+
+The provider adapter must implement `getQuote`, `createReservation`, and `lookupReservationByIdempotencyKey`. This module is not connected to a real PMS, payment provider, credential vault or hotel account. Its tests use synthetic data only. Do not enable guest-facing booking or transmit real guest details until the hotel has approved the provider, scopes, privacy notice, retention controls, credential storage, sandbox test plan and operational sign-off.

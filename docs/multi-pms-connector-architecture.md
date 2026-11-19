@@ -54,7 +54,7 @@ Only the final state may be used for guest-facing live operations. An adapter ca
 4. Oracle OPERA Cloud (OHIP): assess the property's OHIP tenant, access programme and exact reservation/availability permissions before implementation.
 5. Add other PMS vendors using the same adapter contract rather than modifying the core booking workflow.
 
-## Not yet done
+## Mews implementation progress\n\nA first read-only Connector API transport now exists in `mews-connector-client.js`. It supports the documented configuration, services, service-availability and reservation-read operations; credentials are injected at runtime, and the transport restricts itself to the official Demo or Production host. It deliberately exposes no reservation-write method. It is not yet wired into the normalized reservation service, and no live credentials have been configured. Mews Demo is public test data only; never send real guest information to it.\n\n## Not yet done
 
 - No live vendor adapter is included in this change.
 - No credentials, hotel guest data or production endpoint has been used.

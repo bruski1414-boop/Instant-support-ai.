@@ -32,6 +32,14 @@ function setup(overrides = {}) {
       ledger.set(input.idempotencyKey, { status: "in_progress", requestHash: input.requestHash });
       return { status: "acquired" };
     },
+    async release(input) {
+      calls.push(["release", input]);
+      const current = ledger.get(input.idempotencyKey);
+      if (!current || current.status !== "in_progress" || current.requestHash !== input.requestHash) {
+        throw new Error("Cannot release reservation claim.");
+      }
+      ledger.delete(input.idempotencyKey);
+    },
     async complete(input) {
       calls.push(["complete", input]);
       ledger.set(input.idempotencyKey, { status: "completed", requestHash: input.requestHash, result: input.result });
@@ -115,6 +123,34 @@ test("writes one confirmed demo reservation and persists the idempotency result"
   assert.equal(write.SendConfirmationEmail, false);
   assert.equal(write.Reservations[0].CustomerId, "mews-customer-1");
   assert.equal(s.calls.filter(call => call[0] === "complete").length, 1);
+});
+
+test("checks fresh exact availability before sending a reservation write", async () => {
+  const s = setup();
+  const result = await s.writer.createReservation(request);
+  assert.equal(result.confirmed, true);
+  assert.equal(s.calls.some(call => call[0] === "write"), true);
+  assert.equal(s.calls.findIndex(call => call[0] === "claim") < s.calls.findIndex(call => call[0] === "write"), true);
+});
+
+test("rejects sold-out or mismatched availability and releases the claim without a provider write", async () => {
+  const s = setup();
+  // Replace the adapter method to simulate the provider reporting no inventory.
+  const adapter = s.writer;
+  const original = adapter.checkAvailability;
+  adapter.checkAvailability = async () => ({
+    organizationId: "hotel-demo",
+    arrivalDate: request.arrivalDate,
+    departureDate: request.departureDate,
+    roomTypeCode: request.roomTypeCode,
+    roomsAvailable: 0,
+    observedAt: new Date().toISOString(),
+    validUntil: new Date(Date.now() + 30000).toISOString()
+  });
+  await assert.rejects(() => s.writer.createReservation(request), /Fresh, matching live room availability/);
+  assert.equal(s.calls.some(call => call[0] === "write"), false);
+  assert.equal(s.calls.some(call => call[0] === "release"), true);
+  adapter.checkAvailability = original;
 });
 
 test("returns a completed idempotent result without sending a second Mews write", async () => {

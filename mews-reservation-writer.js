@@ -76,7 +76,33 @@ function createMewsReservationWriter({
       throw new Error("Reservation tenant does not match the configured Mews property.");
     }
     const idempotencyKey = requiredText(input.idempotencyKey, "idempotencyKey", 100);
-    const hash = stableRequestHash(input);
+    if (!/^[A-Za-z0-9_-]{20,100}$/.test(idempotencyKey)) {
+      throw new Error("A valid reservation idempotency key is required.");
+    }
+    const arrivalDate = requiredText(input.arrivalDate, "arrivalDate", 10);
+    const departureDate = requiredText(input.departureDate, "departureDate", 10);
+    const validDate = value => /^\\d{4}-\\d{2}-\\d{2}$/.test(value) &&
+      Number.isFinite(Date.parse(value + "T00:00:00.000Z")) &&
+      new Date(value + "T00:00:00.000Z").toISOString().slice(0, 10) === value;
+    if (!validDate(arrivalDate) || !validDate(departureDate) || departureDate <= arrivalDate) {
+      throw new Error("A valid arrival and departure date range is required.");
+    }
+    if (!Number.isInteger(input.adults) || input.adults < 1 || input.adults > 20 ||
+        !Number.isInteger(input.children) || input.children < 0 || input.children > 20) {
+      throw new Error("Valid adult and child guest counts are required.");
+    }
+    const roomTypeCode = requiredText(input.roomTypeCode, "roomTypeCode", 80);
+    if (!input.guest || typeof input.guest !== "object" || Array.isArray(input.guest)) {
+      throw new Error("Guest details are required.");
+    }
+    const guest = {
+      fullName: requiredText(input.guest.fullName, "guest.fullName", 160),
+      phone: requiredText(input.guest.phone, "guest.phone", 16)
+    };
+    if (guest.fullName.split(/\\s+/).length < 2 || !/^\\+[1-9]\\d{7,14}$/.test(guest.phone)) {
+      throw new Error("A full guest name and international phone number are required.");
+    }
+    const hash = stableRequestHash({ ...input, arrivalDate, departureDate, roomTypeCode, guest });
     const claim = await idempotencyStore.claim({ organizationId, idempotencyKey, requestHash: hash });
     if (!claim || typeof claim !== "object") throw new Error("Idempotency store returned an invalid claim.");
     if (claim.status === "completed" && claim.result) {
@@ -89,9 +115,9 @@ function createMewsReservationWriter({
     let payload;
     try {
       const availability = await availabilityAdapter.checkAvailability({
-        arrivalDate: input.arrivalDate,
-        departureDate: input.departureDate,
-        roomTypeCode: input.roomTypeCode
+        arrivalDate,
+        departureDate,
+        roomTypeCode
       });
       const observedAt = availability && Date.parse(availability.observedAt);
       const validUntil = availability && Date.parse(availability.validUntil);
@@ -119,9 +145,9 @@ function createMewsReservationWriter({
       if (!mapping || typeof mapping !== "object" || Array.isArray(mapping)) {
         throw new Error("Hotel guest and rate mapping is incomplete.");
       }
-      if (mapping.roomTypeCode !== input.roomTypeCode ||
-          (mapping.arrivalDate && mapping.arrivalDate !== input.arrivalDate) ||
-          (mapping.departureDate && mapping.departureDate !== input.departureDate) ||
+      if (mapping.roomTypeCode !== roomTypeCode ||
+          mapping.arrivalDate !== arrivalDate ||
+          mapping.departureDate !== departureDate ||
           (mapping.serviceId && mapping.serviceId !== safeServiceId) ||
           (mapping.resourceCategoryId && mapping.resourceCategoryId !== safeCategoryId)) {
         throw new Error("Hotel reservation mapping does not match the approved service, room category or stay.");

@@ -41,6 +41,7 @@ function createOperaAvailabilityAdapter({
   return Object.freeze({
     providerId: "oracle_opera",
     tenantId: safeTenantId,
+    organizationId: safeTenantId,
     capabilities: Object.freeze(["availability"]),
 
     async availability(input = {}) {
@@ -104,6 +105,11 @@ function createOperaAvailabilityAdapter({
         validUntil: new Date(validUntil).toISOString(),
         source: "oracle_opera_ohip"
       });
+    },
+
+    // Match the shared provider-neutral reservation service contract.
+    async checkAvailability(input = {}) {
+      return this.availability(input);
     }
   });
 }

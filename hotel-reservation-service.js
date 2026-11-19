@@ -74,8 +74,6 @@ function createHotelReservationService({ provider, organizationId, now = () => n
   return Object.freeze({
     async book(input) {
       const request = validateRequest(input);
-      const checkedAt = now();
-      if (!(checkedAt instanceof Date) || !Number.isFinite(checkedAt.getTime())) throw new Error("Clock returned an invalid time.");
       let inventory;
       try {
         inventory = await provider.checkAvailability({
@@ -97,6 +95,8 @@ function createHotelReservationService({ provider, organizationId, now = () => n
           !Number.isSafeInteger(inventory.roomsAvailable) || inventory.roomsAvailable < 0) {
         return Object.freeze({ status: "staff_handoff", confirmed: false, reason: "unverified_inventory" });
       }
+      const checkedAt = now();
+      if (!(checkedAt instanceof Date) || !Number.isFinite(checkedAt.getTime())) throw new Error("Clock returned an invalid time.");
       let observedAt;
       let validUntil;
       try {

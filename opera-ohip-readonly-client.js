@@ -1,9 +1,9 @@
 "use strict";
 
 /**
- * Minimal server-side, read-only transport for Oracle Hospitality Integration
- * Platform (OHIP). It deliberately does not guess property API endpoints,
- * request schemas, auth-token acquisition, or hotel-specific identifiers.
+ * Server-side, read-only transport for Oracle Hospitality Integration
+ * Platform (OHIP). Includes the documented OPERA Cloud v1 availability route;
+ * it does not acquire tokens or infer hotel-specific room/rate mappings.
  *
  * The hotel/vendor-approved token provider and credentials must be supplied
  * by trusted server configuration / a credential vault, never by a guest.
@@ -50,6 +50,38 @@ function createOperaOhipReadOnlyClient({
   return Object.freeze({
     providerId: "oracle_opera",
     readOnly: true,
+
+    async getHotelAvailability({
+      roomStayStartDate, roomStayEndDate, adults, children = 0,
+      roomStayQuantity = 1, limit = 10, ratePlanCode, roomType
+    } = {}) {
+      const validDate = (value, field) => {
+        if (typeof value !== "string" || !/^\\d{4}-\\d{2}-\\d{2}$/.test(value)) {
+          throw new Error(field + " must use YYYY-MM-DD.");
+        }
+        const parsed = new Date(value + "T00:00:00.000Z");
+        if (!Number.isFinite(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== value) {
+          throw new Error(field + " must be a real calendar date.");
+        }
+        return value;
+      };
+      const start = validDate(roomStayStartDate, "roomStayStartDate");
+      const end = validDate(roomStayEndDate, "roomStayEndDate");
+      if (end <= start) throw new Error("roomStayEndDate must be after roomStayStartDate.");
+      if (!Number.isInteger(adults) || adults < 1 || adults > 20) throw new Error("adults must be from 1 to 20.");
+      if (!Number.isInteger(children) || children < 0 || children > 20) throw new Error("children must be from 0 to 20.");
+      if (!Number.isInteger(roomStayQuantity) || roomStayQuantity < 1 || roomStayQuantity > 10) {
+        throw new Error("roomStayQuantity must be from 1 to 10.");
+      }
+      if (!Number.isInteger(limit) || limit < 1 || limit > 100) throw new Error("limit must be from 1 to 100.");
+      const query = { roomStayStartDate: start, roomStayEndDate: end, adults, children, roomStayQuantity, limit };
+      if (ratePlanCode != null) query.ratePlanCode = requiredText(ratePlanCode, "ratePlanCode", 80);
+      if (roomType != null) query.roomType = requiredText(roomType, "roomType", 80);
+      return this.get({
+        path: "/par/v1/hotels/" + encodeURIComponent(safeHotelId) + "/availability",
+        query
+      });
+    },
 
     async get({ path, query } = {}) {
       const safePath = requiredText(path, "path", 1024);

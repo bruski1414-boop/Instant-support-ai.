@@ -79,13 +79,17 @@ test("deducts confirmed partial refunds and chargebacks without overstating net 
   assert.equal(event.amountMinor, 10000);
 });
 
-test("does not report a fully refunded add-on as positive net revenue", () => {
+test("preserves a fully refunded add-on so its gross receipt and full adjustment net to zero", () => {
   const result = reconcilePaidAddons(fixture({ adjustments: [{
     itemId: "item-101", type: "chargeback", status: "confirmed",
     externalReference: "chargeback-44", amountMinor: 12500, currency: "EUR",
     occurredAt: "2026-11-16T10:00:00.000Z"
   }] }));
-  assert.equal(result.length, 0);
+  assert.equal(result.length, 1);
+  assert.equal(result[0].grossAmountMinor, 12500);
+  assert.equal(result[0].adjustmentAmountMinor, 12500);
+  assert.equal(result[0].amountMinor, 0);
+  assert.deepEqual(result[0].evidence.adjustmentReferences, ["chargeback-44"]);
 });
 
 test("rejects adjustments exceeding the original paid add-on", () => {

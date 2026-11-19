@@ -136,3 +136,54 @@ test("checks freshness after the availability response arrives", async () => {
   assert.equal(result.reason, "room_not_available_or_inventory_stale");
   assert.equal(p.calls.some(call => call[0] === "create"), false);
 });
+
+test("rejects malformed guest identity, phone numbers and dates before contacting the PMS", async () => {
+  const p = provider();
+  const s = service(p);
+  await assert.rejects(() => s.book({ ...request, guestName: "Alex" }), /full guest name/);
+  await assert.rejects(() => s.book({ ...request, guestPhone: "12345" }), /E.164/);
+  await assert.rejects(() => s.book({ ...request, arrivalDate: "2026-02-30" }), /real calendar date/);
+  await assert.rejects(() => s.book({ ...request, adults: 0 }), /adults/);
+  assert.equal(p.calls.length, 0);
+});
+
+test("hands off when the provider availability call fails and does not attempt a write", async () => {
+  const p = provider({
+    async checkAvailability() { throw new Error("provider unavailable"); }
+  });
+  const result = await service(p).book(request);
+  assert.equal(result.status, "staff_handoff");
+  assert.equal(result.reason, "availability_check_failed");
+  assert.equal(p.calls.some(call => call[0] === "create"), false);
+});
+
+test("does not confirm a malformed or cross-tenant provider booking result", async () => {
+  const malformed = provider({
+    async createReservation() {
+      return { organizationId: "hotel-a", status: "confirmed", bookingReference: "   " };
+    }
+  });
+  const result = await service(malformed).book(request);
+  assert.equal(result.confirmed, false);
+  assert.equal(result.status, "staff_handoff");
+  assert.equal(result.reason, "unverified_provider_result");
+
+  const wrongTenant = provider({
+    async createReservation() {
+      return { organizationId: "hotel-b", status: "confirmed", bookingReference: "OTHER-123" };
+    }
+  });
+  const other = await service(wrongTenant).book(request);
+  assert.equal(other.confirmed, false);
+  assert.equal(other.reason, "unverified_provider_result");
+});
+
+test("treats a timed-out or ambiguous reservation write as a staff reconciliation case", async () => {
+  const p = provider({
+    async createReservation() { throw new Error("connection lost after request"); }
+  });
+  const result = await service(p).book(request);
+  assert.equal(result.confirmed, false);
+  assert.equal(result.status, "staff_handoff");
+  assert.equal(result.reason, "reservation_write_failed");
+});

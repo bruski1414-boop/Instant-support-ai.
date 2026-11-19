@@ -62,7 +62,8 @@ test("normalizes approved OPERA mapping into Veyra availability contract", async
   assert.equal(calls[0].roomStayStartDate, request.arrivalDate);
   assert.equal(calls[0].roomStayEndDate, request.departureDate);
   assert.equal(adapter.organizationId, "hotel-synthetic");
-  assert.deepEqual(await adapter.checkAvailability(request), result);
+  const detachedCheckAvailability = adapter.checkAvailability;
+  assert.deepEqual(await detachedCheckAvailability(request), result);
 
   const registry = createPmsAdapterRegistry();
   registry.register({

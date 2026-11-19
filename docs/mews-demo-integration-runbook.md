@@ -38,6 +38,21 @@ A future server route must:
 7. If a provider write has an ambiguous outcome, mark it uncertain and require staff reconciliation. Do not automatically retry.
 8. Keep production credentials and production writes out of this demo integration.
 
+## Read-only demo admin endpoints now implemented
+
+The server has a separate, protected Mews demo admin router. It is mounted only when the database is configured and remains disabled unless the server environment variable `MEWS_DEMO_READS_ENABLED=true` is explicitly set.
+
+All endpoints require an authenticated hotel owner/admin session and the normal CSRF check for POST requests. The organization is derived from the session, not from client input. Credentials are encrypted with the existing PMS credential vault and never returned by the API.
+
+- `GET /api/admin/integrations/mews-demo/status` — safe connection status only.
+- `POST /api/admin/integrations/mews-demo/connect` — stores the approved demo Client Token, Access Token, Client name, Service ID, Resource Category ID and IANA timezone.
+- `POST /api/admin/integrations/mews-demo/test` — performs a read-only Mews configuration request.
+- `POST /api/admin/integrations/mews-demo/availability` — checks exact stay dates and the configured room category using Mews demo availability.
+
+The router is read-only: it never calls `reservations/add`. Its availability result is not a reservation, does not hold inventory, and may change before a later booking attempt. The existing demo reservation writer remains separate and is not exposed through these endpoints.
+
+Required server configuration: set `MEWS_DEMO_READS_ENABLED=true` only for an explicitly approved demo environment, and configure `PMS_CREDENTIAL_ENCRYPTION_KEY` with a valid base64-encoded 32-byte key. Do not turn this feature on in a public or production service.
+
 ## Sandbox acceptance checklist
 
 - [ ] Hotel administrator confirms the Mews demo tenant and grants permission for the test.

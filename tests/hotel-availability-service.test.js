@@ -77,9 +77,25 @@ test("does not reveal or query another tenant's adapter", async () => {
 });
 
 test("hands off when inventory is stale or does not match the requested stay", async () => {
-  const stale = integration({ observedAt: "2026-12-31T23:50:00.000Z" });
+  const staleRegistry = {
+    get: () => ({
+      providerId: "oracle_opera",
+      tenantId: "hotel-synthetic",
+      async checkAvailability() {
+        return {
+          organizationId: "hotel-synthetic",
+          arrivalDate: request.arrivalDate,
+          departureDate: request.departureDate,
+          roomTypeCode: request.roomTypeCode,
+          roomsAvailable: 2,
+          observedAt: "2026-12-31T23:50:00.000Z",
+          validUntil: "2027-01-01T00:01:00.000Z"
+        };
+      }
+    })
+  };
   const staleService = createHotelAvailabilityService({
-    registry: stale.registry,
+    registry: staleRegistry,
     providerId: "oracle_opera",
     organizationId: "hotel-synthetic",
     now: () => NOW
@@ -89,9 +105,25 @@ test("hands off when inventory is stale or does not match the requested stay", a
     reason: "stale_inventory"
   });
 
-  const altered = integration({ roomTypeCode: "OTHER-ROOM" });
+  const alteredRegistry = {
+    get: () => ({
+      providerId: "oracle_opera",
+      tenantId: "hotel-synthetic",
+      async checkAvailability() {
+        return {
+          organizationId: "hotel-synthetic",
+          arrivalDate: request.arrivalDate,
+          departureDate: request.departureDate,
+          roomTypeCode: "OTHER-ROOM",
+          roomsAvailable: 2,
+          observedAt: NOW.toISOString(),
+          validUntil: "2027-01-01T00:01:00.000Z"
+        };
+      }
+    })
+  };
   const alteredService = createHotelAvailabilityService({
-    registry: altered.registry,
+    registry: alteredRegistry,
     providerId: "oracle_opera",
     organizationId: "hotel-synthetic",
     now: () => NOW

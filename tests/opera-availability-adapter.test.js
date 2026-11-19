@@ -3,6 +3,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const { createOperaAvailabilityAdapter } = require("../opera-availability-adapter");
+const { createPmsAdapterRegistry } = require("../pms-provider-registry");
 
 const NOW = new Date("2027-01-01T00:00:00.000Z");
 const request = {
@@ -60,6 +61,21 @@ test("normalizes approved OPERA mapping into Veyra availability contract", async
   assert.equal(calls[0].roomType, request.roomTypeCode);
   assert.equal(calls[0].roomStayStartDate, request.arrivalDate);
   assert.equal(calls[0].roomStayEndDate, request.departureDate);
+  assert.equal(adapter.organizationId, "hotel-synthetic");
+  assert.deepEqual(await adapter.checkAvailability(request), result);
+
+  const registry = createPmsAdapterRegistry();
+  registry.register({
+    providerId: "oracle_opera",
+    tenantId: "hotel-synthetic",
+    adapter,
+    approved: true
+  });
+  assert.equal(registry.get({
+    providerId: "oracle_opera",
+    tenantId: "hotel-synthetic",
+    requiredCapabilities: ["availability"]
+  }), adapter);
 });
 
 test("fails closed for tenant mismatch, altered stay, or missing mapper", async () => {

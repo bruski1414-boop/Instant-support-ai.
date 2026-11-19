@@ -5,7 +5,10 @@ const { validateAddReservationsPayload } = require("./mews-connector-client");
 
 function requiredText(value, field, max = 160) {
   if (typeof value !== "string" || !value.trim() || value.length > max ||
-      /[\\u0000-\\u001f\\u007f]/.test(value)) {
+      [...value].some(character => {
+        const code = character.charCodeAt(0);
+        return code < 32 || code === 127;
+      })) {
     throw new Error(field + " is invalid.");
   }
   return value.trim();

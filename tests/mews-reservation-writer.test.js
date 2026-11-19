@@ -72,8 +72,9 @@ function setup(overrides = {}) {
       };
     }
   };
+  const { client: clientOverrides, ...writerOverrides } = overrides;
   const writer = createMewsReservationWriter({
-    client,
+    client: { ...client, ...clientOverrides },
     tenantId: "hotel-demo",
     serviceId: "room-service",
     resourceCategoryId: "ocean-villa",
@@ -86,7 +87,7 @@ function setup(overrides = {}) {
       endUtc: "2026-12-05T10:00:00Z"
     }),
     idempotencyStore: store,
-    ...overrides
+    ...writerOverrides
   });
   return { writer, calls, ledger };
 }

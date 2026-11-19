@@ -60,3 +60,5 @@ Only the final state may be used for guest-facing live operations. An adapter ca
 - No credentials, hotel guest data or production endpoint has been used.
 - No provider certification or hotel approval has been completed.
 - Shebara's actual PMS remains unconfirmed.
+
+The Mews availability adapter now implements the shared registry's `availability` capability name and exposes the provider-neutral `checkAvailability` method used by reservation orchestration. It registers only the availability capability; the registry deliberately refuses to return it for reservation-write requests. This is a compatibility bridge, not a complete booking connector.

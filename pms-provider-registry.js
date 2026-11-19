@@ -43,7 +43,7 @@ const PROVIDERS = Object.freeze({
   oracle_opera: Object.freeze({
     id: "oracle_opera",
     name: "Oracle OPERA Cloud (OHIP)",
-    aliases: ["opera cloud", "oracle opera", "ohip"],
+    aliases: ["opera cloud", "oracle opera", "oracle opera cloud", "ohip"],
     docsUrl: "https://docs.oracle.com/en/industries/hospitality/integration-platform/",
     apiFamilies: ["ohip"],
     documentedCapabilities: ["availability", "reservations", "guest_profiles"],

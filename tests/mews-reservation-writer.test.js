@@ -8,6 +8,7 @@ const request = {
   organizationId: "hotel-demo",
   idempotencyKey: "request_12345678901234567890",
   guest: { fullName: "Alex Morgan", phone: "+441234567890" },
+  consentToShareDetails: true,
   arrivalDate: "2026-12-02",
   departureDate: "2026-12-05",
   adults: 2,
@@ -114,6 +115,16 @@ test("requires an explicitly enabled demo client and durable atomic idempotency 
     resolveReservation() {},
     idempotencyStore: { durable: true, claim() {}, complete() {}, markUncertain() {} }
   }), /demo client/);
+});
+
+test("requires guest consent before sharing reservation details with Mews", async () => {
+  const s = setup();
+  await assert.rejects(
+    () => s.writer.createReservation({ ...request, consentToShareDetails: false }),
+    /Guest consent is required/
+  );
+  assert.equal(s.calls.some(call => call[0] === "write"), false);
+  assert.equal(s.calls.some(call => call[0] === "claim"), false);
 });
 
 test("writes one confirmed demo reservation and persists the idempotency result", async () => {

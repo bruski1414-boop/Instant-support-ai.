@@ -61,6 +61,18 @@ function createPostgresMewsIdempotencyStore({ db } = {}) {
       return { status: row.status };
     },
 
+    async release({ organizationId, idempotencyKey, requestHash } = {}) {
+      const org = required(organizationId, "organizationId", 128);
+      const key = required(idempotencyKey, "idempotencyKey", 100);
+      const hash = required(requestHash, "requestHash", 64);
+      if (!/^[a-f0-9]{64}$/.test(hash)) throw new Error("requestHash must be a SHA-256 hex digest.");
+      const deleted = await db.query(
+        "DELETE FROM mews_reservation_idempotency WHERE organization_id=$1 AND idempotency_key=$2 AND request_sha256=$3 AND status='in_progress'",
+        [org, key, hash]
+      );
+      if (deleted.rowCount !== 1) throw new Error("Preflight reservation claim could not be safely released.");
+    },
+
     async complete({ organizationId, idempotencyKey, requestHash, result } = {}) {
       const org = required(organizationId, "organizationId", 128);
       const key = required(idempotencyKey, "idempotencyKey", 100);

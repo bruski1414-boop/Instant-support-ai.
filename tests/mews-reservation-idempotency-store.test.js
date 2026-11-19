@@ -24,6 +24,13 @@ function fakeDb() {
         const row = rows.get(params[0] + ":" + params[1]);
         return row ? { rowCount: 1, rows: [{ request_sha256: row.request_sha256, status: row.status, result: row.result }] } : { rowCount: 0, rows: [] };
       }
+      if (sql.startsWith("DELETE FROM mews_reservation_idempotency")) {
+        const key = params[0] + ":" + params[1];
+        const row = rows.get(key);
+        if (!row || row.request_sha256 !== params[2] || row.status !== "in_progress") return { rowCount: 0, rows: [] };
+        rows.delete(key);
+        return { rowCount: 1, rows: [] };
+      }
       if (sql.startsWith("UPDATE mews_reservation_idempotency SET status='completed'")) {
         const row = rows.get(params[0] + ":" + params[1]);
         if (!row || row.request_sha256 !== params[2] || row.status !== "in_progress") return { rowCount: 0, rows: [] };
@@ -70,6 +77,13 @@ test("returns the stored result for a completed request and detects key reuse", 
   await store.complete({ ...context, result });
   assert.deepEqual(await store.claim(context), { status: "completed", result });
   assert.deepEqual(await store.claim({ ...context, requestHash: "b".repeat(64) }), { status: "conflict" });
+});
+
+test("releases only an acquired preflight claim so corrected requests can retry", async () => {
+  const store = createPostgresMewsIdempotencyStore({ db: fakeDb() });
+  assert.deepEqual(await store.claim(context), { status: "acquired" });
+  await store.release(context);
+  assert.deepEqual(await store.claim(context), { status: "acquired" });
 });
 
 test("marks ambiguous writes uncertain and does not grant a second claim", async () => {

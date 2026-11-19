@@ -47,7 +47,9 @@ Oracle's current guidance says OHIP access depends on the property's OPERA Cloud
 - Oracle OPERA is listed in the provider registry as contract-only.
 - A server-side, GET-only OHIP transport now exists in `opera-ohip-readonly-client.js`. It accepts a hotel-configured gateway, application key, hotel ID, and injected server-side access-token provider. It includes the documented OPERA Cloud v1 availability route (`GET /par/v1/hotels/{hotelId}/availability`) and validates stay dates, occupancy, room quantity and result limit. It returns the raw vendor response; it does not acquire tokens, map room/rate responses into Veyra's schema, or create reservations.
 - The OHIP transport has synthetic unit tests for HTTPS, gateway path confinement, headers, query validation, non-JSON/oversized responses, sanitised HTTP errors, and the documented availability request shape. These tests do not prove connectivity to Shebara or Oracle's sandbox.
-- No Oracle OPERA availability mapper, quote adapter, reservation writer, or live OHIP connection is implemented.
+- A tenant-scoped `opera-availability-adapter.js` now bridges the read-only client to Veyra's canonical availability contract. It validates tenant, stay dates, room type, occupancy, inventory count, and freshness. It deliberately requires an injected hotel-approved raw-response mapper rather than guessing OPERA's property-specific response shape or room/rate mapping.
+- Synthetic tests cover normalization, tenant mismatch, altered stay, invalid inventory counts, stale timestamps, and malformed requests. They do not prove Oracle sandbox connectivity or validate Shebara's real room/rate configuration.
+- Quote integration, reservation writing, and live OHIP connectivity remain unimplemented.
 - The existing Mews transport is read-only and does not establish that Shebara uses Mews.
 - The quote-consent workflow is provider-neutral and is not wired to a live PMS route.
 - Booking readiness must remain false until every technical and hotel-approval gate is evidenced.

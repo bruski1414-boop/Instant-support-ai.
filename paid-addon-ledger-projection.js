@@ -24,7 +24,7 @@ function projectPaidAddonToLedger(event) {
   }
   if (!Number.isSafeInteger(event.grossAmountMinor) || event.grossAmountMinor <= 0 ||
       !Number.isSafeInteger(event.adjustmentAmountMinor) || event.adjustmentAmountMinor < 0 ||
-      !Number.isSafeInteger(event.amountMinor) || event.amountMinor <= 0 ||
+      !Number.isSafeInteger(event.amountMinor) || event.amountMinor < 0 ||
       event.grossAmountMinor - event.adjustmentAmountMinor !== event.amountMinor) {
     throw new Error("Gross, adjustments and net amount must reconcile exactly.");
   }

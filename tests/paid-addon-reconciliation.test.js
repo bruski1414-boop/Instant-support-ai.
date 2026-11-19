@@ -125,3 +125,19 @@ test("keeps output limited to reconciliation evidence and excludes guest informa
   assert.equal("guestName" in event, false);
   assert.equal("guestEmail" in event, false);
 });
+
+test("accepts an explicit provider-attested paid-in-full Receipt when the provider exposes no bill total", () => {
+  const result = reconcilePaidAddons(fixture({
+    bills: [{ id: "bill-9", type: "Receipt", currency: "EUR", paidInFull: true }]
+  }));
+  assert.equal(result.length, 1);
+  assert.equal(result[0].amountMinor, 12500);
+  assert.equal(result[0].evidence.billType, "Receipt");
+});
+
+test("does not infer paid-in-full from a Receipt label without a total or trusted paidInFull evidence", () => {
+  const result = reconcilePaidAddons(fixture({
+    bills: [{ id: "bill-9", type: "Receipt", currency: "EUR" }]
+  }));
+  assert.equal(result.length, 0);
+});

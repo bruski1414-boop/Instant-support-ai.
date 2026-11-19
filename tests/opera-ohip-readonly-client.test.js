@@ -77,3 +77,40 @@ test("rejects non-JSON and oversized successful responses", async () => {
   });
   await assert.rejects(large.client.get({ path: "/safe" }), /size limit/);
 });
+
+
+test("calls the documented OPERA Cloud v1 availability route with validated stay filters", async () => {
+  const { client, calls } = makeClient();
+  await client.getHotelAvailability({
+    roomStayStartDate: "2027-02-10",
+    roomStayEndDate: "2027-02-13",
+    adults: 2,
+    children: 1,
+    roomStayQuantity: 1,
+    limit: 5,
+    ratePlanCode: "SYNTHETIC-RATE",
+    roomType: "SYNTHETIC-VILLA"
+  });
+  const url = new URL(calls[0].url);
+  assert.equal(url.pathname, "/gateway/par/v1/hotels/SYNTHETIC-HOTEL/availability");
+  assert.equal(url.searchParams.get("roomStayStartDate"), "2027-02-10");
+  assert.equal(url.searchParams.get("roomStayEndDate"), "2027-02-13");
+  assert.equal(url.searchParams.get("adults"), "2");
+  assert.equal(url.searchParams.get("children"), "1");
+  assert.equal(url.searchParams.get("roomStayQuantity"), "1");
+  assert.equal(url.searchParams.get("ratePlanCode"), "SYNTHETIC-RATE");
+  assert.equal(url.searchParams.get("roomType"), "SYNTHETIC-VILLA");
+});
+
+test("fails closed on invalid OPERA availability dates and occupancy", async () => {
+  const { client } = makeClient();
+  await assert.rejects(client.getHotelAvailability({
+    roomStayStartDate: "2027-02-30", roomStayEndDate: "2027-03-02", adults: 2
+  }), /real calendar date/);
+  await assert.rejects(client.getHotelAvailability({
+    roomStayStartDate: "2027-02-10", roomStayEndDate: "2027-02-12", adults: 0
+  }), /adults/);
+  await assert.rejects(client.getHotelAvailability({
+    roomStayStartDate: "2027-02-10", roomStayEndDate: "2027-02-10", adults: 2
+  }), /after roomStayStartDate/);
+});

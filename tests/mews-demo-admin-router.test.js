@@ -94,7 +94,7 @@ test("stores encrypted demo credentials and exposes only read-only connection an
     if (url.endsWith("/services/getAvailability")) {
       return { ok: true, status: 200, async json() {
         return {
-          TimeUnitStartsUtc: ["2026-12-01T17:00:00Z"],
+          TimeUnitStartsUtc: ["2026-12-01T17:00:00.000Z"],
           CategoryAvailabilities: [{ CategoryId: "room-1", Availabilities: [3] }]
         };
       } };

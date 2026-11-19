@@ -35,3 +35,15 @@ The adapter must be implemented against the actual PMS API, not by guessing endp
 ## Activation blockers
 
 Shebara's PMS, actual room-category mapping, approved rate plans, and authorised vendor sandbox access have not yet been confirmed. The current Mews connector in the other development branch is demo-only and read-only. This contract does not turn it into a production writer and must not be connected to real guest data until hotel IT authorises and tests the provider adapter.
+
+## Remaining release blockers before any reservation write
+
+The current provider-neutral service is a draft orchestration contract, not a production-ready booking flow. Before it can safely create a real reservation, the adapter and workflow must also:
+
+- Obtain a live, property-approved quote for the exact dates, occupancy, room category and rate plan.
+- Show the complete payable total, currency, included taxes/fees, deposit schedule and cancellation terms to the guest.
+- Require explicit acceptance of that exact quote and verify it has not expired or changed immediately before writing.
+- Reconcile timeouts and connection-loss outcomes by looking up the original idempotency key before any retry; an uncertain write must never be blindly repeated.
+- Apply the property's privacy notice, data-retention policy and access controls, and use a hotel-approved secure credential vault.
+
+These quote and reconciliation gates are not yet implemented in the shared booking service. Until they are, do not enable guest-facing reservation writes. Use sandbox-only synthetic guest data during development.

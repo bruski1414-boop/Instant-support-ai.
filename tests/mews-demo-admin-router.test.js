@@ -71,8 +71,12 @@ test("validates required Mews demo settings and IANA timezone", () => {
 
 test("Mews demo admin routes remain hidden unless explicitly enabled", async () => {
   const router = createMewsDemoAdminRouter({
-    express, db: makeDb(), auth: middleware, role,
-    credentialVault: { encrypt: JSON.stringify, decrypt: JSON.parse },
+    express, db: makeDb(),
+    auth: (req, _res, next) => {
+      req.actor = { organization_id: "tenant-a", user_id: "owner-a", role: "owner" };
+      next();
+    },
+    role, credentialVault: { encrypt: JSON.stringify, decrypt: JSON.parse },
     enabled: false
   });
   await withServer(router, async base => {

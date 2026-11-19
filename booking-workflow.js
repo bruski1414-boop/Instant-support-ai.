@@ -1,6 +1,6 @@
 "use strict";
 
-const { PmsIntegrationError, validateDateRange, normalizeAvailabilitySnapshot } = require("./pms-integration");
+const { PmsIntegrationError, validateDateRange } = require("./pms-integration");
 
 const BOOKING_STATES = Object.freeze([
   "draft", "awaiting_payment", "payment_pending", "payment_verified",
@@ -38,17 +38,40 @@ function calculateDeposit(totalAmountMinor, depositPercent = 50) {
   };
 }
 
-function verifyAvailabilityForBooking(snapshot, dates, roomTypeId, now = Date.now()) {
-  let availability;
-  try {
-    availability = normalizeAvailabilitySnapshot(snapshot, now);
-  } catch {
+function normalizeBookingAvailabilitySnapshot(snapshot, now = Date.now()) {
+  if (!snapshot || typeof snapshot !== "object" || Array.isArray(snapshot)) {
+    throw new PmsIntegrationError("AVAILABILITY_NOT_VERIFIED", "A live availability snapshot is required.", 409);
+  }
+  const propertyReference = typeof snapshot.propertyReference === "string" ? snapshot.propertyReference.trim() : "";
+  const roomTypeCode = typeof snapshot.roomTypeCode === "string" ? snapshot.roomTypeCode.trim() : "";
+  const sourceEventId = typeof snapshot.sourceEventId === "string" ? snapshot.sourceEventId.trim() : "";
+  const observedAt = typeof snapshot.observedAt === "string" ? Date.parse(snapshot.observedAt) : NaN;
+  const validUntil = typeof snapshot.validUntil === "string" ? Date.parse(snapshot.validUntil) : NaN;
+  const roomsAvailable = snapshot.roomsAvailable;
+  if (!propertyReference || propertyReference.length > 160 ||
+      !roomTypeCode || roomTypeCode.length > 80 ||
+      !sourceEventId || sourceEventId.length > 200 ||
+      !Number.isSafeInteger(roomsAvailable) || roomsAvailable < 0 ||
+      !Number.isFinite(observedAt) || !Number.isFinite(validUntil) ||
+      new Date(observedAt).toISOString() !== snapshot.observedAt ||
+      new Date(validUntil).toISOString() !== snapshot.validUntil ||
+      observedAt > now || validUntil <= now || validUntil <= observedAt ||
+      validUntil - observedAt > 15 * 60 * 1000) {
     throw new PmsIntegrationError(
       "AVAILABILITY_NOT_VERIFIED",
       "A valid, unexpired live availability snapshot is required before taking a deposit.",
       409,
     );
   }
+  return Object.freeze({
+    propertyReference, roomTypeCode, sourceEventId, observedAt: new Date(observedAt).toISOString(),
+    validUntil: new Date(validUntil).toISOString(), roomsAvailable,
+    arrivalDate: snapshot.arrivalDate, departureDate: snapshot.departureDate,
+  });
+}
+
+function verifyAvailabilityForBooking(snapshot, dates, roomTypeId, now = Date.now()) {
+  const availability = normalizeBookingAvailabilitySnapshot(snapshot, now);
   const observedAt = Date.parse(availability.observedAt);
   if (now - observedAt > 5 * 60 * 1000 ||
       availability.roomTypeCode !== roomTypeId ||
@@ -120,6 +143,6 @@ function assertBookingTransition(currentState, nextState, evidence = {}) {
 }
 
 module.exports = {
-  BOOKING_STATES, normalizeGuestDetails, calculateDeposit, verifyAvailabilityForBooking,
-  buildBookingIntent, assertBookingTransition,
+  BOOKING_STATES, normalizeGuestDetails, calculateDeposit, normalizeBookingAvailabilitySnapshot,
+  verifyAvailabilityForBooking, buildBookingIntent, assertBookingTransition,
 };

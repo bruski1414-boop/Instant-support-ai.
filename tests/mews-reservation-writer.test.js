@@ -76,11 +76,14 @@ function setup(overrides = {}) {
         arrivalDate: input.arrivalDate,
         departureDate: input.departureDate,
         roomTypeCode: input.roomTypeCode,
-        roomsAvailable: 1
+        roomsAvailable: 1,
+        observedAt: new Date().toISOString(),
+        validUntil: new Date(Date.now() + 30000).toISOString()
       };
-    }
+    },
+    ...overrides.availabilityAdapter
   };
-  const { client: clientOverrides, ...writerOverrides } = overrides;
+  const { client: clientOverrides, availabilityAdapter: availabilityOverrides, ...writerOverrides } = overrides;
   const writer = createMewsReservationWriter({
     client: { ...client, ...clientOverrides },
     tenantId: "hotel-demo",
@@ -134,23 +137,24 @@ test("checks fresh exact availability before sending a reservation write", async
 });
 
 test("rejects sold-out or mismatched availability and releases the claim without a provider write", async () => {
-  const s = setup();
-  // Replace the adapter method to simulate the provider reporting no inventory.
-  const adapter = s.writer;
-  const original = adapter.checkAvailability;
-  adapter.checkAvailability = async () => ({
-    organizationId: "hotel-demo",
-    arrivalDate: request.arrivalDate,
-    departureDate: request.departureDate,
-    roomTypeCode: request.roomTypeCode,
-    roomsAvailable: 0,
-    observedAt: new Date().toISOString(),
-    validUntil: new Date(Date.now() + 30000).toISOString()
+  const s = setup({
+    availabilityAdapter: {
+      async checkAvailability(input) {
+        return {
+          organizationId: "hotel-demo",
+          arrivalDate: input.arrivalDate,
+          departureDate: input.departureDate,
+          roomTypeCode: input.roomTypeCode,
+          roomsAvailable: 0,
+          observedAt: new Date().toISOString(),
+          validUntil: new Date(Date.now() + 30000).toISOString()
+        };
+      }
+    }
   });
   await assert.rejects(() => s.writer.createReservation(request), /Fresh, matching live room availability/);
   assert.equal(s.calls.some(call => call[0] === "write"), false);
   assert.equal(s.calls.some(call => call[0] === "release"), true);
-  adapter.checkAvailability = original;
 });
 
 test("returns a completed idempotent result without sending a second Mews write", async () => {

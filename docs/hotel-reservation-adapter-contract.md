@@ -34,7 +34,7 @@ The adapter must be implemented against the actual PMS API, not by guessing endp
 
 ## Activation blockers
 
-Shebara's PMS, actual room-category mapping, approved rate plans, and authorised vendor sandbox access have not yet been confirmed. The current Mews connector in the other development branch is demo-only and read-only. This contract does not turn it into a production writer and must not be connected to real guest data until hotel IT authorises and tests the provider adapter.
+Public evidence indicates that Red Sea Global selected Oracle OPERA Cloud Central for Shebara and other named resorts in its May 2024 announcement. A Shebara Resort IT Officer listing also names OPERA PMS. This makes Oracle OPERA the best-supported integration target, but does not establish the exact deployed OPERA modules/version, the property's OHIP tenant configuration, enabled API scopes, room/rate identifiers, or permission for Veyra to connect. Those details must be confirmed by Shebara/Red Sea Global hotel IT in writing. The current Mews connector in the other development branch is demo-only and read-only; it is not evidence that Shebara uses Mews. No Oracle OPERA adapter is implemented or connected. Do not connect to real guest data until hotel IT authorises and tests the provider adapter.
 
 ## Remaining release blockers before any reservation write
 
@@ -76,4 +76,4 @@ The application now reports booking readiness separately from general pilot read
 - `HOTEL_BOOKING_PRIVACY_APPROVED`
 - `PMS_CREDENTIAL_VAULT_CONFIGURED`
 
-The endpoint exposes each result under `bookingChecks`. Missing values, truthy strings other than `"true"`, and numeric values do not pass. These flags are release evidence gates, not automatic proof that a vendor connection works; they must only be set after the corresponding technical test and hotel approval have actually occurred. Do not set them to make the dashboard appear ready. The quote workflow is still not wired into a live PMS booking route, and Shebara's PMS remains unconfirmed.
+The endpoint exposes each result under `bookingChecks`. Missing values, truthy strings other than `"true"`, and numeric values do not pass. These flags are release evidence gates, not automatic proof that a vendor connection works; they must only be set after the corresponding technical test and hotel approval have actually occurred. Do not set them to make the dashboard appear ready. The quote workflow is not wired into a live PMS booking route. Oracle OPERA is the publicly indicated target, but the exact Shebara configuration and authorised integration access remain unverified.

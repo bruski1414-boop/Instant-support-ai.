@@ -90,7 +90,7 @@ test("reconciles an uncertain write by the original idempotency key without retr
     lookupReservationByIdempotencyKey: async key => {
       lookups++;
       assert.equal(key, "booking_req_12345");
-      return { status: "confirmed", bookingId: "BOOK-RECOVERED" };
+      return { organizationId: "hotel-a", status: "confirmed", bookingId: "BOOK-RECOVERED" };
     },
   });
   const service = workflow(provider);

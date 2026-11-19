@@ -20,6 +20,7 @@ test("normalizes provider names and aliases", () => {
   assert.equal(normalizeProviderId("Mews"), "mews");
   assert.equal(normalizeProviderId("Cloudbeds PMS"), "cloudbeds");
   assert.equal(normalizeProviderId("OHIP"), "oracle_opera");
+  assert.equal(normalizeProviderId("Oracle OPERA Cloud"), "oracle_opera");
   assert.equal(normalizeProviderId("unknown system"), null);
   assert.equal(getProvider("Apaleo").id, "apaleo");
 });

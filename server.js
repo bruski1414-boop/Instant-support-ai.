@@ -11,6 +11,8 @@ const {promisify}=require("node:util");
 const {Pool}=require("pg");
 const {createStorageRouter}=require("./storage-integrations");
 const {createMewsConnectionStore}=require("./mews-connection-store");
+const {createBookingAttributionStore}=require("./booking-attribution-store");
+const {verifyMewsWebhookUrlSecret,normalizeMewsGeneralWebhook}=require("./mews-webhook");
 const {buildMewsStayAvailabilityContext}=require("./mews-stay-availability");
 const {DEMO_METRICS,respondToDemoMessage}=require("./demo-mode");
 const {requiresStaffEscalation,requiresLiveAvailabilityCheck,buildGuestSupportSystemPrompt}=require("./guest-support-policy");
@@ -42,6 +44,8 @@ const setupLimiter=rateLimit({windowMs:3600000,limit:5,standardHeaders:"draft-7"
 const platformProvisionLimiter=rateLimit({windowMs:3600000,limit:10,standardHeaders:"draft-7",legacyHeaders:false});
 const integrationTestLimiter=rateLimit({windowMs:3600000,limit:5,standardHeaders:"draft-7",legacyHeaders:false});
 const revenueWebhookLimiter=rateLimit({windowMs:60000,limit:30,standardHeaders:"draft-7",legacyHeaders:false});
+const mewsWebhookLimiter=rateLimit({windowMs:60000,limit:60,standardHeaders:"draft-7",legacyHeaders:false});
+const bookingIntentLimiter=rateLimit({windowMs:60000,limit:5,standardHeaders:"draft-7",legacyHeaders:false});
 const publicChatLimiter=rateLimit({windowMs:300000,limit:10,keyGenerator:tenantChatRateLimitKey,skip:q=>process.env.NODE_ENV==="test"&&q.get("X-Veyra-Test-Bypass-Rate-Limit")==="true",standardHeaders:"draft-7",legacyHeaders:false});
 const publicPollLimiter=rateLimit({windowMs:60000,limit:30,standardHeaders:"draft-7",legacyHeaders:false});
 const invitationAcceptLimiter=rateLimit({windowMs:3600000,limit:5,standardHeaders:"draft-7",legacyHeaders:false});
@@ -78,6 +82,18 @@ const schema=[
 "CREATE INDEX IF NOT EXISTS booking_attribution_intents_org_expiry_idx ON booking_attribution_intents(organization_id,expires_at)",
 "CREATE TABLE IF NOT EXISTS booking_attribution_matches(id UUID PRIMARY KEY DEFAULT gen_random_uuid(),organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,intent_id UUID NOT NULL,conversation_id UUID,provider TEXT NOT NULL CHECK(length(provider) BETWEEN 1 AND 80),provider_event_id TEXT NOT NULL CHECK(length(provider_event_id) BETWEEN 1 AND 200),reservation_id TEXT NOT NULL CHECK(length(reservation_id) BETWEEN 1 AND 200),occurred_at TIMESTAMPTZ NOT NULL,booking_value_minor BIGINT,currency CHAR(3),match_method TEXT NOT NULL CHECK(match_method='opaque_provider_correlation'),created_at TIMESTAMPTZ NOT NULL DEFAULT now(),CHECK((booking_value_minor IS NULL AND currency IS NULL) OR (booking_value_minor>0 AND currency ~ '^[A-Z]{3}$')),UNIQUE(intent_id),UNIQUE(organization_id,provider,provider_event_id),UNIQUE(organization_id,provider,reservation_id),FOREIGN KEY(intent_id,organization_id) REFERENCES booking_attribution_intents(id,organization_id) ON DELETE CASCADE,FOREIGN KEY(conversation_id,organization_id) REFERENCES conversations(id,organization_id) ON DELETE SET NULL (conversation_id))",
 "CREATE INDEX IF NOT EXISTS booking_attribution_matches_org_date_idx ON booking_attribution_matches(organization_id,occurred_at DESC)",
+ "CREATE TABLE IF NOT EXISTS mews_webhook_inbox(id UUID PRIMARY KEY DEFAULT gen_random_uuid(),organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,integration_id TEXT NOT NULL CHECK(length(integration_id) BETWEEN 1 AND 80),enterprise_id TEXT NOT NULL CHECK(length(enterprise_id) BETWEEN 1 AND 80),discriminator TEXT NOT NULL CHECK(discriminator='ServiceOrderUpdated'),entity_id TEXT NOT NULL CHECK(length(entity_id) BETWEEN 1 AND 80),received_at TIMESTAMPTZ NOT NULL DEFAULT now(),processed_at TIMESTAMPTZ,status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','processed','failed')),attempt_count INTEGER NOT NULL DEFAULT 0 CHECK(attempt_count>=0),last_error TEXT NOT NULL DEFAULT '')",
+ "CREATE INDEX IF NOT EXISTS mews_webhook_inbox_pending_idx ON mews_webhook_inbox(status,received_at) WHERE status='pending'",
+ "ALTER TABLE mews_webhook_inbox DROP CONSTRAINT IF EXISTS mews_webhook_inbox_status_check",
+ "ALTER TABLE mews_webhook_inbox ADD CONSTRAINT mews_webhook_inbox_status_check CHECK(status IN ('pending','processing','processed','failed'))",
+ "ALTER TABLE mews_webhook_inbox ADD COLUMN IF NOT EXISTS next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT now()",
+ "ALTER TABLE mews_webhook_inbox ADD COLUMN IF NOT EXISTS lease_expires_at TIMESTAMPTZ",
+ "CREATE INDEX IF NOT EXISTS mews_webhook_inbox_claim_idx ON mews_webhook_inbox(status,next_attempt_at,received_at)",
+ "WITH ranked AS (SELECT id,row_number() OVER(PARTITION BY organization_id,integration_id,enterprise_id,discriminator,entity_id ORDER BY received_at,id) AS duplicate_rank FROM mews_webhook_inbox WHERE status IN ('pending','processing')) UPDATE mews_webhook_inbox AS inbox SET status='failed',lease_expires_at=NULL,last_error='duplicate_active_event_coalesced' FROM ranked WHERE inbox.id=ranked.id AND ranked.duplicate_rank>1",
+ "CREATE UNIQUE INDEX IF NOT EXISTS mews_webhook_inbox_active_event_unique_idx ON mews_webhook_inbox(organization_id,integration_id,enterprise_id,discriminator,entity_id) WHERE status IN ('pending','processing')",
+ "CREATE TABLE IF NOT EXISTS mews_reservation_snapshots(id UUID PRIMARY KEY DEFAULT gen_random_uuid(),organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,enterprise_id TEXT NOT NULL,reservation_id TEXT NOT NULL,service_id TEXT NOT NULL,state TEXT NOT NULL CHECK(state IN ('Inquired','Confirmed','Started','Processed','Canceled','Optional','Requested')),scheduled_start_utc TIMESTAMPTZ NOT NULL,scheduled_end_utc TIMESTAMPTZ NOT NULL,provider_updated_utc TIMESTAMPTZ NOT NULL,fetched_at TIMESTAMPTZ NOT NULL DEFAULT now(),CHECK(scheduled_end_utc>scheduled_start_utc),UNIQUE(organization_id,reservation_id))",
+ "CREATE INDEX IF NOT EXISTS mews_reservation_snapshots_org_updated_idx ON mews_reservation_snapshots(organization_id,provider_updated_utc DESC)",
+
 
 "CREATE TABLE IF NOT EXISTS messages(id UUID PRIMARY KEY DEFAULT gen_random_uuid(),conversation_id UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,role TEXT NOT NULL CHECK(role IN ('guest','assistant','staff')),content TEXT NOT NULL,evidence JSONB NOT NULL DEFAULT '[]'::jsonb,created_at TIMESTAMPTZ NOT NULL DEFAULT now())",
 "ALTER TABLE messages ADD COLUMN IF NOT EXISTS evidence JSONB NOT NULL DEFAULT '[]'::jsonb",
@@ -123,6 +139,7 @@ function role(){const ok=Array.from(arguments);return(q,r,n)=>ok.includes(q.acto
 async function audit(a,action,type,id){await db.query("INSERT INTO audit_logs(organization_id,actor_user_id,action,target_type,target_id) VALUES($1,$2,$3,$4,$5)",[a.organization_id,a.user_id,action,type||null,id||null]);}
 app.use("/api/admin/storage",requireDb,createStorageRouter({db,auth,role,audit}));
 const mewsStore=db?createMewsConnectionStore({db,encryptionKey:process.env.STORAGE_TOKEN_ENCRYPTION_KEY,clientName:process.env.MEWS_CLIENT_NAME||"Veyra AI/0.1"}):null;
+const bookingAttributionStore=db?createBookingAttributionStore({pool:db}):null;
 const escalate=requiresStaffEscalation;
 async function notify(org,cid,reason,eid){
  const configured=await db.query("SELECT webhook_url,encrypted_secret FROM organization_staff_webhooks WHERE organization_id=$1",[org.id]);
@@ -249,6 +266,41 @@ app.get("/api/admin/storage",requireDb,auth,async(q,r,n)=>{try{const x=await db.
 app.put("/api/admin/storage",requireDb,auth,role("owner","admin"),async(q,r,n)=>{try{const b=q.body||{},provider=b.provider,workspace=typeof b.workspace_reference==="string"?b.workspace_reference.trim():"",folder=typeof b.root_folder_reference==="string"?b.root_folder_reference.trim():"";if(!["google_drive","microsoft_sharepoint"].includes(provider))return r.status(400).json({error:"Choose Google Drive or Microsoft SharePoint."});if(workspace.length>300||folder.length>500)return r.status(400).json({error:"Storage references are too long."});const x=await db.query("INSERT INTO organization_storage_connections(organization_id,provider,workspace_reference,root_folder_reference,status,scopes,connected_by,connected_at,last_sync_at,last_sync_status,last_sync_error,updated_at) VALUES($1,$2,$3,$4,'pending_authorization',ARRAY[]::TEXT[],$5,NULL,NULL,'never','',now()) ON CONFLICT(organization_id) DO UPDATE SET provider=EXCLUDED.provider,workspace_reference=EXCLUDED.workspace_reference,root_folder_reference=EXCLUDED.root_folder_reference,status='pending_authorization',scopes=ARRAY[]::TEXT[],connected_by=EXCLUDED.connected_by,connected_at=NULL,last_sync_at=NULL,last_sync_status='never',last_sync_error='',updated_at=now() RETURNING provider,workspace_reference,root_folder_reference,status,last_sync_status,updated_at",[q.actor.organization_id,provider,workspace,folder,q.actor.user_id]);await audit(q.actor,"storage.target_configured","storage_connection",q.actor.organization_id);r.status(202).json({connection:x.rows[0],nextStep:"Complete provider OAuth authorization before enabling file access.",notice:"No access token has been stored and no external files have been read."});}catch(e){n(e);}});
 app.delete("/api/admin/storage",requireDb,auth,role("owner"),async(q,r,n)=>{try{await db.query("DELETE FROM organization_storage_connections WHERE organization_id=$1",[q.actor.organization_id]);await audit(q.actor,"storage.target_removed","storage_connection",q.actor.organization_id);r.json({ok:true,status:"disconnected"});}catch(e){n(e);}});
 
+app.get("/api/admin/mews/webhook",requireDb,auth,role("owner","admin"),async(q,r,n)=>{try{
+ const x=await db.query("SELECT property_reference,status FROM mews_connections WHERE organization_id=$1",[q.actor.organization_id]);
+ r.json({configured:Boolean(process.env.MEWS_WEBHOOK_TOKEN&&process.env.MEWS_INTEGRATION_ID),propertyConnected:Boolean(x.rowCount&&x.rows[0].status==="verified"),endpointTemplate:"/api/integrations/mews/events?token={shared-secret}",notice:"Mews Connector General Webhooks authenticate with a shared secret in the URL. Configure MEWS_WEBHOOK_TOKEN and MEWS_INTEGRATION_ID on the server, register the URL with Mews support, and redact the entire token query parameter from all proxy/APM logs. The receiver queues identifiers; a separately enabled worker can fetch an allowlisted reservation snapshot. Conversation-token correlation and booking attribution are not implemented."});
+}catch(e){n(e);}});
+app.post("/api/integrations/mews/events",requireDb,mewsWebhookLimiter,async(q,r,n)=>{try{
+ const expected=process.env.MEWS_WEBHOOK_TOKEN;
+ const integrationId=process.env.MEWS_INTEGRATION_ID;
+ if(!expected||!integrationId)return r.status(503).json({error:"Mews webhook receiver is not configured."});
+ if(!verifyMewsWebhookUrlSecret(q.query?.token,expected))return r.status(401).json({error:"Webhook authentication failed."});
+ let payload;try{payload=normalizeMewsGeneralWebhook(q.body,integrationId);}catch(e){return r.status(400).json({error:e.message});}
+ const connection=await db.query("SELECT organization_id FROM mews_connections WHERE lower(property_reference)=lower($1) AND status='verified' LIMIT 2",[payload.enterpriseId]);
+ if(connection.rowCount!==1)return r.status(connection.rowCount?409:404).json({error:"Mews enterprise is not uniquely connected to a verified hotel workspace."});
+ const orgId=connection.rows[0].organization_id;
+ const client=await db.connect();let queued=0;try{await client.query("BEGIN");
+  for(const event of payload.reservations){const inserted=await client.query("INSERT INTO mews_webhook_inbox(organization_id,integration_id,enterprise_id,discriminator,entity_id) VALUES($1,$2,$3,$4,$5) ON CONFLICT(organization_id,integration_id,enterprise_id,discriminator,entity_id) WHERE status IN ('pending','processing') DO NOTHING",[orgId,event.integrationId,event.enterpriseId,event.discriminator,event.entityId]);if(inserted.rowCount)queued++;}
+  if(queued)await client.query("INSERT INTO audit_logs(organization_id,actor_user_id,action,target_type,target_id) VALUES($1,NULL,'integration.mews_webhook_received','mews_webhook_batch',$2)",[orgId,String(queued)]);
+  await client.query("COMMIT");
+ }catch(e){await client.query("ROLLBACK");throw e;}finally{client.release();}
+ r.status(202).json({accepted:true,queued,ignored:payload.ignoredCount,processing:"pending",duplicateEventsCoalesced:payload.reservations.length-queued,notice:"Only Mews event identifiers were queued. No guest details were stored and no booking was attributed."});
+}catch(e){n(e);}});
+app.post("/api/public/:slug/conversations/:id/booking-attribution",requireDb,bookingIntentLimiter,async(q,r,n)=>{try{
+ if(process.env.BOOKING_ATTRIBUTION_ENABLED!=="true")return r.status(503).json({error:"Booking attribution is not enabled for this booking-engine configuration."});
+ if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(q.params.id))return r.status(400).json({error:"Invalid conversation reference."});
+ const token=q.body?.conversationToken;
+ if(typeof token!=="string"||!/^[A-Za-z0-9_-]{40,64}$/.test(token))return r.status(401).json({error:"Conversation access token required."});
+ const orgResult=await db.query("SELECT id,status FROM organizations WHERE slug=$1",[q.params.slug]);
+ if(!orgResult.rowCount||orgResult.rows[0].status==="suspended")return r.status(404).json({error:"Conversation not found."});
+ const orgId=orgResult.rows[0].id;
+ const privacy=await db.query("SELECT 1 FROM organization_privacy_approvals WHERE organization_id=$1 AND policy_version='2026-11-14-v1' AND purpose_acknowledged=true AND retention_acknowledged=true AND backup_acknowledged=true AND access_acknowledged=true AND deletion_acknowledged=true AND revoked_at IS NULL",[orgId]);
+ if(!privacy.rowCount||process.env.GUEST_DATA_STORAGE_ENABLED!=="true")return r.status(503).json({error:"The hotel's current privacy and guest-data approvals are required."});
+ const conversation=await db.query("SELECT id FROM conversations WHERE id=$1 AND organization_id=$2 AND guest_token_hash=$3",[q.params.id,orgId,hash(token)]);
+ if(!conversation.rowCount)return r.status(404).json({error:"Conversation not found."});
+ const issued=await bookingAttributionStore.issueIntent({organizationId:orgId,conversationId:q.params.id});
+ r.status(201).json({attributionToken:issued.oneTimeToken,expiresAt:issued.expiresAt,notice:"One-time correlation token. The hotel's booking engine must explicitly support a private metadata field and be configured to preserve this token. Do not put it in guest notes or a URL."});
+}catch(e){if(e instanceof Error&&/Conversation not found|valid UUID|intent/i.test(e.message))return r.status(400).json({error:e.message});n(e);}});
 app.get("/api/admin/mews",requireDb,auth,role("owner","admin"),async(q,r,n)=>{try{const connection=await mewsStore.getStatus(q.actor.organization_id);r.json({connection,encryptionConfigured:mewsStore.encryptionConfigured,notice:"Credential values are never returned. Only the official Mews demo environment is enabled."});}catch(e){n(e);}});
 app.put("/api/admin/mews",requireDb,auth,role("owner","admin"),integrationTestLimiter,async(q,r,n)=>{try{if(!mewsStore.encryptionConfigured)return r.status(503).json({error:"Server-side credential encryption is not configured."});const connection=await mewsStore.save({organizationId:q.actor.organization_id,userId:q.actor.user_id,input:q.body});await audit(q.actor,"integration.mews_credentials_saved","mews_connection",q.actor.organization_id);r.status(202).json({connection,nextStep:"Run the read-only Mews verification. Credential values are not returned."});}catch(e){r.status(400).json({error:e.message||"Could not save Mews connection."});}});
 app.post("/api/admin/mews/verify",requireDb,auth,role("owner","admin"),integrationTestLimiter,async(q,r)=>{try{const result=await mewsStore.verify(q.actor.organization_id);await audit(q.actor,"integration.mews_verified","mews_connection",q.actor.organization_id);r.json(result);}catch(e){await db.query("UPDATE mews_connections SET status='error',last_error=$1,updated_at=now() WHERE organization_id=$2",[String(e.message||"Verification failed").slice(0,240),q.actor.organization_id]).catch(()=>{});r.status(502).json({verified:false,error:"Mews demo verification failed. Check the hotel's credentials, property reference, time zone and daily service configuration."});}});

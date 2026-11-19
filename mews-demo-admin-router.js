@@ -150,8 +150,15 @@ function createMewsDemoAdminRouter({
     try {
       const arrivalDate = cleanText(req.body?.arrivalDate, "arrivalDate", 10);
       const departureDate = cleanText(req.body?.departureDate, "departureDate", 10);
+      const connection = await db.query(
+        "SELECT status FROM pms_connections WHERE organization_id=$1 AND provider=$2 AND mode='sandbox'",
+        [req.actor.organization_id, PROVIDER]
+      );
+      if (!connection.rowCount || connection.rows[0].status !== "connected") {
+        return res.status(409).json({ verified: false, error: "Run a successful read-only connection test before checking availability." });
+      }
       const config = await loadConfig(req.actor.organization_id);
-      if (!config) return res.status(409).json({ verified: false, error: "Configure and test this hotel's Mews demo connection first." });
+      if (!config) return res.status(409).json({ verified: false, error: "Configure this hotel's Mews demo credentials first." });
       const client = clientFor(req.actor.organization_id, config);
       const adapter = createMewsAvailabilityAdapter({
         client, tenantId: req.actor.organization_id,

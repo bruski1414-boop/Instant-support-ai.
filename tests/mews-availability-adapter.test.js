@@ -88,3 +88,31 @@ test("passes the requested local stay dates to the hotel timezone resolver", asy
   await a.value.checkAvailability(stay);
   assert.deepEqual(received, { arrivalDate: stay.arrivalDate, departureDate: stay.departureDate });
 });
+
+test("registers through the shared PMS capability contract without claiming booking support", async () => {
+  const { createPmsAdapterRegistry } = require("../pms-provider-registry");
+  const a = adapter({
+    TimeUnitStartsUtc: dates,
+    CategoryAvailabilities: [{ CategoryId: "ocean-villa", Availabilities: [3, 2, 4] }]
+  });
+  const registry = createPmsAdapterRegistry();
+  registry.register({
+    providerId: "mews",
+    tenantId: "hotel-demo",
+    adapter: a.value,
+    approved: true
+  });
+  const registered = registry.get({
+    providerId: "mews",
+    tenantId: "hotel-demo",
+    requiredCapabilities: ["availability"]
+  });
+  assert.equal(typeof registered.availability, "function");
+  assert.equal(registry.get({
+    providerId: "mews",
+    tenantId: "hotel-demo",
+    requiredCapabilities: ["reservations"]
+  }), null);
+  const result = await registered.availability(stay);
+  assert.equal(result.roomsAvailable, 2);
+});

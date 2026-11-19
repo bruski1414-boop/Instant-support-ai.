@@ -188,11 +188,12 @@ function createQuoteWorkflow({ provider, organizationId, signingSecret, now = ()
         // Resolve the original request key before any retry; never submit a second write here.
         try {
           const existing = await provider.lookupReservationByIdempotencyKey(key, { organizationId });
-          if (existing && existing.status === "confirmed" &&
+          if (existing && existing.organizationId === organizationId &&
+              existing.status === "confirmed" &&
               typeof existing.bookingId === "string" && existing.bookingId.trim()) {
             return Object.freeze({ status: "confirmed", confirmed: true, bookingId: existing.bookingId.trim(), reconciled: true });
           }
-          if (existing && existing.status === "pending") {
+          if (existing && existing.organizationId === organizationId && existing.status === "pending") {
             return Object.freeze({ status: "request_pending", confirmed: false, reason: "provider_write_pending" });
           }
         } catch { /* staff must reconcile through the PMS */ }

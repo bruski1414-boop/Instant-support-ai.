@@ -60,3 +60,20 @@ These quote and reconciliation gates are not yet implemented in the shared booki
 6. If a reservation write throws, it looks up the original idempotency key once. It never blindly repeats the write. Unresolved outcomes are handed to staff.
 
 The provider adapter must implement `getQuote`, `createReservation`, and `lookupReservationByIdempotencyKey`. This module is not connected to a real PMS, payment provider, credential vault or hotel account. Its tests use synthetic data only. Do not enable guest-facing booking or transmit real guest details until the hotel has approved the provider, scopes, privacy notice, retention controls, credential storage, sandbox test plan and operational sign-off.
+
+
+## Explicit booking activation readiness gate
+
+The application now reports booking readiness separately from general pilot readiness at `/api/health` and `/api/readiness`. A general support pilot must not be mistaken for a reservation-enabled pilot.
+
+`readyForBookings` remains false unless all of these server-side evidence flags are explicitly set to the string `true`:
+
+- `PMS_ADAPTER_CONFIGURED`
+- `PMS_AVAILABILITY_SANDBOX_TEST_PASSED`
+- `PMS_BOOKING_SANDBOX_TEST_PASSED`
+- `QUOTE_WORKFLOW_INTEGRATED`
+- `HOTEL_BOOKING_APPROVED`
+- `HOTEL_BOOKING_PRIVACY_APPROVED`
+- `PMS_CREDENTIAL_VAULT_CONFIGURED`
+
+The endpoint exposes each result under `bookingChecks`. Missing values, truthy strings other than `"true"`, and numeric values do not pass. These flags are release evidence gates, not automatic proof that a vendor connection works; they must only be set after the corresponding technical test and hotel approval have actually occurred. Do not set them to make the dashboard appear ready. The quote workflow is still not wired into a live PMS booking route, and Shebara's PMS remains unconfirmed.

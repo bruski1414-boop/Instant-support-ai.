@@ -114,7 +114,7 @@ async function auth(q,r,n){
 function role(){const ok=Array.from(arguments);return(q,r,n)=>ok.includes(q.actor.role)?n():r.status(403).json({error:"Insufficient permissions."});}
 async function audit(a,action,type,id){await db.query("INSERT INTO audit_logs(organization_id,actor_user_id,action,target_type,target_id) VALUES($1,$2,$3,$4,$5)",[a.organization_id,a.user_id,action,type||null,id||null]);}
 app.use("/api/admin/storage",requireDb,createStorageRouter({db,auth,role,audit}));
-app.use("/api/admin/integrations/mews-demo",requireDb,createMewsDemoAdminRouter({express,db,auth,role,limiter:integrationTestLimiter,credentialVault:pmsCredentialVault,enabled:process.env.MEWS_DEMO_READS_ENABLED==="true"}));
+if(db)app.use("/api/admin/integrations/mews-demo",requireDb,createMewsDemoAdminRouter({express,db,auth,role,limiter:integrationTestLimiter,credentialVault:pmsCredentialVault,enabled:process.env.MEWS_DEMO_READS_ENABLED==="true"}));else app.use("/api/admin/integrations/mews-demo",requireDb);
 const escalate=requiresStaffEscalation;
 async function notify(org,cid,reason){
  const saved=await db.query("SELECT encrypted_config FROM organization_staff_webhooks WHERE organization_id=$1 AND status='configured'",[org.id]);

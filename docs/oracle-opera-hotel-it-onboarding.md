@@ -41,7 +41,9 @@ The hotel’s authorised IT/vendor owner should confirm, through an approved bus
 ## Current Veyra status
 
 - Oracle OPERA is listed in the provider registry as contract-only.
-- No Oracle OPERA/OHIP adapter is implemented or connected.
+- A minimal server-side, GET-only OHIP transport foundation now exists in `opera-ohip-readonly-client.js`. It accepts a hotel-configured gateway, application key, hotel ID, and injected server-side access-token provider; it does not acquire tokens, guess API routes, map room/rate responses, or create reservations.
+- The OHIP transport has synthetic unit tests for HTTPS, gateway path confinement, headers, query validation, non-JSON/oversized responses, and sanitised HTTP errors. These tests do not prove connectivity to Shebara or Oracle's sandbox.
+- No Oracle OPERA availability mapper, quote adapter, reservation writer, or live OHIP connection is implemented.
 - The existing Mews transport is read-only and does not establish that Shebara uses Mews.
 - The quote-consent workflow is provider-neutral and is not wired to a live PMS route.
 - Booking readiness must remain false until every technical and hotel-approval gate is evidenced.

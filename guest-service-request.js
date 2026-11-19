@@ -1,12 +1,12 @@
 "use strict";
 
-const ISO_WITH_OFFSET = /^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}(?::\\d{2}(?:\\.\\d{1,3})?)?(?:Z|[+-]\\d{2}:\\d{2})$/;
-const E164 = /^\\+[1-9]\\d{7,14}$/;
+const ISO_WITH_OFFSET = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2})$/;
+const E164 = /^\+[1-9]\d{7,14}$/;
 
 function requiredText(value, field, maxLength) {
   if (typeof value !== "string") throw new Error(field + " is required.");
-  const normalized = value.trim().replace(/\\s+/g, " ");
-  if (!normalized || normalized.length > maxLength || /[\\u0000-\\u001f\\u007f]/.test(normalized)) {
+  const normalized = value.trim().replace(/\s+/g, " ");
+  if (!normalized || normalized.length > maxLength || /[\u0000-\u001f\u007f]/.test(normalized)) {
     throw new Error(field + " is invalid.");
   }
   return normalized;

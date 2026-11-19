@@ -92,6 +92,9 @@ function createMewsReservationWriter({
       throw new Error("Valid adult and child guest counts are required.");
     }
     const roomTypeCode = requiredText(input.roomTypeCode, "roomTypeCode", 80);
+    if (input.consentToShareDetails !== true) {
+      throw new Error("Guest consent is required before sharing reservation details with the hotel.");
+    }
     if (!input.guest || typeof input.guest !== "object" || Array.isArray(input.guest)) {
       throw new Error("Guest details are required.");
     }

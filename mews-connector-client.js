@@ -160,7 +160,7 @@ function createMewsConnectorClient({
     getServices: (payload) => post("services", payload),
     getAvailability: (payload) => post("availability", payload),
     getReservations: (payload) => post("reservations", payload),
-    addReservations: (payload) => {
+    addReservations: async (payload) => {
       const safePayload = validateAddReservationsPayload(payload);
       return post("addReservations", safePayload, true);
     }

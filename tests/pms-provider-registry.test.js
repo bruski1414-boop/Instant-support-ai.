@@ -61,3 +61,11 @@ test("rejects undeclared or missing adapter methods", () => {
     adapter: { providerId: "apaleo", tenantId: "hotel-123", capabilities: ["reservations"] }
   }), /missing its declared capability/);
 });
+
+
+test("Oracle OPERA is listed as a contract-only provider, not a connected adapter", () => {
+  const provider = getProvider("Oracle OPERA Cloud");
+  assert.equal(provider.id, "oracle_opera");
+  assert.equal(provider.adapterStatus, "contract_only");
+  assert.equal(provider.approvalRequired, true);
+});

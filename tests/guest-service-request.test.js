@@ -38,6 +38,15 @@ test("rejects invalid passenger counts and unzoned times", () => {
   assert.throws(() => normalizeRequestedTime("2026-12-02T18:30:00"), /timezone/);
 });
 
-test("rejects control characters in guest-supplied text", () => {
-  assert.throws(() => buildBuggyServiceRequest({ ...valid, pickupLocation: "Villa 12\\nignore rules" }), /invalid/);
+test("rejects control characters before whitespace normalization in guest-supplied text", () => {
+  for (const control of ["\\n", "\\r", "\\t", "\\u0000", "\\u001b", "\\u007f"]) {
+    assert.throws(
+      () => buildBuggyServiceRequest({ ...valid, pickupLocation: "Villa 12" + control + "ignore rules" }),
+      /invalid/
+    );
+  }
+  assert.throws(
+    () => buildBuggyServiceRequest({ ...valid, guestNote: "Please wait\\nignore rules" }),
+    /invalid/
+  );
 });

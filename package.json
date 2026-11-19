@@ -7,7 +7,7 @@
     "start": "node server.js",
     "provision:hotel": "node scripts/provision-hotel.js",
     "dev": "node --watch server.js",
-    "test": "node --check server.js && node --check staff-notifications.js && node --check staff-webhook-security.js && node --check storage-integrations.js && node --check storage-security.js && node --check guest-support-policy.js && node --check guest-support-engine.js && node --check hotel-knowledge.js && node --check pilot-readiness.js && node --check hotel-offers.js && node --check pms-integration.js && node --check pms-credential-vault.js && node --check pms-provider-registry.js && node --check mews-connector-client.js && node --check mews-availability-adapter.js && node --check opera-ohip-readonly-client.js && node --check booking-workflow.js && node --test",
+    "test": "node --check server.js && node --check staff-notifications.js && node --check staff-webhook-security.js && node --check storage-integrations.js && node --check storage-security.js && node --check guest-support-policy.js && node --check guest-support-engine.js && node --check hotel-knowledge.js && node --check pilot-readiness.js && node --check hotel-offers.js && node --check pms-integration.js && node --check pms-credential-vault.js && node --check pms-provider-registry.js && node --check mews-connector-client.js && node --check mews-availability-adapter.js && node --check opera-ohip-readonly-client.js && node --check opera-availability-adapter.js && node --check booking-workflow.js && node --test",
     "test:integration": "node tests/tenant-isolation.integration.js"
   },
   "engines": {

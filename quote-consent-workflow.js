@@ -75,7 +75,7 @@ function createQuoteWorkflow({ provider, organizationId, signingSecret, now = ()
     throw new PmsIntegrationError("QUOTE_PROVIDER_INCOMPLETE", "The approved hotel adapter must support quotes, reservation writes and idempotency reconciliation.");
   }
   if (typeof organizationId !== "string" || !organizationId.trim() ||
-      typeof signingSecret !== "string' || signingSecret.length < 32) {
+      typeof signingSecret !== "string" || signingSecret.length < 32) {
     throw new PmsIntegrationError("QUOTE_WORKFLOW_CONFIG", "A hotel workspace and strong server-side quote signing secret are required.");
   }
 

@@ -21,6 +21,10 @@ The hotel’s authorised IT/vendor owner should confirm, through an approved bus
 - Data controller/processor roles, approved privacy notice, retention/deletion schedule, audit requirements, and incident escalation contacts.
 - Named hotel owner who can approve a pilot and sign off the test evidence.
 
+## OHIP eligibility and partner onboarding
+
+Oracle's current guidance says OHIP access depends on the property's OPERA Cloud Foundation or OPERA Cloud Central entitlement and chain onboarding. Partner integrations also have their own subscription/onboarding requirements. The hotel should verify eligibility with its Oracle account team before Veyra invests in a property-specific connector. Oracle also advises customers not to hand their own Developer Portal credentials to third-party vendors; the vendor must complete its own partner onboarding and the customer environment must be added through the approved process. Shared Oracle sandbox environments may contain activity from other developers, so use synthetic test data only and do not treat shared sandbox data as private or production-like.
+
 ## Credential and data handling
 
 - Do not send passwords, client secrets, access tokens, guest details, or production payloads through ChatGPT, email drafts, tickets, or source control.

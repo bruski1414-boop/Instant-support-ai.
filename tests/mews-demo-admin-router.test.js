@@ -6,7 +6,7 @@ const express = require("express");
 const { createMewsDemoAdminRouter, validateDemoConfig } = require("../mews-demo-admin-router");
 
 function middleware(_req, _res, next) { next(); }
-function role() { return middleware; }
+function role() {\n  const allowed = Array.from(arguments);\n  return (req, res, next) => allowed.includes(req.actor?.role)\n    ? next()\n    : res.status(403).json({ error: "Insufficient permissions." });\n}
 
 function makeDb() {
   const state = { encrypted: null, status: "pending_authorization", queries: [] };
@@ -76,6 +76,21 @@ test("Mews demo admin routes remain hidden unless explicitly enabled", async () 
   });
 });
 
+test("Mews demo status is restricted to owner and admin roles", async () => {
+  const router = createMewsDemoAdminRouter({
+    express, db: makeDb(),
+    auth: (req, _res, next) => {
+      req.actor = { organization_id: "tenant-a", user_id: "staff-a", role: "staff" };
+      next();
+    },
+    role, credentialVault: { encrypt: JSON.stringify, decrypt: JSON.parse }, enabled: true
+  });
+  await withServer(router, async base => {
+    const response = await fetch(base + "/status");
+    assert.equal(response.status, 403);
+  });
+});
+
 test("stores encrypted demo credentials and exposes only read-only connection and availability results", async () => {
   const db = makeDb();
   const vault = {
@@ -103,7 +118,7 @@ test("stores encrypted demo credentials and exposes only read-only connection an
   };
   const router = createMewsDemoAdminRouter({
     express, db, auth: (req, _res, next) => {
-      req.actor = { organization_id: "tenant-a", user_id: "staff-a" };
+      req.actor = { organization_id: "tenant-a", user_id: "staff-a", role: "owner" };
       next();
     }, role, credentialVault: vault, enabled: true, fetchImpl
   });

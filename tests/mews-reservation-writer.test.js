@@ -94,6 +94,8 @@ function setup(overrides = {}) {
       customerId: "mews-customer-1",
       rateId: "public-rate",
       roomTypeCode: "ocean-villa",
+      arrivalDate: "2026-12-02",
+      departureDate: "2026-12-05",
       startUtc: "2026-12-02T14:00:00Z",
       endUtc: "2026-12-05T10:00:00Z"
     }),

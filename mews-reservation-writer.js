@@ -99,7 +99,8 @@ function createMewsReservationWriter({
       fullName: requiredText(input.guest.fullName, "guest.fullName", 160),
       phone: requiredText(input.guest.phone, "guest.phone", 16)
     };
-    if (guest.fullName.split(" ").filter(Boolean).length < 2 || !/^\\+[1-9][0-9]{7,14}$/.test(guest.phone)) {
+    if (guest.fullName.split(" ").filter(Boolean).length < 2 ||
+        !guest.phone.startsWith("+") || !/^[0-9]{8,15}$/.test(guest.phone.slice(1))) {
       throw new Error("A full guest name and international phone number are required.");
     }
     const hash = stableRequestHash({ ...input, arrivalDate, departureDate, roomTypeCode, guest });

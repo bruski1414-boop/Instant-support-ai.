@@ -81,7 +81,7 @@ function createMewsReservationWriter({
     }
     const arrivalDate = requiredText(input.arrivalDate, "arrivalDate", 10);
     const departureDate = requiredText(input.departureDate, "departureDate", 10);
-    const validDate = value => /^\\d{4}-\\d{2}-\\d{2}$/.test(value) &&
+    const validDate = value => /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(value) &&
       Number.isFinite(Date.parse(value + "T00:00:00.000Z")) &&
       new Date(value + "T00:00:00.000Z").toISOString().slice(0, 10) === value;
     if (!validDate(arrivalDate) || !validDate(departureDate) || departureDate <= arrivalDate) {
@@ -99,7 +99,7 @@ function createMewsReservationWriter({
       fullName: requiredText(input.guest.fullName, "guest.fullName", 160),
       phone: requiredText(input.guest.phone, "guest.phone", 16)
     };
-    if (guest.fullName.split(/\\s+/).length < 2 || !/^\\+[1-9]\\d{7,14}$/.test(guest.phone)) {
+    if (guest.fullName.split(" ").filter(Boolean).length < 2 || !/^\\+[1-9][0-9]{7,14}$/.test(guest.phone)) {
       throw new Error("A full guest name and international phone number are required.");
     }
     const hash = stableRequestHash({ ...input, arrivalDate, departureDate, roomTypeCode, guest });

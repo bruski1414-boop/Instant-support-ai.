@@ -5,8 +5,11 @@ const E164 = /^\+[1-9]\d{7,14}$/;
 
 function requiredText(value, field, maxLength) {
   if (typeof value !== "string") throw new Error(field + " is required.");
+  if (/[\u0000-\u001f\u007f]/.test(value)) {
+    throw new Error(field + " is invalid.");
+  }
   const normalized = value.trim().replace(/\s+/g, " ");
-  if (!normalized || normalized.length > maxLength || /[\u0000-\u001f\u007f]/.test(normalized)) {
+  if (!normalized || normalized.length > maxLength) {
     throw new Error(field + " is invalid.");
   }
   return normalized;

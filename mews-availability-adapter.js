@@ -2,14 +2,31 @@
 
 /**
  * Converts Mews daily service availability into Veyra's conservative
- * whole-stay availability result. The caller must supply UTC boundaries
- * calculated using the hotel's configured timezone and Mews service time unit.
+ * whole-stay result. The hotel-specific resolver must convert local check-in
+ * and check-out dates into the property's actual UTC day-unit boundaries.
+ * Veyra intentionally does not guess a hotel's timezone or DST rules.
  */
 function requiredText(value, field, max = 200) {
   if (typeof value !== "string" || !value.trim() || value.length > max) {
     throw new Error(field + " is required.");
   }
   return value.trim();
+}
+
+function validDate(value, field) {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    throw new Error(field + " must use YYYY-MM-DD.");
+  }
+  const parsed = new Date(value + "T00:00:00.000Z");
+  if (!Number.isFinite(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== value) {
+    throw new Error(field + " must be a real calendar date.");
+  }
+  return value;
+}
+
+function nightsBetween(arrivalDate, departureDate) {
+  return (Date.parse(departureDate + "T00:00:00.000Z") -
+    Date.parse(arrivalDate + "T00:00:00.000Z")) / 86400000;
 }
 
 function validIso(value, field) {
@@ -20,19 +37,17 @@ function validIso(value, field) {
   return value;
 }
 
-function createMewsAvailabilityAdapter({ client, tenantId, serviceId, resourceCategoryId, timeUnitStartsUtc } = {}) {
+function createMewsAvailabilityAdapter({
+  client, tenantId, serviceId, resourceCategoryId, resolveTimeUnits
+} = {}) {
   if (!client || typeof client.getAvailability !== "function" || client.providerId !== "mews" || client.readOnly !== true) {
     throw new Error("A read-only Mews Connector API client is required.");
   }
   const safeTenant = requiredText(tenantId, "tenantId", 128);
   const safeService = requiredText(serviceId, "serviceId", 128);
   const safeCategory = requiredText(resourceCategoryId, "resourceCategoryId", 128);
-  if (!Array.isArray(timeUnitStartsUtc) || timeUnitStartsUtc.length < 1 || timeUnitStartsUtc.length > 368) {
-    throw new Error("Expected Mews time-unit boundaries are required.");
-  }
-  const expected = timeUnitStartsUtc.map((value, index) => validIso(value, "timeUnitStartsUtc[" + index + "]"));
-  if (expected.some((value, index) => index > 0 && Date.parse(value) <= Date.parse(expected[index - 1]))) {
-    throw new Error("Time-unit boundaries must be strictly increasing.");
+  if (typeof resolveTimeUnits !== "function") {
+    throw new Error("A hotel-timezone-aware time-unit resolver is required.");
   }
 
   return Object.freeze({
@@ -40,10 +55,23 @@ function createMewsAvailabilityAdapter({ client, tenantId, serviceId, resourceCa
     tenantId: safeTenant,
     capabilities: Object.freeze(["availability"]),
     async checkAvailability({ arrivalDate, departureDate, roomTypeCode } = {}) {
-      if (typeof arrivalDate !== "string" || typeof departureDate !== "string" || departureDate <= arrivalDate) {
-        throw new Error("A valid arrival and departure date range is required.");
+      const arrival = validDate(arrivalDate, "arrivalDate");
+      const departure = validDate(departureDate, "departureDate");
+      const nights = nightsBetween(arrival, departure);
+      if (!Number.isInteger(nights) || nights < 1 || nights > 367) {
+        throw new Error("Stay must contain between 1 and 367 nights.");
       }
       if (roomTypeCode !== safeCategory) throw new Error("Room type does not match the configured Mews resource category.");
+
+      const boundaries = await resolveTimeUnits({ arrivalDate: arrival, departureDate: departure });
+      if (!Array.isArray(boundaries) || boundaries.length !== nights) {
+        throw new Error("Hotel timezone mapping must return exactly one Mews day-unit boundary per night.");
+      }
+      const expected = boundaries.map((value, index) => validIso(value, "timeUnitStartsUtc[" + index + "]"));
+      if (expected.some((value, index) => index > 0 && Date.parse(value) <= Date.parse(expected[index - 1]))) {
+        throw new Error("Mews time-unit boundaries must be strictly increasing.");
+      }
+
       const response = await client.getAvailability({
         ServiceId: safeService,
         FirstTimeUnitStartUtc: expected[0],
@@ -62,14 +90,16 @@ function createMewsAvailabilityAdapter({ client, tenantId, serviceId, resourceCa
           category.Availabilities.some(value => !Number.isSafeInteger(value) || value < 0)) {
         throw new Error("Mews did not return complete availability for the configured room category.");
       }
+
+      const observedAt = new Date().toISOString();
       return Object.freeze({
         organizationId: safeTenant,
-        arrivalDate,
-        departureDate,
+        arrivalDate: arrival,
+        departureDate: departure,
         roomTypeCode: safeCategory,
         roomsAvailable: Math.min(...category.Availabilities),
-        observedAt: new Date().toISOString(),
-        validUntil: new Date(Date.now() + 60_000).toISOString(),
+        observedAt,
+        validUntil: new Date(Date.parse(observedAt) + 60_000).toISOString(),
         source: "mews_connector_api"
       });
     }

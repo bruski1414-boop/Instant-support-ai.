@@ -66,8 +66,9 @@ function createMewsReservationWriter({
   if (!idempotencyStore || idempotencyStore.durable !== true ||
       typeof idempotencyStore.claim !== "function" ||
       typeof idempotencyStore.complete !== "function" ||
-      typeof idempotencyStore.markUncertain !== "function") {
-    throw new Error("A durable atomic idempotency store is required before enabling reservation writes.");
+      typeof idempotencyStore.markUncertain !== "function" ||
+      typeof idempotencyStore.release !== "function") {
+    throw new Error("A durable atomic idempotency store with safe preflight release is required before enabling reservation writes.");
   }
 
   async function createReservation(input = {}) {
@@ -76,37 +77,6 @@ function createMewsReservationWriter({
     }
     const idempotencyKey = requiredText(input.idempotencyKey, "idempotencyKey", 100);
     const hash = stableRequestHash(input);
-
-    const mapping = await resolveReservation({
-      organizationId,
-      guest: input.guest,
-      arrivalDate: input.arrivalDate,
-      departureDate: input.departureDate,
-      adults: input.adults,
-      children: input.children,
-      roomTypeCode: input.roomTypeCode
-    });
-    if (!mapping || typeof mapping !== "object" || Array.isArray(mapping)) {
-      throw new Error("Hotel guest and rate mapping is incomplete.");
-    }
-    if (mapping.roomTypeCode !== input.roomTypeCode ||
-        (mapping.serviceId && mapping.serviceId !== safeServiceId) ||
-        (mapping.resourceCategoryId && mapping.resourceCategoryId !== safeCategoryId)) {
-      throw new Error("Hotel reservation mapping does not match the approved service or room category.");
-    }
-
-    const payload = validateAddReservationsPayload({
-      ServiceId: safeServiceId,
-      Reservations: [{
-        CustomerId: requiredText(mapping.customerId, "customerId", 128),
-        RequestedCategoryId: safeCategoryId,
-        RateId: requiredText(mapping.rateId, "rateId", 128),
-        StartUtc: mapping.startUtc,
-        EndUtc: mapping.endUtc,
-        PersonCounts: { AdultCount: input.adults, ChildCount: input.children }
-      }]
-    });
-
     const claim = await idempotencyStore.claim({ organizationId, idempotencyKey, requestHash: hash });
     if (!claim || typeof claim !== "object") throw new Error("Idempotency store returned an invalid claim.");
     if (claim.status === "completed" && claim.result) {
@@ -114,6 +84,63 @@ function createMewsReservationWriter({
     }
     if (claim.status !== "acquired") {
       throw new Error("This reservation request is already running or requires staff reconciliation.");
+    }
+
+    let payload;
+    try {
+      const availability = await availabilityAdapter.checkAvailability({
+        arrivalDate: input.arrivalDate,
+        departureDate: input.departureDate,
+        roomTypeCode: input.roomTypeCode
+      });
+      const observedAt = availability && Date.parse(availability.observedAt);
+      const validUntil = availability && Date.parse(availability.validUntil);
+      const now = Date.now();
+      if (!availability || availability.organizationId !== organizationId ||
+          availability.arrivalDate !== input.arrivalDate ||
+          availability.departureDate !== input.departureDate ||
+          availability.roomTypeCode !== input.roomTypeCode ||
+          !Number.isSafeInteger(availability.roomsAvailable) || availability.roomsAvailable < 1 ||
+          !Number.isFinite(observedAt) || !Number.isFinite(validUntil) ||
+          observedAt > now || validUntil <= now || validUntil <= observedAt ||
+          now - observedAt > 5 * 60 * 1000 || validUntil - observedAt > 15 * 60 * 1000) {
+        throw new Error("Fresh, matching live room availability for this hotel and stay is required before booking.");
+      }
+
+      const mapping = await resolveReservation({
+        organizationId,
+        guest: input.guest,
+        arrivalDate: input.arrivalDate,
+        departureDate: input.departureDate,
+        adults: input.adults,
+        children: input.children,
+        roomTypeCode: input.roomTypeCode
+      });
+      if (!mapping || typeof mapping !== "object" || Array.isArray(mapping)) {
+        throw new Error("Hotel guest and rate mapping is incomplete.");
+      }
+      if (mapping.roomTypeCode !== input.roomTypeCode ||
+          (mapping.arrivalDate && mapping.arrivalDate !== input.arrivalDate) ||
+          (mapping.departureDate && mapping.departureDate !== input.departureDate) ||
+          (mapping.serviceId && mapping.serviceId !== safeServiceId) ||
+          (mapping.resourceCategoryId && mapping.resourceCategoryId !== safeCategoryId)) {
+        throw new Error("Hotel reservation mapping does not match the approved service, room category or stay.");
+      }
+
+      payload = validateAddReservationsPayload({
+        ServiceId: safeServiceId,
+        Reservations: [{
+          CustomerId: requiredText(mapping.customerId, "customerId", 128),
+          RequestedCategoryId: safeCategoryId,
+          RateId: requiredText(mapping.rateId, "rateId", 128),
+          StartUtc: mapping.startUtc,
+          EndUtc: mapping.endUtc,
+          PersonCounts: { AdultCount: input.adults, ChildCount: input.children }
+        }]
+      });
+    } catch (error) {
+      await idempotencyStore.release({ organizationId, idempotencyKey, requestHash: hash });
+      throw error;
     }
 
     let response;

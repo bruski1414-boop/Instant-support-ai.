@@ -53,6 +53,7 @@ function createMewsAvailabilityAdapter({
   return Object.freeze({
     providerId: "mews",
     tenantId: safeTenant,
+    organizationId: safeTenant,
     capabilities: Object.freeze(["availability"]),
     async checkAvailability({ arrivalDate, departureDate, roomTypeCode } = {}) {
       const arrival = validDate(arrivalDate, "arrivalDate");
@@ -102,6 +103,11 @@ function createMewsAvailabilityAdapter({
         validUntil: new Date(Date.parse(observedAt) + 60_000).toISOString(),
         source: "mews_connector_api"
       });
+    },
+    // The registry contract calls this capability "availability"; keep the
+    // booking-service method name as an alias for provider-neutral orchestration.
+    async availability(input) {
+      return this.checkAvailability(input);
     }
   });
 }

@@ -149,7 +149,8 @@ function reconcilePaidAddons({ organizationId, provider, orderItems, bills, paym
       }
     }
     const netAmountMinor = itemAmount - adjustmentTotal;
-    if (netAmountMinor <= 0) continue;
+    // Keep fully refunded/charged-back items in the evidence output so the ledger
+    // can retain the original gross receipt and its full adjustment, netting to zero.
 
     const paidAt = charged.map(payment => timestamp(payment.occurredAt, "payment occurredAt")).sort().at(-1);
     output.push(Object.freeze({

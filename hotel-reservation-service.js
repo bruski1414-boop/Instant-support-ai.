@@ -1,8 +1,8 @@
 "use strict";
 
-const DATE = /^\\d{4}-\\d{2}-\\d{2}$/;
+const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const IDEMPOTENCY = /^[A-Za-z0-9_-]{20,100}$/;
-const PHONE = /^\\+[1-9]\\d{7,14}$/;
+const PHONE = /^\+[1-9]\d{7,14}$/;
 
 function date(value, field) {
   if (typeof value !== "string" || !DATE.test(value)) throw new Error(field + " must use YYYY-MM-DD.");
@@ -17,8 +17,8 @@ function text(value, field, max = 160) {
   if (typeof value !== "string") throw new Error(field + " is required.");
   // Reject controls before whitespace normalization so tabs/newlines cannot be
   // silently converted into spaces in guest-supplied or provider identifiers.
-  if (/[\\u0000-\\u001f\\u007f]/.test(value)) throw new Error(field + " is invalid.");
-  const normalized = value.trim().replace(/\\s+/g, " ");
+  if (/[\u0000-\u001f\u007f]/.test(value)) throw new Error(field + " is invalid.");
+  const normalized = value.trim().replace(/\s+/g, " ");
   if (!normalized || normalized.length > max) throw new Error(field + " is invalid.");
   return normalized;
 }

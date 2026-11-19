@@ -106,6 +106,22 @@ main{padding:28px clamp(16px,4vw,48px);max-width:1450px;width:100%;margin:auto}.
    <div id="pmsConnectionsList" class="notice">Loading hotel connections…</div>
    <div class="actions"><button class="btn" id="testPmsSandbox" type="button">Test PMS adapter framework</button></div>
    <div id="pmsIntegrationStatus" class="notice" role="status">No live hotel PMS provider is connected.</div>
+   <div class="sectionrow"><h3>Connect a hotel's Mews account</h3><span class="muted">Owner / admin only</span></div>
+   <p class="muted">Use credentials supplied by the hotel's authorised Mews administrator. Credentials are encrypted before storage. Configure every room category and rate that guests may book.</p>
+   <form id="mewsIntegrationForm" class="card">
+    <div class="grid" style="grid-template-columns:repeat(2,minmax(0,1fr))">
+     <div class="field"><label for="mewsClientToken">Mews Client Token</label><input id="mewsClientToken" type="password" autocomplete="off" maxlength="300" placeholder="Leave blank to reuse saved credentials"></div>
+     <div class="field"><label for="mewsAccessToken">Mews Access Token</label><input id="mewsAccessToken" type="password" autocomplete="off" maxlength="300" placeholder="Leave blank to reuse saved credentials"></div>
+     <div class="field"><label for="mewsServiceId">Accommodation service ID</label><input id="mewsServiceId" required maxlength="120"></div>
+     <div class="field"><label for="mewsTimezone">Hotel IANA timezone</label><input id="mewsTimezone" required maxlength="80" placeholder="e.g. Asia/Bangkok"></div>
+     <div class="field"><label for="mewsCheckIn">Local check-in time</label><input id="mewsCheckIn" type="time" step="1" value="14:00:00" required></div>
+     <div class="field"><label for="mewsCheckOut">Local check-out time</label><input id="mewsCheckOut" type="time" step="1" value="10:00:00" required></div>
+    </div>
+    <div class="sectionrow"><h3>Room types and rates</h3><button class="btn" id="addMewsRoom" type="button">Add room type</button></div>
+    <div id="mewsRoomMappings" style="display:grid;gap:10px"></div>
+    <div class="actions"><button class="btn primary" id="saveMewsIntegration" type="submit">Verify connection and save mappings</button></div>
+    <div id="mewsConfigStatus" class="notice" role="status">Not configured yet.</div>
+   </form>
   </div>
   <div class="sectionrow"><h2>Pre-pilot readiness</h2><span id="readinessSummary" class="tag warn">Checking…</span></div>
   <div id="readinessList" style="display:grid;gap:9px"></div>
@@ -381,6 +397,77 @@ async function loadPmsIntegration(){
  $("pmsIntegrationStatus").className="notice "+(d.productionConnectionConfigured?"good":"");
  $("pmsIntegrationStatus").textContent=d.productionConnectionConfigured?"A production PMS provider is connected.":(tests.some(x=>x.provider==="sandbox"&&x.test_passed)?"Sandbox adapter test passed. No live PMS connection is configured.":d.notice);
  $("testPmsSandbox").disabled=!(d.providers||[]).some(x=>x.id==="sandbox");
+ if(connections.some(c=>c.provider==="mews"&&c.status==="connected"))await loadMewsPropertyConfig();
+}
+function addMewsRoomRow(values){
+ values=values||{};
+ const row=document.createElement("div");row.className="card mews-room-row";
+ const grid=document.createElement("div");grid.className="grid";grid.style.gridTemplateColumns="repeat(2,minmax(0,1fr))";
+ const fields=[
+  ["roomTypeId","Internal room type ID","e.g. deluxe-room"],
+  ["roomTypeName","Guest-facing room name","e.g. Deluxe Room"],
+  ["rateId","Mews rate ID","Rate identifier"],
+  ["requestedCategoryId","Mews resource category ID","Category identifier"],
+  ["adultAgeCategoryId","Adult age category ID","Age category identifier"],
+  ["maxOccupancy","Maximum guests","2"]
+ ];
+ fields.forEach(([key,labelText,placeholder])=>{
+  const wrap=document.createElement("div");wrap.className="field";
+  const label=document.createElement("label");label.textContent=labelText;
+  const input=document.createElement("input");input.dataset.field=key;input.required=true;input.maxLength=key==="roomTypeName"?160:120;input.placeholder=placeholder;
+  if(key==="maxOccupancy"){input.type="number";input.min="1";input.max="20";input.step="1";input.value=values[key]||2;}
+  else input.value=values[key]||"";
+  wrap.append(label,input);grid.appendChild(wrap);
+ });
+ const remove=document.createElement("button");remove.type="button";remove.className="btn";remove.textContent="Remove this room type";
+ remove.addEventListener("click",()=>{row.remove();if(!$("mewsRoomMappings").children.length)addMewsRoomRow();});
+ row.append(grid,remove);$("mewsRoomMappings").appendChild(row);
+}
+$("addMewsRoom").addEventListener("click",()=>addMewsRoomRow());
+if(!$("mewsRoomMappings").children.length)addMewsRoomRow();
+$("mewsIntegrationForm").addEventListener("submit",async e=>{
+ e.preventDefault();
+ const button=$("saveMewsIntegration"),status=$("mewsConfigStatus");
+ button.disabled=true;status.className="notice";status.textContent="Verifying the hotel PMS connection…";
+ try{
+  const clientToken=$("mewsClientToken").value.trim(),accessToken=$("mewsAccessToken").value.trim();
+  if(Boolean(clientToken)!==Boolean(accessToken))throw new Error("Enter both Mews credentials, or leave both blank to reuse the saved connection.");
+  if(clientToken){
+   await api("/api/admin/integrations/pms/mews/connect",{method:"POST",body:JSON.stringify({credentials:{clientToken,accessToken}})});
+  }
+  const checked=await api("/api/admin/integrations/pms/mews/test",{method:"POST",body:"{}"});
+  if(!checked.ok||checked.mode!=="production")throw new Error("Mews production connection could not be verified.");
+  const roomTypes=Array.from(document.querySelectorAll(".mews-room-row")).map(row=>{
+   const value=key=>row.querySelector('[data-field="'+key+'"]').value.trim();
+   return {roomTypeId:value("roomTypeId"),roomTypeName:value("roomTypeName"),rateId:value("rateId"),
+    requestedCategoryId:value("requestedCategoryId"),adultAgeCategoryId:value("adultAgeCategoryId"),
+    maxOccupancy:Number(value("maxOccupancy"))};
+  });
+  await api("/api/admin/integrations/pms/mews/property-config",{method:"PUT",body:JSON.stringify({propertyConfig:{
+   serviceId:$("mewsServiceId").value.trim(),timeZone:$("mewsTimezone").value.trim(),timeUnitPeriod:"Day",
+   checkInTime:$("mewsCheckIn").value.length===5?$("mewsCheckIn").value+":00":$("mewsCheckIn").value,
+   checkOutTime:$("mewsCheckOut").value.length===5?$("mewsCheckOut").value+":00":$("mewsCheckOut").value,
+   roomTypes
+  }})});
+  $("mewsClientToken").value="";$("mewsAccessToken").value="";
+  status.className="notice good";status.textContent="Mews connection verified and "+roomTypes.length+" room mapping(s) saved. Live guest quotes can now be requested after the public site is enabled.";
+  await loadPmsIntegration();
+ }catch(err){status.className="notice error";status.textContent=err.message;}
+ finally{button.disabled=false;}
+});
+async function loadMewsPropertyConfig(){
+ try{
+  const d=await api("/api/admin/integrations/pms/mews/property-config");
+  const config=d.propertyConfig||{};
+  if(!config.serviceId)return;
+  $("mewsServiceId").value=config.serviceId||"";
+  $("mewsTimezone").value=config.timeZone||"";
+  $("mewsCheckIn").value=config.checkInTime||"14:00:00";
+  $("mewsCheckOut").value=config.checkOutTime||"10:00:00";
+  $("mewsRoomMappings").replaceChildren();
+  (config.roomTypes||[]).forEach(room=>addMewsRoomRow(room));
+  if(!(config.roomTypes||[]).length)addMewsRoomRow();
+ }catch{}
 }
 $("testPmsSandbox").addEventListener("click",async()=>{
  const button=$("testPmsSandbox"),status=$("pmsIntegrationStatus");button.disabled=true;status.className="notice";status.textContent="Testing the adapter contract…";

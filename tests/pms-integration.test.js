@@ -13,6 +13,8 @@ const {
   createHmacSha256Verifier,
   recordWebhookEvent,
   createPmsRegistry,
+  createMewsConnectorAdapter,
+  localDateTimeToUtc,
   createSandboxAdapter,
 } = require("../pms-integration");
 
@@ -33,18 +35,26 @@ test("availability normalizer accepts only bounded, typed provider fields", () =
   assert.throws(() => normalizeAvailability({ roomTypeId: "x", roomTypeName: "X", currency: "THB", amountMinor: 100, availableUnits: "2" }), PmsIntegrationError);
 });
 
-test("booking requests require an idempotency key and bounded guest count", () => {
-  assert.deepEqual(normalizeBookingRequest({
-    checkIn: "2027-01-10", checkOut: "2027-01-12", roomTypeId: "deluxe", guestCount: 2, idempotencyKey: "booking_req_12345",
-  }), {
-    checkIn: "2027-01-10", checkOut: "2027-01-12", roomTypeId: "deluxe", guestCount: 2, idempotencyKey: "booking_req_12345",
+test("booking requests validate and normalize guest details and verified deposits", () => {
+  const input = {
+    checkIn: "2027-01-10", checkOut: "2027-01-12", roomTypeId: "deluxe",
+    guestCount: 2, idempotencyKey: "booking_req_12345",
+    guest: { name: "  Ada   Lovelace ", phone: "+1 (202) 555-0123", email: "ADA@example.com" },
+    totalAmountMinor: 10001, depositAmountMinor: 5001, currency: "USD",
+    depositVerified: true, paidAmountMinor: 5001, paidCurrency: "USD",
+  };
+  assert.deepEqual(normalizeBookingRequest(input), {
+    checkIn: "2027-01-10", checkOut: "2027-01-12", roomTypeId: "deluxe",
+    guestCount: 2, idempotencyKey: "booking_req_12345",
+    guest: { name: "Ada Lovelace", phone: "+12025550123", email: "ada@example.com" },
+    totalAmountMinor: 10001, depositAmountMinor: 5001, currency: "USD", depositVerified: true,
   });
-  assert.throws(() => normalizeBookingRequest({
-    checkIn: "2027-01-10", checkOut: "2027-01-12", roomTypeId: "deluxe", guestCount: 2,
-  }), PmsIntegrationError);
-  assert.throws(() => normalizeBookingRequest({
-    checkIn: "2027-01-10", checkOut: "2027-01-12", roomTypeId: "deluxe", guestCount: 21, idempotencyKey: "booking_req_12345",
-  }), PmsIntegrationError);
+  assert.throws(() => normalizeBookingRequest({ ...input, guest: { ...input.guest, phone: "not-a-phone" } }),
+    error => error.code === "INVALID_GUEST_DETAILS");
+  assert.throws(() => normalizeBookingRequest({ ...input, paidAmountMinor: 1000 }),
+    error => error.code === "VERIFIED_DEPOSIT_REQUIRED");
+  assert.throws(() => normalizeBookingRequest({ ...input, idempotencyKey: "" }),
+    error => error.code === "INVALID_BOOKING_REQUEST");
 });
 
 test("booking responses expose only a validated provider ID and status", () => {
@@ -229,3 +239,216 @@ test("sandbox adapters cannot accept arbitrary hotel credentials", async () => {
   await assert.rejects(() => registry.validateCredentials("sandbox", { clientSecret: "secret" }),
     error => error.code === "CREDENTIAL_VALIDATION_UNAVAILABLE");
 });
+
+
+test("Mews local hotel times convert to UTC using the configured IANA zone", () => {
+  assert.equal(localDateTimeToUtc("2027-01-10", "14:00:00", "Asia/Bangkok"), "2027-01-10T07:00:00.000Z");
+  assert.equal(localDateTimeToUtc("2027-07-10", "14:00:00", "Europe/London"), "2027-07-10T13:00:00.000Z");
+  assert.throws(() => localDateTimeToUtc("2027-03-14", "02:30:00", "America/New_York"),
+    error => error.code === "INVALID_LOCAL_DATETIME");
+  assert.throws(() => localDateTimeToUtc("2027-01-10", "14:00:00", "Not/A_Zone"),
+    error => error.code === "INVALID_TIME_ZONE");
+});
+
+test("Mews returns a live daily availability and gross price quote for every night", async () => {
+  const calls = [];
+  const fetchImpl = async (url, options) => {
+    const payload = JSON.parse(options.body);
+    calls.push({ url, payload });
+    if (url.endsWith("/services/getAvailability")) return {
+      ok: true, async json() { return {
+        TimeUnitStartsUtc: ["2027-01-09T17:00:00Z", "2027-01-10T17:00:00Z"],
+        CategoryAvailabilities: [{
+          CategoryId: "category-deluxe",
+          Availabilities: [4, 2],
+          Adjustments: [0, -1],
+        }],
+      }; },
+    };
+    if (url.endsWith("/reservations/price")) return {
+      ok: true, async json() { return {
+        ReservationPrices: [{
+          Identifier: "veyra-quote-0",
+          TotalAmount: { Currency: "USD", GrossValue: 600 },
+          AdditionalExpenses: [{ Amount: { Currency: "USD", GrossValue: 30 } }],
+        }],
+      }; },
+    };
+    throw new Error("Unexpected Mews operation: " + url);
+  };
+  const registry = createPmsRegistry([createMewsConnectorAdapter({ fetchImpl })]);
+  const result = await registry.getAvailability("mews", {
+    checkIn: "2027-01-10", checkOut: "2027-01-12", guestCount: 2,
+  }, {
+    credentials: { clientToken: "client-token", accessToken: "access-token" },
+    propertyConfig: {
+      serviceId: "service-1", rateId: "rate-1", requestedCategoryId: "category-deluxe",
+      adultAgeCategoryId: "adult-1", roomTypeName: "Deluxe Room",
+      maxOccupancy: 3, timeZone: "Asia/Bangkok", timeUnitPeriod: "Day",
+    },
+  });
+  assert.deepEqual(result, [{
+    roomTypeId: "category-deluxe", roomTypeName: "Deluxe Room",
+    currency: "USD", amountMinor: 63000, availableUnits: 1,
+  }]);
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].url.endsWith("/services/getAvailability"), true);
+  assert.equal(calls[0].payload.FirstTimeUnitStartUtc, "2027-01-09T17:00:00.000Z");
+  assert.equal(calls[0].payload.LastTimeUnitStartUtc, "2027-01-10T17:00:00.000Z");
+  assert.equal(calls[1].url.endsWith("/reservations/price"), true);
+  assert.equal(calls[1].payload.Reservations[0].PersonCounts[0].Count, 2);
+});
+
+test("Mews prices multiple configured room types and filters by guest capacity", async () => {
+  const calls = [];
+  const fetchImpl = async (url, options) => {
+    const payload = JSON.parse(options.body);
+    calls.push({ url, payload });
+    if (url.endsWith("/services/getAvailability")) return {
+      ok: true, async json() { return {
+        TimeUnitStartsUtc: ["2027-01-09T17:00:00Z"],
+        CategoryAvailabilities: [
+          { CategoryId: "cat-standard", Availabilities: [5], Adjustments: [0] },
+          { CategoryId: "cat-suite", Availabilities: [2], Adjustments: [0] },
+        ],
+      }; },
+    };
+    if (url.endsWith("/reservations/price")) return {
+      ok: true, async json() { return {
+        ReservationPrices: [
+          { Identifier: "veyra-quote-0", TotalAmount: { Currency: "THB", GrossValue: 9000 }, AdditionalExpenses: [] },
+        ],
+      }; },
+    };
+    throw new Error("Unexpected Mews operation: " + url);
+  };
+  const registry = createPmsRegistry([createMewsConnectorAdapter({ fetchImpl })]);
+  const result = await registry.getAvailability("mews", {
+    checkIn: "2027-01-10", checkOut: "2027-01-11", guestCount: 3,
+  }, {
+    credentials: { clientToken: "client-token", accessToken: "access-token" },
+    propertyConfig: {
+      serviceId: "service-1", timeZone: "Asia/Bangkok", timeUnitPeriod: "Day",
+      roomTypes: [
+        { roomTypeId: "standard", roomTypeName: "Standard", rateId: "rate-s", requestedCategoryId: "cat-standard", adultAgeCategoryId: "adult", maxOccupancy: 2 },
+        { roomTypeId: "suite", roomTypeName: "Suite", rateId: "rate-u", requestedCategoryId: "cat-suite", adultAgeCategoryId: "adult", maxOccupancy: 4 },
+      ],
+    },
+  });
+  assert.deepEqual(result, [{
+    roomTypeId: "suite", roomTypeName: "Suite", currency: "THB",
+    amountMinor: 900000, availableUnits: 2,
+  }]);
+  assert.equal(calls.length, 2);
+  assert.equal(calls[1].payload.Reservations.length, 1);
+  assert.equal(calls[1].payload.Reservations[0].RequestedCategoryId, "cat-suite");
+});
+
+test("Mews availability refuses incomplete daily data and over-capacity guest counts", async () => {
+  let calls = 0;
+  const fetchImpl = async () => {
+    calls += 1;
+    return {
+      ok: true,
+      json: async () => ({
+        TimeUnitStartsUtc: ["2027-01-09T17:00:00Z"],
+        CategoryAvailabilities: [{
+          CategoryId: "category-deluxe", Availabilities: [2], Adjustments: [0],
+        }],
+      }),
+    };
+  };
+  const registry = createPmsRegistry([createMewsConnectorAdapter({ fetchImpl })]);
+  const context = {
+    credentials: { clientToken: "client-token", accessToken: "access-token" },
+    propertyConfig: {
+      serviceId: "service-1", rateId: "rate-1", requestedCategoryId: "category-deluxe",
+      adultAgeCategoryId: "adult-1", roomTypeName: "Deluxe Room",
+      maxOccupancy: 2, timeZone: "Asia/Bangkok", timeUnitPeriod: "Day",
+    },
+  };
+  await assert.rejects(() => registry.getAvailability("mews", {
+    checkIn: "2027-01-10", checkOut: "2027-01-12", guestCount: 2,
+  }, context), error => error.code === "MEWS_AVAILABILITY_UNVERIFIED");
+  assert.equal(calls, 1);
+  await assert.rejects(() => registry.getAvailability("mews", {
+    checkIn: "2027-01-10", checkOut: "2027-01-12", guestCount: 3,
+  }, context), error => error.code === "GUEST_COUNT_EXCEEDS_ROOM_CAPACITY");
+  assert.equal(calls, 1);
+});
+
+test("Mews connector creates a confirmed reservation with guest details and local-time conversion", async () => {
+  const calls = [];
+  const fetchImpl = async (url, options) => {
+    const payload = JSON.parse(options.body);
+    calls.push({ url, payload });
+    if (url.endsWith("/customers/add")) return { ok: true, async json() { return { Id: "customer-1" }; } };
+    if (url.endsWith("/reservations/add")) return {
+      ok: true, async json() { return { Reservations: [{ Id: "reservation-1", Number: "42", State: "Confirmed" }] }; },
+    };
+    return { ok: true, async json() { return {}; } };
+  };
+  const adapter = createMewsConnectorAdapter({ fetchImpl });
+  const registry = createPmsRegistry([adapter]);
+  const request = {
+    checkIn: "2027-01-10", checkOut: "2027-01-12", roomTypeId: "deluxe-room",
+    guestCount: 2, idempotencyKey: "booking_req_12345",
+    guest: { name: "Ada Lovelace", phone: "+12025550123", email: "ada@example.com" },
+    totalAmountMinor: 10000, depositAmountMinor: 5000, currency: "USD",
+    depositVerified: true, paidAmountMinor: 5000, paidCurrency: "USD",
+  };
+  const result = await registry.createBooking("mews", request, {
+    credentials: { clientToken: "client-token", accessToken: "access-token" },
+    propertyConfig: {
+      serviceId: "service-1", timeZone: "Asia/Bangkok",
+      roomTypes: [{
+        roomTypeId: "deluxe-room", roomTypeName: "Deluxe Room", rateId: "rate-1",
+        requestedCategoryId: "category-deluxe", adultAgeCategoryId: "adult-1", maxOccupancy: 3,
+      }],
+    },
+  });
+  assert.deepEqual(result, { bookingId: "reservation-1", status: "confirmed" });
+  assert.equal(calls.length, 3);
+  assert.equal(calls[0].url.endsWith("/reservations/getAll/2023-06-06"), true);
+  assert.equal(calls[1].payload.Phone, "+12025550123");
+  assert.equal(calls[1].payload.Email, "ada@example.com");
+  assert.equal(calls[2].payload.Reservations[0].StartUtc, "2027-01-10T07:00:00.000Z");
+  assert.equal(calls[2].payload.Reservations[0].EndUtc, "2027-01-12T03:00:00.000Z");
+  assert.equal(calls[2].payload.Reservations[0].ChannelNumber, "booking_req_12345");
+  assert.equal(calls[2].payload.CheckOverbooking, true);
+  assert.equal(calls[2].payload.CheckRateApplicability, true);
+});
+
+
+test("Mews retries reuse the existing reservation instead of creating another one", async () => {
+  const calls = [];
+  const fetchImpl = async (url, options) => {
+    const payload = JSON.parse(options.body);
+    calls.push({ url, payload });
+    if (url.endsWith("/reservations/getAll/2023-06-06")) return {
+      ok: true, async json() { return { Reservations: [{
+        Id: "existing-reservation", Number: "77", State: "Confirmed", ChannelNumber: "booking_req_12345",
+      }] }; },
+    };
+    throw new Error("A retry must not create a new customer or reservation.");
+  };
+  const registry = createPmsRegistry([createMewsConnectorAdapter({ fetchImpl })]);
+  const request = {
+    checkIn: "2027-01-10", checkOut: "2027-01-12", roomTypeId: "category-deluxe",
+    guestCount: 1, idempotencyKey: "booking_req_12345",
+    guest: { name: "Ada Lovelace", phone: "+12025550123" },
+    totalAmountMinor: 10000, depositAmountMinor: 5000, currency: "USD",
+    depositVerified: true, paidAmountMinor: 5000, paidCurrency: "USD",
+  };
+  const result = await registry.createBooking("mews", request, {
+    credentials: { clientToken: "client-token", accessToken: "access-token" },
+    propertyConfig: {
+      serviceId: "service-1", rateId: "rate-1", requestedCategoryId: "category-deluxe",
+      adultAgeCategoryId: "adult-1", timeZone: "Asia/Bangkok",
+    },
+  });
+  assert.deepEqual(result, { bookingId: "existing-reservation", status: "confirmed" });
+  assert.equal(calls.length, 1);
+});
+
+

@@ -124,3 +124,15 @@ test("rejects cross-tenant providers before any provider call", () => {
   const p = provider({ organizationId: "hotel-b" });
   assert.throws(() => service(p), /tenant/);
 });
+
+test("checks freshness after the availability response arrives", async () => {
+  const p = provider();
+  const result = await createHotelReservationService({
+    provider: p.value,
+    organizationId: "hotel-a",
+    now: () => new Date("2026-11-19T08:06:00.000Z")
+  }).book(request);
+  assert.equal(result.confirmed, false);
+  assert.equal(result.reason, "room_not_available_or_inventory_stale");
+  assert.equal(p.calls.some(call => call[0] === "create"), false);
+});

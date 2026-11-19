@@ -55,3 +55,16 @@ test("supports currencies with zero decimal places",()=>{
  });
  assert.equal(projectPaidAddonToLedger(input).revenueEvent.amountMinor,1000);
 });
+
+test("projects a fully refunded add-on as gross revenue plus a full adjustment, yielding zero net",()=>{
+ const input=event({
+  grossAmountMinor:12500,adjustmentAmountMinor:12500,amountMinor:0,
+  evidence:{billType:"Receipt",chargedPaymentIds:["payment-1"],adjustmentReferences:["refund-full"]},
+  adjustments:[{externalReference:"refund-full",type:"refund",amountMinor:12500,currency:"EUR",occurredAt:"2026-11-16T10:00:00.000Z"}]
+ });
+ const result=projectPaidAddonToLedger(input);
+ assert.equal(result.revenueEvent.amountMinor,12500);
+ assert.equal(result.adjustments.length,1);
+ assert.equal(result.adjustments[0].amount,"125.00");
+ assert.equal(result.attribution,"hotel_reported_unlinked");
+});

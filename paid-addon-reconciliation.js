@@ -127,8 +127,14 @@ function reconcilePaidAddons({ organizationId, provider, orderItems, bills, paym
     const itemCurrency = currency(item.currency);
     const itemAmount = positiveMinor(item.amountMinor, "order item amountMinor");
     const billCurrency = currency(bill.currency);
-    const billTotal = positiveMinor(bill.totalAmountMinor, "bill totalAmountMinor");
-    if (itemCurrency !== billCurrency || itemAmount > billTotal) continue;
+    const hasBillTotal = bill.totalAmountMinor !== undefined && bill.totalAmountMinor !== null;
+    const billTotal = hasBillTotal ? positiveMinor(bill.totalAmountMinor, "bill totalAmountMinor") : null;
+    // Some providers (including Mews) expose a closed Receipt as explicit
+    // evidence that the bill is paid in full but do not expose its total here.
+    // The trusted adapter may set paidInFull only from that documented status.
+    if (itemCurrency !== billCurrency ||
+        (!hasBillTotal && bill.paidInFull !== true) ||
+        (hasBillTotal && itemAmount > billTotal)) continue;
 
     const linkedPayments = paymentsByBill.get(billId) || [];
     const charged = linkedPayments.filter(payment =>
@@ -137,7 +143,8 @@ function reconcilePaidAddons({ organizationId, provider, orderItems, bills, paym
       Number.isSafeInteger(payment.amountMinor) && payment.amountMinor > 0
     );
     const chargedTotal = charged.reduce((sum, payment) => sum + payment.amountMinor, 0);
-    if (!Number.isSafeInteger(chargedTotal) || chargedTotal < billTotal || !charged.length) continue;
+    if (!Number.isSafeInteger(chargedTotal) || !charged.length ||
+        (hasBillTotal && chargedTotal < billTotal)) continue;
 
     const itemAdjustments = adjustmentsByItem.get(item.id) || [];
     let adjustmentTotal = 0;

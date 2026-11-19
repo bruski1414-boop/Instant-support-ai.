@@ -147,6 +147,17 @@ test("rejects malformed guest identity, phone numbers and dates before contactin
   assert.equal(p.calls.length, 0);
 });
 
+test("rejects control characters before whitespace normalization in guest-supplied fields", async () => {
+  const p = provider();
+  const s = service(p);
+  const controls = [10, 13, 9, 0, 27, 127].map(code => String.fromCharCode(code));
+  for (const control of controls) {
+    await assert.rejects(() => s.book({ ...request, guestName: "Alex" + control + "Morgan" }), /guestName is invalid/);
+    await assert.rejects(() => s.book({ ...request, roomTypeCode: "ocean" + control + "villa" }), /roomTypeCode is invalid/);
+  }
+  assert.equal(p.calls.length, 0, "invalid text must be rejected before any PMS call");
+});
+
 test("hands off when the provider availability call fails and does not attempt a write", async () => {
   const p = provider({
     async checkAvailability() { throw new Error("provider unavailable"); }

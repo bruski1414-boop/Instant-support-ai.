@@ -130,13 +130,19 @@ function createHotelReservationService({ provider, organizationId, now = () => n
       if (!result || result.organizationId !== organizationId) {
         return Object.freeze({ status: "staff_handoff", confirmed: false, reason: "unverified_provider_result" });
       }
-      if (result.status !== "confirmed" || typeof result.bookingReference !== "string" || !result.bookingReference.trim()) {
+      if (result.status !== "confirmed") {
         return Object.freeze({ status: "request_pending", confirmed: false, reason: "provider_has_not_confirmed" });
+      }
+      let bookingReference;
+      try {
+        bookingReference = text(result.bookingReference, "bookingReference", 120);
+      } catch {
+        return Object.freeze({ status: "staff_handoff", confirmed: false, reason: "unverified_provider_result" });
       }
       return Object.freeze({
         status: "confirmed",
         confirmed: true,
-        bookingReference: text(result.bookingReference, "bookingReference", 120),
+        bookingReference,
         arrivalDate: request.arrivalDate,
         departureDate: request.departureDate,
         roomTypeCode: request.roomTypeCode

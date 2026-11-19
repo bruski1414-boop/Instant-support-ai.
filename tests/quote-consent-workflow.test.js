@@ -74,7 +74,7 @@ test("refuses to book if the quote changes between display and acceptance", asyn
   const service = workflow(provider);
   const issued = await service.issue(request);
   const result = await service.confirm({
-    quoteToken: issued.quoteToken, accepted: true,
+    quoteToken: issued.quoteToken, accepted: true, consentToShareDetails: true,
     guest: { name: "Alex Guest", phone: "+66812345678" },
     idempotencyKey: "booking_req_12345",
   });
@@ -96,7 +96,7 @@ test("reconciles an uncertain write by the original idempotency key without retr
   const service = workflow(provider);
   const issued = await service.issue(request);
   const result = await service.confirm({
-    quoteToken: issued.quoteToken, accepted: true,
+    quoteToken: issued.quoteToken, accepted: true, consentToShareDetails: true,
     guest: { name: "Alex Guest", phone: "+66812345678" },
     idempotencyKey: "booking_req_12345",
   });
@@ -110,13 +110,13 @@ test("rejects tampered, expired and cross-tenant quote tokens", async () => {
   const service = workflow();
   const issued = await service.issue(request);
   await assert.rejects(service.confirm({
-    quoteToken: issued.quoteToken + "x", accepted: true,
+    quoteToken: issued.quoteToken + "x", accepted: true, consentToShareDetails: true,
     guest: { name: "Alex Guest", phone: "+66812345678" }, idempotencyKey: "booking_req_12345",
   }), e => e.code === "INVALID_QUOTE_TOKEN");
 
   const expiredService = workflow(makeProvider(), () => new Date("2026-11-19T10:11:00.000Z"));
   await assert.rejects(expiredService.confirm({
-    quoteToken: issued.quoteToken, accepted: true,
+    quoteToken: issued.quoteToken, accepted: true, consentToShareDetails: true,
     guest: { name: "Alex Guest", phone: "+66812345678" }, idempotencyKey: "booking_req_12345",
   }), e => e.code === "QUOTE_EXPIRED");
 });

@@ -47,7 +47,7 @@ test("supports documented read-only availability request", async () => {
   assert.equal(body.FirstTimeUnitStartUtc, "2026-12-02T00:00:00Z");
 });
 
-test("rejects unsupported operations and attempts to override credentials", async () => {
+test("rejects credential overrides and exposes no reservation writer", async () => {
   const client = makeClient(async () => ({ ok: true, status: 200, json: async () => ({}) }));
   await assert.rejects(() => client.getServices({ ClientToken: "attacker-value" }), /managed by the connector/);
   await assert.rejects(() => client.getServices([]), /must be an object/);

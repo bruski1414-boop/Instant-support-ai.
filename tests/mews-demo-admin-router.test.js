@@ -6,7 +6,12 @@ const express = require("express");
 const { createMewsDemoAdminRouter, validateDemoConfig } = require("../mews-demo-admin-router");
 
 function middleware(_req, _res, next) { next(); }
-function role() {\n  const allowed = Array.from(arguments);\n  return (req, res, next) => allowed.includes(req.actor?.role)\n    ? next()\n    : res.status(403).json({ error: "Insufficient permissions." });\n}
+function role() {
+  const allowed = Array.from(arguments);
+  return (req, res, next) => allowed.includes(req.actor?.role)
+    ? next()
+    : res.status(403).json({ error: "Insufficient permissions." });
+}
 
 function makeDb() {
   const state = { encrypted: null, status: "pending_authorization", queries: [] };

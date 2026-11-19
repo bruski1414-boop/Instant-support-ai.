@@ -24,6 +24,9 @@ function makeDb() {
         state.status = "pending_authorization";
         return { rowCount: 1, rows: [] };
       }
+      if (sql.startsWith("SELECT status FROM pms_connections")) {
+        return { rowCount: state.status === "connected" ? 1 : 0, rows: state.status === "connected" ? [{ status: "connected" }] : [] };
+      }
       if (sql.startsWith("SELECT encrypted_credentials")) {
         return state.encrypted ? { rowCount: 1, rows: [{ encrypted_credentials: state.encrypted }] } : { rowCount: 0, rows: [] };
       }
@@ -147,6 +150,12 @@ test("stores encrypted demo credentials and exposes only read-only connection an
     assert.equal(statusBody.configured, true);
     assert.equal(statusBody.bookingWritesEnabled, false);
     assert.equal(JSON.stringify(statusBody).includes(config.accessToken), false);
+
+    const prematureAvailability = await fetch(base + "/availability", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ arrivalDate: "2026-12-02", departureDate: "2026-12-03" })
+    });
+    assert.equal(prematureAvailability.status, 409);
 
     const connectionTest = await fetch(base + "/test", { method: "POST" });
     assert.equal(connectionTest.status, 200);

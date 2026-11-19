@@ -121,6 +121,30 @@ test("rejects tampered, expired and cross-tenant quote tokens", async () => {
   }), e => e.code === "QUOTE_EXPIRED");
 });
 
+
+test("requires separate consent to share guest contact details", async () => {
+  const service = workflow();
+  const issued = await service.issue(request);
+  await assert.rejects(service.confirm({
+    quoteToken: issued.quoteToken, accepted: true, consentToShareDetails: false,
+    guest: { name: "Alex Guest", phone: "+66812345678" },
+    idempotencyKey: "booking_req_12345",
+  }), e => e.code === "GUEST_CONSENT_REQUIRED");
+});
+
+test("confirms only after accepted, unchanged quote and authoritative provider confirmation", async () => {
+  const service = workflow();
+  const issued = await service.issue(request);
+  const result = await service.confirm({
+    quoteToken: issued.quoteToken, accepted: true, consentToShareDetails: true,
+    guest: { name: "Alex Guest", phone: "+66812345678" },
+    idempotencyKey: "booking_req_12345",
+  });
+  assert.deepEqual(result, {
+    status: "confirmed", confirmed: true, bookingId: "BOOK-123", reconciled: false,
+  });
+});
+
 test("fails closed on malformed financial terms", async () => {
   const provider = makeProvider({ getQuote: async () => ({ ...makeProvider().quote, totalAmountMinor: -1 }) });
   await assert.rejects(workflow(provider).issue(request), e => e.code === "INVALID_QUOTE");

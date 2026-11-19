@@ -1,6 +1,6 @@
 "use strict";
 
-const DATE = /^\\d{4}-\\d{2}-\\d{2}$/;
+const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const MAX_FRESHNESS_MS = 5 * 60 * 1000;
 
 function validDate(value, field) {
@@ -14,7 +14,7 @@ function validDate(value, field) {
 
 function cleanText(value, field, max = 120) {
   if (typeof value !== "string" || !value.trim() || value.trim().length > max ||
-      /[\\u0000-\\u001f\\u007f]/.test(value)) throw new Error(field + " is invalid.");
+      /[\u0000-\u001f\u007f]/.test(value)) throw new Error(field + " is invalid.");
   return value.trim();
 }
 

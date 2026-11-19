@@ -38,7 +38,7 @@ function createOperaAvailabilityAdapter({
     throw new Error("A hotel-approved OPERA response mapper is required.");
   }
 
-  return Object.freeze({
+  const adapter = {
     providerId: "oracle_opera",
     tenantId: safeTenantId,
     organizationId: safeTenantId,
@@ -109,9 +109,10 @@ function createOperaAvailabilityAdapter({
 
     // Match the shared provider-neutral reservation service contract.
     async checkAvailability(input = {}) {
-      return this.availability(input);
+      return adapter.availability(input);
     }
-  });
+  };
+  return Object.freeze(adapter);
 }
 
 module.exports = { createOperaAvailabilityAdapter };

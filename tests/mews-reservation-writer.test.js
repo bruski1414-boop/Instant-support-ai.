@@ -136,13 +136,14 @@ test("blocks an in-progress or uncertain request rather than risking a duplicate
 });
 
 test("marks a failed provider write uncertain and does not retry automatically", async () => {
+  let writeCalls = 0;
   const s = setup({
-    client: { async addReservations() { throw new Error("network timeout"); } }
+    client: { async addReservations() { writeCalls += 1; throw new Error("network timeout"); } }
   });
   await assert.rejects(() => s.writer.createReservation(request), /outcome is uncertain/);
   assert.equal(s.calls.filter(call => call[0] === "uncertain").length, 1);
   await assert.rejects(() => s.writer.createReservation(request), /already running or requires staff/);
-  assert.equal(s.calls.filter(call => call[0] === "write").length, 1);
+  assert.equal(writeCalls, 1);
 });
 
 test("marks incomplete or non-confirmed provider responses for staff reconciliation", async () => {

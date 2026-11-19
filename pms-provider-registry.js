@@ -48,7 +48,7 @@ const PROVIDERS = Object.freeze({
     apiFamilies: ["ohip"],
     documentedCapabilities: ["availability", "reservations", "guest_profiles"],
     authModel: "Oracle Hospitality Integration Platform credentials and granted scopes",
-    adapterStatus: "not_assessed",
+    adapterStatus: "contract_only",
     approvalRequired: true
   })
 });

@@ -97,7 +97,7 @@ function createMewsDemoAdminRouter({
       const config = validateDemoConfig(req.body || {});
       const encrypted = credentialVault.encrypt(config);
       await db.query(
-        "INSERT INTO pms_connections(organization_id,provider,mode,status,encrypted_credentials,scopes,connected_by,connected_at,last_tested_at,last_error,updated_at) VALUES($1,$2,'sandbox','pending_authorization',$3,ARRAY['availability:read'],$4,now(),NULL,'',now()) ON CONFLICT(organization_id,provider) DO UPDATE SET mode='sandbox',status='pending_authorization',encrypted_credentials=EXCLUDED.encrypted_credentials,scopes=EXCLUDED.scopes,connected_by=EXCLUDED.connected_by,connected_at=now(),last_tested_at=NULL,last_error='',updated_at=now()",
+        "INSERT INTO pms_connections(organization_id,provider,mode,status,encrypted_credentials,scopes,connected_by,connected_at,last_tested_at,last_error,updated_at) VALUES($1,$2,'sandbox','pending_authorization',$3,ARRAY['availability:read'],$4,NULL,NULL,'',now()) ON CONFLICT(organization_id,provider) DO UPDATE SET mode='sandbox',status='pending_authorization',encrypted_credentials=EXCLUDED.encrypted_credentials,scopes=EXCLUDED.scopes,connected_by=EXCLUDED.connected_by,connected_at=NULL,last_tested_at=NULL,last_error='',updated_at=now()",
         [req.actor.organization_id, PROVIDER, encrypted, req.actor.user_id]
       );
       await db.query(
@@ -124,7 +124,7 @@ function createMewsDemoAdminRouter({
         return res.status(502).json({ verified: false, error: "Mews demo returned an invalid configuration response." });
       }
       await db.query(
-        "UPDATE pms_connections SET status='connected',last_tested_at=now(),last_error='',updated_at=now() WHERE organization_id=$1 AND provider=$2",
+        "UPDATE pms_connections SET status='connected',connected_at=now(),last_tested_at=now(),last_error='',updated_at=now() WHERE organization_id=$1 AND provider=$2",
         [req.actor.organization_id, PROVIDER]
       );
       await db.query(

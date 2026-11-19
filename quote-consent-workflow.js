@@ -148,9 +148,6 @@ function createQuoteWorkflow({ provider, organizationId, signingSecret, now = ()
       if (accepted !== true) {
         throw new PmsIntegrationError("QUOTE_NOT_ACCEPTED", "The guest must explicitly accept the exact displayed quote and cancellation terms.", 409);
       }
-      if (arguments.length === 0) {
-        throw new PmsIntegrationError("INVALID_CONFIRMATION", "A confirmation request is required.");
-      }
       if (consentToShareDetails !== true) {
         throw new PmsIntegrationError("GUEST_CONSENT_REQUIRED", "The guest must explicitly consent to sharing their contact details with the hotel.", 409);
       }

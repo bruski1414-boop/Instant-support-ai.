@@ -190,16 +190,18 @@ main{padding:28px clamp(16px,4vw,48px);max-width:1450px;width:100%;margin:auto}.
  </section>
 
  <section id="panel-revenue" class="panel">
-  <div class="sectionrow"><h2>Revenue attribution</h2><span class="muted">Hotel-attested, evidence-referenced offer sales</span></div>
-  <div class="grid">
-   <div class="card"><div class="metriclabel">Guest offer enquiries</div><div class="metric" id="revenueEnquiries">—</div></div>
+  <div class="sectionrow"><h2>Revenue attribution</h2><span class="muted" id="revenueWindowLabel">Rolling 30 × 24-hour UTC window</span></div>
+  <div class="grid" id="revenueSummary">
+   <div class="card"><div class="metriclabel">Offer enquiry records</div><div class="metric" id="revenueEnquiries">—</div></div>
+   <div class="card"><div class="metriclabel">Distinct enquiry conversations</div><div class="metric" id="revenueEnquiryConversations">—</div></div>
    <div class="card"><div class="metriclabel">Evidence-attested sales</div><div class="metric" id="revenueConversions">—</div></div>
    <div class="card"><div class="metriclabel">Evidence-attested revenue</div><div class="metric" id="revenueTotal">—</div></div>
-   <div class="card"><div class="metriclabel">Legacy sales missing evidence</div><div class="metric" id="revenueLegacyUnverified">—</div></div>
+   <div class="card"><div class="metriclabel">Legacy sales missing evidence (all time)</div><div class="metric" id="revenueLegacyUnverified">—</div></div>
   </div>
-  <p class="muted" style="font-size:12px">Amounts are hotel-attested and linked to an offer enquiry only when an evidence source, opaque reference and sale timestamp are recorded. This association does not prove Veyra caused the sale. Legacy conversions without evidence are excluded from revenue totals. Currencies are kept separate.</p>
+  <div id="revenueStaffNotice" class="notice hidden" role="status">Offer enquiry details are visible here. Sale amounts and evidence references are restricted to workspace owners and administrators.</div>
+  <p class="muted" style="font-size:12px">Offer enquiry records and distinct conversations are counted by enquiry creation time. Evidence-attested sales are counted by sale time within the exact UTC reporting window. The start is inclusive and the end is exclusive. Influenced conversations: Not measured. Estimated staff time saved: Not calculated. A hotel-attested link to an enquiry does not prove Veyra caused the sale. Legacy conversions without evidence are excluded from revenue totals and shown separately as an all-time count. Currencies are kept separate.</p>
   <div id="revenueCurrencyTotals" class="card" style="margin:12px 0"></div>
-  <div class="sectionrow"><h2>Offer enquiries awaiting review</h2><span class="muted">Staff can confirm or close an enquiry</span></div>
+  <div class="sectionrow"><h2>Offer enquiries awaiting review</h2><span class="muted">Staff can close an enquiry; only owners/admins can attest a sale</span></div>
   <div id="attributionList" style="display:grid;gap:10px"></div>
  </section>
  <section id="panel-escalations" class="panel">
@@ -278,24 +280,31 @@ function moneyMinor(amount,currency){
 async function loadRevenueAttributions(){
  const d=await api("/api/admin/offer-attributions");
  const rows=d.attributions||[];
- const totals=d.totals||[];
- const verifiedTotals=d.verifiedTotals||[];
- const legacyCount=(d.legacyUnverifiedTotals||[]).reduce((sum,x)=>sum+Number(x.count||0),0);
- const enquiries=totals.filter(x=>x.status==="enquiry").reduce((sum,x)=>sum+Number(x.count||0),0);
+ const canViewFinancials=d.financialVisibility===true;
+ $("revenueSummary").classList.toggle("hidden",!canViewFinancials);
+ $("revenueCurrencyTotals").classList.toggle("hidden",!canViewFinancials);
+ $("revenueStaffNotice").classList.toggle("hidden",canViewFinancials);
+ const start=d.windowStart||"",end=d.windowEnd||"";
+ $("revenueWindowLabel").textContent=start&&end
+  ?"Rolling 30 × 24-hour UTC window · ["+start+", "+end+")"
+  :"Reporting window unavailable";
+ $("revenueEnquiries").textContent=String(d.enquiryCount||0);
+ $("revenueEnquiryConversations").textContent=String(d.enquiryConversationCount||0);
+ const verifiedTotals=canViewFinancials?(d.verifiedTotals||[]):[];
+ const legacyCount=canViewFinancials?(d.legacyUnverifiedTotals||[]).reduce((sum,x)=>sum+Number(x.count||0),0):0;
  const conversions=verifiedTotals.reduce((sum,x)=>sum+Number(x.count||0),0);
- $("revenueEnquiries").textContent=String(enquiries);
  $("revenueConversions").textContent=String(conversions);
  $("revenueLegacyUnverified").textContent=String(legacyCount);
  const currencyGroups={};
  for(const x of verifiedTotals){const c=x.currency||"UNKNOWN";currencyGroups[c]=(currencyGroups[c]||0n)+BigInt(String(x.amount_minor||0));}
  const currencies=Object.keys(currencyGroups);
  $("revenueTotal").textContent=currencies.length===1?moneyMinor(currencyGroups[currencies[0]].toString(),currencies[0]):currencies.length?"See currencies below":"—";
- const totalsHtml=currencies.length?Object.entries(currencyGroups).map(([c,v])=>'<div style="display:flex;justify-content:space-between;padding:7px 0"><span>'+safe(c)+'</span><strong>'+moneyMinor(v.toString(),c)+'</strong></div>').join(""):'<div class="empty">No evidence-attested sales recorded yet.</div>';
- $("revenueCurrencyTotals").innerHTML=totalsHtml+'<p class="muted" style="font-size:11px;margin:8px 0 0">Hotel-attested evidence-referenced amounts only. These records show an association with an offer enquiry, not incremental revenue caused by Veyra.'+(legacyCount?' '+legacyCount+' legacy conversion record(s) lack evidence and are excluded.':'')+'</p>';
+ const totalsHtml=currencies.length?Object.entries(currencyGroups).map(([c,v])=>'<div style="display:flex;justify-content:space-between;padding:7px 0"><span>'+safe(c)+'</span><strong>'+moneyMinor(v.toString(),c)+'</strong></div>').join(""):'<div class="empty">No evidence-attested sales in this reporting window.</div>';
+ $("revenueCurrencyTotals").innerHTML=totalsHtml+'<p class="muted" style="font-size:11px;margin:8px 0 0">Hotel-attested evidence-referenced amounts only. These records show an association with an offer enquiry, not incremental revenue caused by Veyra.'+(legacyCount?' '+legacyCount+' legacy conversion record(s) without evidence are excluded from revenue totals (all time).':'')+'</p>';
  $("attributionList").innerHTML=rows.map(x=>{
-  const evidenceAttested=x.status==="converted"&&x.evidence_status==="evidence_attested";
-  const legacyUnverified=x.status==="converted"&&!evidenceAttested;
-  const tag=evidenceAttested?'<span class="tag good">evidence recorded</span>':legacyUnverified?'<span class="tag warn">legacy · evidence missing</span>':statusTag(x.status);
+  const evidenceAttested=canViewFinancials&&x.status==="converted"&&x.evidence_status==="evidence_attested";
+  const legacyUnverified=canViewFinancials&&x.status==="converted"&&!evidenceAttested;
+  const tag=!canViewFinancials?statusTag(x.status):evidenceAttested?'<span class="tag good">evidence recorded</span>':legacyUnverified?'<span class="tag warn">legacy · evidence missing</span>':statusTag(x.status);
   const sale=evidenceAttested?'<p><strong>Hotel-attested linked sale: '+moneyMinor(x.amount_minor,x.currency)+'</strong><br><small class="muted">Source: '+safe(x.evidence_source)+' · Reference: '+safe(x.evidence_reference)+' · Sold: '+date(x.sold_at)+'</small></p>':legacyUnverified?'<p class="muted"><strong>Legacy conversion — evidence missing; excluded from revenue totals.</strong></p>':'';
   const canAttest=["owner","admin"].includes(currentRole);
   const actions=x.status==="enquiry"?'<div class="actions" style="margin-top:12px">'+(canAttest?'<button class="btn primary" data-attribution-action="converted" data-id="'+safe(x.id)+'" data-currency="'+safe(x.offer_currency)+'">Attest completed sale</button>':'<span class="muted">Owner/admin attestation required</span>')+'<button class="btn" data-attribution-action="not_converted" data-id="'+safe(x.id)+'">Close · no sale</button></div>':x.status==="converted"&&canAttest?'<div class="actions"><button class="btn" data-attribution-history data-id="'+safe(x.id)+'">Evidence history</button></div>':'';

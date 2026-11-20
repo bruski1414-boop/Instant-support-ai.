@@ -95,10 +95,10 @@ const schema=[
 "ALTER TABLE hotel_offer_attributions ADD COLUMN IF NOT EXISTS sold_at TIMESTAMPTZ",
 "CREATE UNIQUE INDEX IF NOT EXISTS hotel_offer_attributions_org_id_key ON hotel_offer_attributions(organization_id,id)",
 "CREATE UNIQUE INDEX IF NOT EXISTS hotel_offer_attributions_evidence_dedupe_idx ON hotel_offer_attributions(organization_id,evidence_source,evidence_reference) WHERE status='converted' AND evidence_source IS NOT NULL AND evidence_reference IS NOT NULL",
-"DO $ddl$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='hotel_offer_attributions_evidence_tuple_check' AND conrelid='hotel_offer_attributions'::regclass) THEN ALTER TABLE hotel_offer_attributions ADD CONSTRAINT hotel_offer_attributions_evidence_tuple_check CHECK ((evidence_source IS NULL AND evidence_reference IS NULL AND sold_at IS NULL) OR (evidence_source IS NOT NULL AND evidence_source IN ('pms_record','payment_receipt','invoice','hotel_report') AND evidence_reference IS NOT NULL AND evidence_reference ~ '^[A-Za-z0-9._:/#-]{1,200}$' AND sold_at IS NOT NULL AND amount_minor IS NOT NULL AND amount_minor>0 AND currency IS NOT NULL AND currency ~ '^[A-Z]{3}$')) NOT VALID; END IF; END $ddl$",
+"DO $ddl$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='hotel_offer_attributions_evidence_tuple_check' AND conrelid='hotel_offer_attributions'::regclass) THEN ALTER TABLE hotel_offer_attributions ADD CONSTRAINT hotel_offer_attributions_evidence_tuple_check CHECK ((evidence_source IS NULL AND evidence_reference IS NULL AND sold_at IS NULL) OR (evidence_source IS NOT NULL AND evidence_source IN ('pms_record','payment_receipt','invoice','hotel_report') AND evidence_reference IS NOT NULL AND evidence_reference ~ '^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,199}$' AND position('://' in evidence_reference)=0 AND evidence_reference !~* '^www[.]' AND sold_at IS NOT NULL AND amount_minor IS NOT NULL AND amount_minor>0 AND currency IS NOT NULL AND currency ~ '^[A-Z]{3}$')) NOT VALID; END IF; END $ddl$",
 "CREATE TABLE IF NOT EXISTS hotel_offer_attribution_events(id UUID PRIMARY KEY DEFAULT gen_random_uuid(),organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,attribution_id UUID NOT NULL,actor_user_id UUID REFERENCES users(id) ON DELETE SET NULL,action TEXT NOT NULL CHECK(action IN ('converted','not_converted')),previous_status TEXT NOT NULL,new_status TEXT NOT NULL,previous_amount_minor BIGINT,new_amount_minor BIGINT,previous_currency CHAR(3),new_currency CHAR(3),previous_evidence_source TEXT,new_evidence_source TEXT,previous_evidence_reference TEXT,new_evidence_reference TEXT,previous_sold_at TIMESTAMPTZ,new_sold_at TIMESTAMPTZ,created_at TIMESTAMPTZ NOT NULL DEFAULT now(),FOREIGN KEY(organization_id,attribution_id) REFERENCES hotel_offer_attributions(organization_id,id) ON DELETE CASCADE)",
 "CREATE INDEX IF NOT EXISTS hotel_offer_attribution_events_org_idx ON hotel_offer_attribution_events(organization_id,attribution_id,created_at DESC)",
-"CREATE OR REPLACE FUNCTION enforce_hotel_offer_attribution_evidence() RETURNS trigger LANGUAGE plpgsql AS $fn$ BEGIN IF TG_OP='UPDATE' AND OLD.status='converted' AND NEW.status IS DISTINCT FROM OLD.status THEN RAISE EXCEPTION 'Converted offer attributions cannot be reversed; record a separate adjustment.'; END IF; IF TG_OP='UPDATE' AND OLD.status='converted' AND OLD.evidence_source IS NOT NULL AND (NEW.amount_minor IS DISTINCT FROM OLD.amount_minor OR NEW.currency IS DISTINCT FROM OLD.currency OR NEW.evidence_source IS DISTINCT FROM OLD.evidence_source OR NEW.evidence_reference IS DISTINCT FROM OLD.evidence_reference OR NEW.sold_at IS DISTINCT FROM OLD.sold_at) THEN RAISE EXCEPTION 'Evidence-attested conversions are immutable; record a separate adjustment.'; END IF; IF NEW.status='converted' AND (NEW.amount_minor IS NULL OR NEW.amount_minor<=0 OR NEW.currency IS NULL OR NEW.currency !~ '^[A-Z]{3}$' OR NEW.evidence_source IS NULL OR NEW.evidence_source NOT IN ('pms_record','payment_receipt','invoice','hotel_report') OR NEW.evidence_reference IS NULL OR NEW.evidence_reference !~ '^[A-Za-z0-9._:/#-]{1,200}$' OR NEW.sold_at IS NULL OR NEW.sold_at<NEW.created_at OR NEW.sold_at>now()+interval '5 minutes') THEN RAISE EXCEPTION 'A converted offer attribution requires complete evidence and a valid sale timestamp.'; END IF; RETURN NEW; END; $fn$",
+"CREATE OR REPLACE FUNCTION enforce_hotel_offer_attribution_evidence() RETURNS trigger LANGUAGE plpgsql AS $fn$ BEGIN IF TG_OP='UPDATE' AND OLD.status='converted' AND NEW.status IS DISTINCT FROM OLD.status THEN RAISE EXCEPTION 'Converted offer attributions cannot be reversed; record a separate adjustment.'; END IF; IF TG_OP='UPDATE' AND OLD.status='converted' AND OLD.evidence_source IS NOT NULL AND (NEW.amount_minor IS DISTINCT FROM OLD.amount_minor OR NEW.currency IS DISTINCT FROM OLD.currency OR NEW.evidence_source IS DISTINCT FROM OLD.evidence_source OR NEW.evidence_reference IS DISTINCT FROM OLD.evidence_reference OR NEW.sold_at IS DISTINCT FROM OLD.sold_at) THEN RAISE EXCEPTION 'Evidence-attested conversions are immutable; record a separate adjustment.'; END IF; IF NEW.status='converted' AND (NEW.amount_minor IS NULL OR NEW.amount_minor<=0 OR NEW.currency IS NULL OR NEW.currency !~ '^[A-Z]{3}$' OR NEW.evidence_source IS NULL OR NEW.evidence_source NOT IN ('pms_record','payment_receipt','invoice','hotel_report') OR NEW.evidence_reference IS NULL OR NEW.evidence_reference !~ '^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,199}$' OR position('://' in NEW.evidence_reference)>0 OR NEW.evidence_reference ~* '^www[.]' OR NEW.sold_at IS NULL OR NEW.sold_at<NEW.created_at OR NEW.sold_at>now()+interval '5 minutes') THEN RAISE EXCEPTION 'A converted offer attribution requires complete evidence and a valid sale timestamp.'; END IF; RETURN NEW; END; $fn$",
 "DROP TRIGGER IF EXISTS hotel_offer_attribution_evidence_guard ON hotel_offer_attributions",
 "CREATE TRIGGER hotel_offer_attribution_evidence_guard BEFORE INSERT OR UPDATE ON hotel_offer_attributions FOR EACH ROW EXECUTE FUNCTION enforce_hotel_offer_attribution_evidence()",
 ].join(";\n")+";";
@@ -284,11 +284,34 @@ app.delete("/api/admin/offers/:id",requireDb,auth,role("owner","admin"),async(q,
 
 app.get("/api/admin/offer-attributions",requireDb,auth,role("owner","admin","staff"),async(q,r,n)=>{try{
  const org=q.actor.organization_id;
- const x=await db.query("SELECT a.id,a.status,a.amount_minor,a.currency,a.notes,a.evidence_source,a.evidence_reference,a.sold_at,CASE WHEN a.status='converted' AND a.evidence_source IS NOT NULL AND a.evidence_reference IS NOT NULL AND a.sold_at IS NOT NULL THEN 'evidence_attested' WHEN a.status='converted' THEN 'legacy_unverified' ELSE 'not_applicable' END AS evidence_status,a.created_at,a.updated_at,o.name AS offer_name,o.category,o.currency AS offer_currency,o.amount_minor AS listed_amount_minor,c.id AS conversation_id FROM hotel_offer_attributions a JOIN hotel_offers o ON o.id=a.offer_id AND o.organization_id=a.organization_id JOIN conversations c ON c.id=a.conversation_id AND c.organization_id=a.organization_id WHERE a.organization_id=$1 ORDER BY a.created_at DESC LIMIT 200",[org]);
- const totals=await db.query("SELECT status,count(*)::int AS count FROM hotel_offer_attributions WHERE organization_id=$1 GROUP BY status ORDER BY status",[org]);
- const verifiedTotals=await db.query("SELECT currency,count(*)::int AS count,COALESCE(sum(amount_minor),0)::text AS amount_minor FROM hotel_offer_attributions WHERE organization_id=$1 AND status='converted' AND evidence_source IS NOT NULL AND evidence_reference IS NOT NULL AND sold_at IS NOT NULL GROUP BY currency ORDER BY currency",[org]);
- const legacyUnverifiedTotals=await db.query("SELECT count(*)::int AS count FROM hotel_offer_attributions WHERE organization_id=$1 AND status='converted' AND (evidence_source IS NULL OR evidence_reference IS NULL OR sold_at IS NULL)",[org]);
- r.json({attributions:x.rows,totals:totals.rows,verifiedTotals:verifiedTotals.rows,legacyUnverifiedTotals:legacyUnverifiedTotals.rows});
+ const financialVisibility=["owner","admin"].includes(q.actor.role);
+ const windowResult=await db.query("SELECT now() AS window_end,now()-interval '30 days' AS window_start");
+ const windowStart=windowResult.rows[0].window_start;
+ const windowEnd=windowResult.rows[0].window_end;
+ const x=await db.query(financialVisibility
+  ? "SELECT a.id,a.status,a.amount_minor,a.currency,a.notes,a.evidence_source,a.evidence_reference,a.sold_at,CASE WHEN a.status='converted' AND a.evidence_source IS NOT NULL AND a.evidence_reference IS NOT NULL AND a.sold_at IS NOT NULL THEN 'evidence_attested' WHEN a.status='converted' THEN 'legacy_unverified' ELSE 'not_applicable' END AS evidence_status,a.created_at,a.updated_at,o.name AS offer_name,o.category,o.currency AS offer_currency,o.amount_minor AS listed_amount_minor,c.id AS conversation_id FROM hotel_offer_attributions a JOIN hotel_offers o ON o.id=a.offer_id AND o.organization_id=a.organization_id JOIN conversations c ON c.id=a.conversation_id AND c.organization_id=a.organization_id WHERE a.organization_id=$1 ORDER BY a.created_at DESC LIMIT 200"
+  : "SELECT a.id,a.status,a.created_at,o.name AS offer_name,o.category,c.id AS conversation_id FROM hotel_offer_attributions a JOIN hotel_offers o ON o.id=a.offer_id AND o.organization_id=a.organization_id JOIN conversations c ON c.id=a.conversation_id AND c.organization_id=a.organization_id WHERE a.organization_id=$1 ORDER BY a.created_at DESC LIMIT 200",
+  [org]);
+ const enquirySummary=await db.query("SELECT count(*)::int AS enquiry_count,count(DISTINCT conversation_id)::int AS enquiry_conversation_count FROM hotel_offer_attributions WHERE organization_id=$1 AND created_at >= $2 AND created_at < $3",[org,windowStart,windowEnd]);
+ const verifiedTotals=financialVisibility
+  ? await db.query("SELECT currency,count(*)::int AS count,COALESCE(sum(amount_minor),0)::text AS amount_minor FROM hotel_offer_attributions WHERE organization_id=$1 AND status='converted' AND evidence_source IS NOT NULL AND evidence_reference IS NOT NULL AND sold_at IS NOT NULL AND sold_at >= $2 AND sold_at < $3 GROUP BY currency ORDER BY currency",[org,windowStart,windowEnd])
+  : {rows:[]};
+ const legacyUnverifiedTotals=financialVisibility
+  ? await db.query("SELECT count(*)::int AS count FROM hotel_offer_attributions WHERE organization_id=$1 AND status='converted' AND (evidence_source IS NULL OR evidence_reference IS NULL OR sold_at IS NULL)",[org])
+  : {rows:[]};
+ r.json({
+  attributions:x.rows,
+  enquiryCount:enquirySummary.rows[0].enquiry_count,
+  enquiryConversationCount:enquirySummary.rows[0].enquiry_conversation_count,
+  verifiedTotals:verifiedTotals.rows,
+  legacyUnverifiedTotals:legacyUnverifiedTotals.rows,
+  legacyUnverifiedScope:"all_time",
+  financialVisibility,
+  windowStart:new Date(windowStart).toISOString(),
+  windowEnd:new Date(windowEnd).toISOString(),
+  windowTimezone:"UTC",
+  windowDays:30
+ });
 }catch(e){n(e);}});
 app.patch("/api/admin/offer-attributions/:id",requireDb,auth,role("owner","admin","staff"),async(q,r,n)=>{
  const client=await db.connect();
@@ -314,7 +337,7 @@ app.patch("/api/admin/offer-attributions/:id",requireDb,auth,role("owner","admin
    try{new Intl.NumberFormat("en",{style:"currency",currency});supportedCurrency=true;}catch{}
    if(!Number.isSafeInteger(amount)||amount<=0||!/^[A-Z]{3}$/.test(currency)||!supportedCurrency||
       !["pms_record","payment_receipt","invoice","hotel_report"].includes(evidenceSource)||
-      !/^[A-Za-z0-9._:/#-]{1,200}$/.test(evidenceReference)||
+      !/^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,199}$/.test(evidenceReference)||/:\/\//.test(evidenceReference)||/^www\./i.test(evidenceReference)||
       !Number.isFinite(soldAtMs)){
     await client.query("ROLLBACK");
     return r.status(400).json({error:"A sale needs a positive actual amount, supported currency, evidence source, opaque evidence reference and timezone-qualified sale timestamp."});

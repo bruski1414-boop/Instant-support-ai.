@@ -10,7 +10,6 @@ const { reconcilePaidAddons } = require("./paid-addon-reconciliation");
 const VEYRA_EXTERNAL_ID = /^veyra-addon:[A-Za-z0-9._:-]{1,120}$/;
 const SAFE_ID = /^[A-Za-z0-9._:-]{1,200}$/;
 const ADJUSTMENT_KINDS = new Set(["Refund", "Chargeback", "ChargebackReversal"]);
-const ACTIVE_PAYMENT_STATES = new Set(["Charged", "Pending", "Verifying"]);
 
 function requiredId(value, field) {
   if (typeof value !== "string" || !SAFE_ID.test(value.trim())) {
@@ -225,9 +224,9 @@ function mapMewsPaidAddonEvidence(input = {}) {
     if (!paymentsByBill.has(billId)) paymentsByBill.set(billId, []);
     paymentsByBill.get(billId).push(payment);
 
-    if (ADJUSTMENT_KINDS.has(payment.Kind) && ACTIVE_PAYMENT_STATES.has(payment.State)) {
+    if (ADJUSTMENT_KINDS.has(payment.Kind) && !["Failed", "Canceled"].includes(payment.State)) {
       blockedPaymentBills.set(billId, "adjustment_needs_review");
-    } else if (payment.Kind !== "Payment" && ACTIVE_PAYMENT_STATES.has(payment.State)) {
+    } else if (payment.Kind !== "Payment" && !["Failed", "Canceled"].includes(payment.State)) {
       blockedPaymentBills.set(billId, "payment_kind_unverified");
     } else if (payment.Kind === "Payment" && payment.State === "Charged" && payment.AccountingState !== "Closed") {
       blockedPaymentBills.set(billId, "payment_accounting_state_unclosed");
@@ -265,7 +264,9 @@ function mapMewsPaidAddonEvidence(input = {}) {
       hold(item, "reservation_link_not_verified_or_not_confirmed");
       continue;
     }
-    if (item.AccountingState !== "Closed" || item.CanceledUtc || !item.ClosedUtc) {
+    if (item.AccountingState !== "Closed" ||
+        (item.CanceledUtc !== null && item.CanceledUtc !== undefined) ||
+        !item.ClosedUtc) {
       hold(item, "order_item_not_closed");
       continue;
     }
@@ -290,7 +291,9 @@ function mapMewsPaidAddonEvidence(input = {}) {
       hold(item, "bill_not_closed_full_payment_receipt");
       continue;
     }
-    if (bill.CorrectionState !== "Bill" || bill.Options?.Rebated !== false || correctedBillIds.has(bill.Id)) {
+    if (bill.CorrectionState !== "Bill" || bill.Options?.Rebated !== false ||
+        (bill.CorrectedBillId !== null && bill.CorrectedBillId !== undefined) ||
+        correctedBillIds.has(bill.Id)) {
       hold(item, "bill_corrected_or_rebated");
       continue;
     }
@@ -326,7 +329,9 @@ function mapMewsPaidAddonEvidence(input = {}) {
       continue;
     }
     const billUpdatedAtMs = utcMillis(bill.UpdatedUtc, "bill.UpdatedUtc");
-    const issuedAtMs = bill.IssuedUtc ? utcMillis(bill.IssuedUtc, "bill.IssuedUtc") : paidAtMs;
+    const issuedAtMs = bill.IssuedUtc !== null && bill.IssuedUtc !== undefined
+      ? utcMillis(bill.IssuedUtc, "bill.IssuedUtc")
+      : paidAtMs;
     const finalityAnchorMs = Math.max(paidAtMs, billUpdatedAtMs, issuedAtMs, itemClosedAtMs, itemUpdatedAtMs);
     const finalityAtMs = Math.max(
       addIsoDuration(finalityAnchorMs, accountingInterval),

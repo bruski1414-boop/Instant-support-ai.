@@ -10,10 +10,6 @@ const {
 } = require("../mews-paid-addon-adapter");
 const { createValidMewsAccountingFixture } = require("../fixtures/mews-paid-addon-accounting");
 
-function copy(value) {
-  return JSON.parse(JSON.stringify(value));
-}
-
 test("maps only a Veyra add-on with a verified reservation link, finalized Receipt and Charged payment", () => {
   const result = mapMewsPaidAddonEvidence(createValidMewsAccountingFixture());
   assert.equal(result.events.length, 1);
@@ -141,6 +137,27 @@ test("waits until the longer accounting and operational editable-history interva
   const result = mapMewsPaidAddonEvidence(input);
   assert.equal(result.events.length, 0);
   assert.equal(result.withheld[0].reason, "within_editable_history_window");
+});
+
+test("uses the latest bill and order-item update timestamp as the editable-history anchor", () => {
+  const itemUpdated = createValidMewsAccountingFixture();
+  itemUpdated.orderItems[0].UpdatedUtc = "2026-11-17T09:00:00Z";
+  assert.equal(mapMewsPaidAddonEvidence(itemUpdated).withheld[0].reason, "within_editable_history_window");
+
+  const billUpdated = createValidMewsAccountingFixture();
+  billUpdated.bills[0].UpdatedUtc = "2026-11-17T09:00:00Z";
+  assert.equal(mapMewsPaidAddonEvidence(billUpdated).withheld[0].reason, "within_editable_history_window");
+
+  const missingUpdate = createValidMewsAccountingFixture();
+  delete missingUpdate.bills[0].UpdatedUtc;
+  assert.equal(mapMewsPaidAddonEvidence(missingUpdate).withheld[0].reason, "bill_update_timestamp_missing");
+});
+
+test("normalizes Mews UTC offsets to canonical timestamps", () => {
+  const input = createValidMewsAccountingFixture();
+  input.payments[0].ChargedUtc = "2026-11-01T09:00:00+00:00";
+  const result = mapMewsPaidAddonEvidence(input);
+  assert.equal(result.events[0].occurredAt, "2026-11-01T09:00:00.000Z");
 });
 
 test("requires bill paid timestamp and supported editable-history configuration", () => {

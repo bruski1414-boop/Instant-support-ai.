@@ -83,7 +83,9 @@ function projectPaidAddonToLedger(event) {
     const [whole, fraction = ""] = item.amount.split(".");
     return sum + Number(whole) * (10 ** digits) + Number((fraction + "0".repeat(digits)).slice(0, digits) || 0);
   }, 0);
-  if (adjustmentMinor !== event.adjustmentAmountMinor) throw new Error("Projected adjustments do not equal the reconciled adjustment total.");
+  if (!Number.isSafeInteger(adjustmentMinor) || adjustmentMinor !== event.adjustmentAmountMinor) {
+    throw new Error("Projected adjustments do not equal the reconciled adjustment total.");
+  }
 
   return Object.freeze({
     revenueEvent,

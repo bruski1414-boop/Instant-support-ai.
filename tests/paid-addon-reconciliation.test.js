@@ -107,7 +107,31 @@ test("rejects over-refunds, cross-currency adjustments and adjustments for unkno
     itemId: "other-item", type: "refund", status: "confirmed",
     externalReference: "refund-unknown", amountMinor: 100, currency: "EUR",
     occurredAt: "2026-11-16T10:00:00.000Z"
-  }] })), /must reference an order item/);
+  }] })), /must reference a Veyra-issued order item/);
+});
+
+test("does not allocate refunds to ordinary hotel items", () => {
+  const ordinaryItem = {
+    id: "item-102",
+    externalIdentifier: "hotel-front-desk",
+    reservationId: "reservation-22",
+    billId: "bill-9",
+    accountingState: "Closed",
+    amountMinor: 500,
+    currency: "EUR"
+  };
+  assert.throws(() => reconcilePaidAddons(fixture({
+    orderItems: [...fixture().orderItems, ordinaryItem],
+    adjustments: [{
+      itemId: "item-102",
+      type: "refund",
+      status: "confirmed",
+      externalReference: "refund-ordinary",
+      amountMinor: 100,
+      currency: "EUR",
+      occurredAt: "2026-11-16T10:00:00.000Z"
+    }]
+  })), /Veyra-issued order item/);
 });
 
 test("rejects duplicate provider identifiers and Veyra external identifiers", () => {

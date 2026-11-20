@@ -256,15 +256,72 @@ try {
     body: JSON.stringify({ status: "converted", amount_minor: -1, currency: "THB" }),
   });
   assert.equal(invalidConversion.status, 400, "completed sale requires a valid non-negative actual amount");
+  const missingEvidenceConversion = await fetch(baseUrl + "/api/admin/offer-attributions/" + tenants[0].attributionId, {
+    method: "PATCH",
+    headers: { cookie: cookieA, "X-CSRF-Token": tenants[0].csrfToken, "content-type": "application/json" },
+    body: JSON.stringify({ status: "converted", amount_minor: 235000, currency: "THB", sold_at: new Date().toISOString() }),
+  });
+  assert.equal(missingEvidenceConversion.status, 400, "a positive amount without evidence must not become confirmed revenue");
+  const saleEvidence = {
+    status: "converted",
+    amount_minor: 235000,
+    currency: "THB",
+    evidence_source: "hotel_report",
+    evidence_reference: "synthetic-sale-tenant-a-001",
+    sold_at: new Date().toISOString(),
+    notes: "Confirmed by hotel owner"
+  };
   const ownAttributionUpdate = await fetch(baseUrl + "/api/admin/offer-attributions/" + tenants[0].attributionId, {
     method: "PATCH",
     headers: { cookie: cookieA, "X-CSRF-Token": tenants[0].csrfToken, "content-type": "application/json" },
-    body: JSON.stringify({ status: "converted", amount_minor: 235000, currency: "THB", notes: "Confirmed by hotel staff" }),
+    body: JSON.stringify(saleEvidence),
   });
-  assert.equal(ownAttributionUpdate.status, 200, "tenant A can confirm its own sale");
+  assert.equal(ownAttributionUpdate.status, 200, "tenant A can attest its own sale with evidence");
   const confirmedAttribution = await ownAttributionUpdate.json();
   assert.equal(confirmedAttribution.attribution.amount_minor, "235000");
   assert.equal(confirmedAttribution.attribution.status, "converted");
+  assert.equal(confirmedAttribution.attribution.evidence_status, "evidence_attested");
+  assert.equal(confirmedAttribution.attribution.evidence_reference, "synthetic-sale-tenant-a-001");
+
+  const repeatedAttributionUpdate = await fetch(baseUrl + "/api/admin/offer-attributions/" + tenants[0].attributionId, {
+    method: "PATCH",
+    headers: { cookie: cookieA, "X-CSRF-Token": tenants[0].csrfToken, "content-type": "application/json" },
+    body: JSON.stringify(saleEvidence),
+  });
+  assert.equal(repeatedAttributionUpdate.status, 200, "replaying the same sale evidence is idempotent");
+  const changedSaleEvidence = { ...saleEvidence, amount_minor: 240000 };
+  const replacementAttributionUpdate = await fetch(baseUrl + "/api/admin/offer-attributions/" + tenants[0].attributionId, {
+    method: "PATCH",
+    headers: { cookie: cookieA, "X-CSRF-Token": tenants[0].csrfToken, "content-type": "application/json" },
+    body: JSON.stringify(changedSaleEvidence),
+  });
+  assert.equal(replacementAttributionUpdate.status, 409, "an evidence-attested sale cannot be overwritten");
+
+  const verifiedTotalsResponse = await fetch(baseUrl + "/api/admin/offer-attributions", { headers: { cookie: cookieA } });
+  const verifiedTotalsBody = await verifiedTotalsResponse.json();
+  assert.equal(verifiedTotalsBody.verifiedTotals.length, 1);
+  assert.equal(verifiedTotalsBody.verifiedTotals[0].count, 1);
+  assert.equal(verifiedTotalsBody.verifiedTotals[0].amount_minor, "235000");
+  assert.equal(verifiedTotalsBody.legacyUnverifiedTotals[0].count, 0);
+
+  const historyResponse = await fetch(baseUrl + "/api/admin/offer-attributions/" + tenants[0].attributionId + "/events", { headers: { cookie: cookieA } });
+  assert.equal(historyResponse.status, 200);
+  const historyBody = await historyResponse.json();
+  assert.equal(historyBody.events.length, 1);
+  assert.equal(historyBody.events[0].new_evidence_reference, "synthetic-sale-tenant-a-001");
+  const crossHistoryResponse = await fetch(baseUrl + "/api/admin/offer-attributions/" + tenants[1].attributionId + "/events", { headers: { cookie: cookieA } });
+  assert.equal(crossHistoryResponse.status, 404, "tenant A cannot read tenant B's evidence history");
+
+  const eventCount = await pool.query("SELECT count(*)::int AS count FROM hotel_offer_attribution_events WHERE organization_id=(SELECT id FROM organizations WHERE slug=$1) AND attribution_id=$2", [tenants[0].slug, tenants[0].attributionId]);
+  assert.equal(eventCount.rows[0].count, 1, "idempotent replay must not duplicate the audit event");
+  await assert.rejects(
+    pool.query("UPDATE hotel_offer_attributions SET amount_minor=240000 WHERE id=$1 AND organization_id=(SELECT id FROM organizations WHERE slug=$2)", [tenants[0].attributionId, tenants[0].slug]),
+    /immutable/
+  );
+  await assert.rejects(
+    pool.query("UPDATE hotel_offer_attributions SET status='converted' WHERE id=$1 AND organization_id=(SELECT id FROM organizations WHERE slug=$2)", [tenants[1].attributionId, tenants[1].slug]),
+    /complete evidence/
+  );
   const attributionBAfter = await fetch(baseUrl + "/api/admin/offer-attributions", { headers: { cookie: cookieB } });
   const attributionBBody = await attributionBAfter.json();
   assert.equal(attributionBBody.attributions[0].status, "enquiry", "tenant A's confirmation must not affect tenant B");

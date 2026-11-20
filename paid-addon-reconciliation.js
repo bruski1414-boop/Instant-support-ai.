@@ -86,7 +86,10 @@ function reconcilePaidAddons({ organizationId, provider, orderItems, bills, paym
   const adjustmentReferences = new Set();
   for (const adjustment of adjustments) {
     const itemId = requiredText(adjustment.itemId, "adjustment itemId");
-    if (!itemById.has(itemId)) throw new Error("An adjustment must reference an order item in this batch.");
+    const targetItem = itemById.get(itemId);
+    if (!targetItem || !VEYRA_EXTERNAL_ID.test(String(targetItem.externalIdentifier || ""))) {
+      throw new Error("An adjustment must reference a Veyra-issued order item in this batch.");
+    }
     const reference = requiredText(adjustment.externalReference, "adjustment externalReference");
     if (!REFERENCE.test(reference) || adjustmentReferences.has(reference)) {
       throw new Error("Adjustment references must be valid and unique in this reconciliation batch.");

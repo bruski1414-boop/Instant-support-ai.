@@ -123,6 +123,10 @@ test("withholds original receipts that have corrective bills or bill-level rebat
   const rebatedBill = createValidMewsAccountingFixture();
   rebatedBill.bills[0].Options.Rebated = true;
   assert.equal(mapMewsPaidAddonEvidence(rebatedBill).events.length, 0);
+
+  const unexpectedCorrectedId = createValidMewsAccountingFixture();
+  unexpectedCorrectedId.bills[0].CorrectedBillId = "another-bill";
+  assert.equal(mapMewsPaidAddonEvidence(unexpectedCorrectedId).events.length, 0);
 });
 
 test("withholds add-ons with direct or chained Mews rebate evidence", () => {
@@ -209,6 +213,11 @@ test("requires Charged, closed, same-currency Mews Payment evidence and holds re
   const pending = createValidMewsAccountingFixture();
   pending.payments[0].State = "Pending";
   assert.equal(mapMewsPaidAddonEvidence(pending).withheld[0].reason, "charged_payment_evidence_missing");
+
+  const unknownKindState = createValidMewsAccountingFixture();
+  unknownKindState.payments[0].Kind = "UnknownKind";
+  unknownKindState.payments[0].State = "UnknownState";
+  assert.equal(mapMewsPaidAddonEvidence(unknownKindState).withheld[0].reason, "payment_kind_unverified");
 });
 
 test("does not count cancelled, open or non-positive Veyra order items", () => {
@@ -219,6 +228,10 @@ test("does not count cancelled, open or non-positive Veyra order items", () => {
   const open = createValidMewsAccountingFixture();
   open.orderItems[0].AccountingState = "Open";
   assert.equal(mapMewsPaidAddonEvidence(open).withheld[0].reason, "order_item_not_closed");
+
+  const emptyCancellation = createValidMewsAccountingFixture();
+  emptyCancellation.orderItems[0].CanceledUtc = "";
+  assert.equal(mapMewsPaidAddonEvidence(emptyCancellation).withheld[0].reason, "order_item_not_closed");
 
   const zero = createValidMewsAccountingFixture();
   zero.orderItems[0].Amount.GrossValue = 0;

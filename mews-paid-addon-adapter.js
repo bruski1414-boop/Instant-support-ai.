@@ -1,13 +1,13 @@
 "use strict";
 
-// Pure Mews Connector API mapper. It performs no network or database I/O and
-// deliberately discards guest/account names, emails, notes and payment details.
-// The caller must supply complete, tenant-verified API pages and server-owned
-// reservation links created from successful orders/add responses.
+// Pure Mews Connector API mapper. No network or database I/O occurs here.
+// Raw guest/account names, emails, notes and payment details are discarded.
+// The caller supplies complete tenant-verified pages and server-owned links
+// created from successful Mews orders/add responses.
 
 const { reconcilePaidAddons } = require("./paid-addon-reconciliation");
 
-const VeyraExternalId = /^veyra-addon:[A-Za-z0-9._:-]{1,120}$/;
+const VEYRA_EXTERNAL_ID = /^veyra-addon:[A-Za-z0-9._:-]{1,120}$/;
 const SAFE_ID = /^[A-Za-z0-9._:-]{1,200}$/;
 const ADJUSTMENT_KINDS = new Set(["Refund", "Chargeback", "ChargebackReversal"]);
 const ACTIVE_PAYMENT_STATES = new Set(["Charged", "Pending", "Verifying"]);
@@ -20,7 +20,7 @@ function requiredId(value, field) {
 }
 
 function utcMillis(value, field) {
-  if (typeof value !== "string" || !/(Z|\\+00:00)$/.test(value)) {
+  if (typeof value !== "string" || !/(Z|\+00:00)$/.test(value)) {
     throw new Error(field + " must be an ISO-8601 UTC timestamp.");
   }
   const parsed = Date.parse(value);
@@ -50,7 +50,7 @@ function minorUnitsFromGross(value, currency) {
     .resolvedOptions().maximumFractionDigits;
   const raw = String(Math.abs(value));
   if (/e/i.test(raw)) return null;
-  const match = /^(\\d+)(?:\\.(\\d+))?$/.exec(raw);
+  const match = /^(\d+)(?:\.(\d+))?$/.exec(raw);
   if (!match) return null;
   const fraction = match[2] || "";
   if (fraction.length > digits && /[1-9]/.test(fraction.slice(digits))) return null;
@@ -64,7 +64,7 @@ function minorUnitsFromGross(value, currency) {
 
 function parseIsoDuration(value, field) {
   if (typeof value !== "string") throw new Error(field + " must be an ISO-8601 duration.");
-  const match = /^P(?:(\\d+)Y)?(?:(\\d+)M)?(?:(\\d+)D)?(?:T(?:(\\d+)H)?(?:(\\d+)M)?(?:(\\d+(?:\\.\\d{1,3})?)S)?)?$/.exec(value);
+  const match = /^P(?:(\d+)Y)?(?:(\d+)M)?(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(?:\.\d{1,3})?)S)?)?$/.exec(value);
   if (!match || !match.slice(1).some(part => part !== undefined)) {
     throw new Error(field + " must be a supported ISO-8601 duration.");
   }
@@ -211,13 +211,14 @@ function mapMewsPaidAddonEvidence(input = {}) {
     if (typeof payment.BillId !== "string" || !payment.BillId) continue;
     const billId = payment.BillId;
     if (!paymentsByBill.has(billId)) paymentsByBill.set(billId, []);
-    const rows = paymentsByBill.get(billId);
-    rows.push(payment);
+    paymentsByBill.get(billId).push(payment);
 
     if (ADJUSTMENT_KINDS.has(payment.Kind) && ACTIVE_PAYMENT_STATES.has(payment.State)) {
       blockedPaymentBills.set(billId, "adjustment_needs_review");
     } else if (payment.Kind !== "Payment" && ACTIVE_PAYMENT_STATES.has(payment.State)) {
       blockedPaymentBills.set(billId, "payment_kind_unverified");
+    } else if (payment.Kind === "Payment" && payment.State === "Charged" && payment.AccountingState !== "Closed") {
+      blockedPaymentBills.set(billId, "payment_accounting_state_unclosed");
     }
   }
 
@@ -235,7 +236,7 @@ function mapMewsPaidAddonEvidence(input = {}) {
   for (const item of orderItems) {
     const externalIdentifier = typeof item.ExternalIdentifier === "string" ? item.ExternalIdentifier.trim() : "";
     if (!externalIdentifier.startsWith("veyra-addon:")) continue;
-    if (!VeyraExternalId.test(externalIdentifier)) {
+    if (!VEYRA_EXTERNAL_ID.test(externalIdentifier)) {
       hold(item, "invalid_veyra_external_identifier");
       continue;
     }

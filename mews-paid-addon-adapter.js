@@ -163,8 +163,8 @@ function mapMewsPaidAddonEvidence(input = {}) {
   const bills = uniqueRows(input.bills, "bills", expectedEnterpriseId);
   const payments = uniqueRows(input.payments, "payments", expectedEnterpriseId);
 
-  if (!Array.isArray(input.confirmedReservationIds) || !Array.isArray(input.verifiedOrderReservationLinks)) {
-    throw new Error("Verified reservation IDs and server-owned order/reservation links are required.");
+  if (!Array.isArray(input.confirmedReservationIds) || !Array.isArray(input.verifiedOrderItemWrites)) {
+    throw new Error("Verified reservation IDs and server-owned Mews order-item write records are required.");
   }
   const confirmedReservations = new Set(input.confirmedReservationIds.map((id, index) =>
     requiredId(id, "confirmedReservationIds[" + index + "]")
@@ -173,17 +173,29 @@ function mapMewsPaidAddonEvidence(input = {}) {
     throw new Error("Confirmed reservation IDs must be unique.");
   }
 
-  const orderLinks = new Map();
-  for (const link of input.verifiedOrderReservationLinks) {
+  const verifiedOrderItemWrites = new Map();
+  const reservationByServiceOrder = new Map();
+  for (const link of input.verifiedOrderItemWrites) {
     if (!link || typeof link !== "object" || Array.isArray(link) ||
         link.organizationId !== organizationId || link.enterpriseId !== expectedEnterpriseId ||
-        link.source !== "mews.orders.add.LinkedReservationId") {
-      throw new Error("Order/reservation links must be server-owned, tenant-scoped Mews write evidence.");
+        link.source !== "mews.orders.add.LinkedReservationId+Items.ExternalIdentifier") {
+      throw new Error("Order-item write records must be server-owned, tenant-scoped Mews evidence.");
     }
-    const serviceOrderId = requiredId(link.serviceOrderId, "verified link serviceOrderId");
-    const reservationId = requiredId(link.reservationId, "verified link reservationId");
-    if (orderLinks.has(serviceOrderId)) throw new Error("A Mews service order cannot have multiple reservation links.");
-    orderLinks.set(serviceOrderId, reservationId);
+    const serviceOrderId = requiredId(link.serviceOrderId, "verified write serviceOrderId");
+    const reservationId = requiredId(link.reservationId, "verified write reservationId");
+    const externalIdentifier = typeof link.externalIdentifier === "string" ? link.externalIdentifier.trim() : "";
+    if (!VEYRA_EXTERNAL_ID.test(externalIdentifier)) {
+      throw new Error("Verified Mews order-item writes must contain a Veyra external identifier.");
+    }
+    if (verifiedOrderItemWrites.has(externalIdentifier)) {
+      throw new Error("A Veyra external identifier cannot have multiple Mews write records.");
+    }
+    const priorReservation = reservationByServiceOrder.get(serviceOrderId);
+    if (priorReservation && priorReservation !== reservationId) {
+      throw new Error("A Mews service order cannot have conflicting reservation links.");
+    }
+    reservationByServiceOrder.set(serviceOrderId, reservationId);
+    verifiedOrderItemWrites.set(externalIdentifier, { serviceOrderId, reservationId });
   }
 
   const billById = new Map(bills.map(bill => [bill.Id, bill]));
@@ -246,8 +258,10 @@ function mapMewsPaidAddonEvidence(input = {}) {
     seenExternalIdentifiers.add(externalIdentifier);
 
     const serviceOrderId = typeof item.ServiceOrderId === "string" ? item.ServiceOrderId : "";
-    const reservationId = orderLinks.get(serviceOrderId);
-    if (!reservationId || !confirmedReservations.has(reservationId)) {
+    const writeEvidence = verifiedOrderItemWrites.get(externalIdentifier);
+    const reservationId = writeEvidence?.reservationId;
+    if (!writeEvidence || writeEvidence.serviceOrderId !== serviceOrderId ||
+        !reservationId || !confirmedReservations.has(reservationId)) {
       hold(item, "reservation_link_not_verified_or_not_confirmed");
       continue;
     }

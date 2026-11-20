@@ -94,6 +94,7 @@ const schema=[
 "ALTER TABLE hotel_offer_attributions ADD COLUMN IF NOT EXISTS evidence_reference TEXT",
 "ALTER TABLE hotel_offer_attributions ADD COLUMN IF NOT EXISTS sold_at TIMESTAMPTZ",
 "CREATE UNIQUE INDEX IF NOT EXISTS hotel_offer_attributions_org_id_key ON hotel_offer_attributions(organization_id,id)",
+"CREATE UNIQUE INDEX IF NOT EXISTS hotel_offer_attributions_evidence_dedupe_idx ON hotel_offer_attributions(organization_id,evidence_source,evidence_reference) WHERE status='converted' AND evidence_source IS NOT NULL AND evidence_reference IS NOT NULL",
 "DO $ddl$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='hotel_offer_attributions_evidence_tuple_check' AND conrelid='hotel_offer_attributions'::regclass) THEN ALTER TABLE hotel_offer_attributions ADD CONSTRAINT hotel_offer_attributions_evidence_tuple_check CHECK ((evidence_source IS NULL AND evidence_reference IS NULL AND sold_at IS NULL) OR (evidence_source IN ('pms_record','payment_receipt','invoice','hotel_report') AND evidence_reference ~ '^[A-Za-z0-9._:/#-]{1,200},
 ].join(";\n")+";";
 function hash(v){return crypto.createHash("sha256").update(v).digest("hex");}
@@ -349,7 +350,7 @@ app.patch("/api/admin/offer-attributions/:id",requireDb,auth,role("owner","admin
   await client.query("COMMIT");
   after.evidence_status=status==="converted"?"evidence_attested":"not_applicable";
   r.json({attribution:after});
- }catch(e){await client.query("ROLLBACK").catch(()=>{});n(e);}
+ }catch(e){await client.query("ROLLBACK").catch(()=>{});if(e.code==="23505"&&e.constraint==="hotel_offer_attributions_evidence_dedupe_idx")return r.status(409).json({error:"This evidence reference has already been used for another sale in this hotel."});n(e);}
  finally{client.release();}
 });
 app.get("/api/admin/offer-attributions/:id/events",requireDb,auth,role("owner","admin"),async(q,r,n)=>{try{
@@ -1157,7 +1158,7 @@ app.get("/invite.html",publicFile("invite.html","html"));
 app.get("/widget.js",publicFile("widget.js","javascript"));
 app.use((e,_q,r,_n)=>{console.error("Veyra API error:",e?.message||"unknown");if(!r.headersSent)r.status(500).json({error:"Something went wrong. Please try again."});});
 async function start(){if(db){await db.query(schema);await db.query("DELETE FROM sessions WHERE expires_at<now()");await db.query("DELETE FROM storage_oauth_states WHERE expires_at<now()");}app.listen(PORT,"0.0.0.0",()=>console.log("Veyra listening on "+PORT+(db?" with PostgreSQL":" in demo mode")));}
-start().catch(e=>{console.error("Startup failed:",e.message);process.exit(1);}); OR NEW.sold_at IS NULL) THEN RAISE EXCEPTION 'A converted offer attribution requires complete evidence.'; END IF; RETURN NEW; END; $fn$",
+start().catch(e=>{console.error("Startup failed:",e.message);process.exit(1);}); OR NEW.sold_at IS NULL OR NEW.sold_at<NEW.created_at OR NEW.sold_at>now()+interval '5 minutes') THEN RAISE EXCEPTION 'A converted offer attribution requires complete evidence and a valid sale timestamp.'; END IF; RETURN NEW; END; $fn$",
 "DROP TRIGGER IF EXISTS hotel_offer_attribution_evidence_guard ON hotel_offer_attributions",
 "CREATE TRIGGER hotel_offer_attribution_evidence_guard BEFORE INSERT OR UPDATE ON hotel_offer_attributions FOR EACH ROW EXECUTE FUNCTION enforce_hotel_offer_attribution_evidence()",
 ].join(";\n")+";";

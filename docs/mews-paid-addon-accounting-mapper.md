@@ -22,15 +22,15 @@ The mapper requires all of the following:
 4. All pages of relevant order items, bills and payments.
 5. Confirmation that corrective bills were included and that rebate chains were followed.
 6. The currently confirmed reservation IDs, derived from a tenant-scoped Mews reservation read.
-7. A server-owned order-to-reservation link record created only after a successful Mews `orders/add` request that included `LinkedReservationId`, paired with the returned `OrderId`.
+7. A server-owned item-write record created only after a successful Mews `orders/add` request, containing the returned `OrderId`, the submitted `LinkedReservationId`, and the exact item-level `ExternalIdentifier` submitted for that Veyra add-on.
 
-The link record must carry the organization ID, Enterprise ID, Mews OrderId (the service-order identifier on returned order items), reservation ID and the fixed source label `mews.orders.add.LinkedReservationId`. The mapper rejects guest-supplied or cross-tenant link records. It does not infer a reservation from an arbitrary `ServiceOrderId`: Mews service orders can represent different service-order types.
+The item-write record must carry the organization ID, Enterprise ID, Mews OrderId (the service-order identifier on returned order items), reservation ID, exact Veyra external identifier and the fixed source label `mews.orders.add.LinkedReservationId+Items.ExternalIdentifier`. It is written only after a successful API response and is server-owned; it is not an echo returned by Mews. The mapper rejects guest-supplied, spoofed, duplicate or cross-tenant write records. It does not infer a reservation from an arbitrary `ServiceOrderId`: Mews service orders can represent different service-order types.
 
 ## Evidence accepted
 
 A Mews order item is eligible only if:
 
-- Its `ExternalIdentifier` is in Veyra's `veyra-addon:` namespace and is unique in the batch.
+- Its `ExternalIdentifier` is in Veyra's `veyra-addon:` namespace, is unique in the batch, and exactly matches a server-owned item-write record from the successful Mews order request.
 - Its Mews Enterprise matches the tenant's verified Enterprise.
 - Its service-order ID has a server-owned link to a reservation that is currently confirmed.
 - Its accounting state is `Closed`, it has a valid `ClosedUtc`, and it is not cancelled.

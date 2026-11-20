@@ -201,7 +201,7 @@ main{padding:28px clamp(16px,4vw,48px);max-width:1450px;width:100%;margin:auto}.
   <div id="revenueStaffNotice" class="notice hidden" role="status">Offer enquiry details are visible here. Sale amounts and evidence references are restricted to workspace owners and administrators.</div>
   <p class="muted" style="font-size:12px">Offer enquiry records and distinct conversations are counted by enquiry creation time. Evidence-attested sales are counted by sale time within the exact UTC reporting window. The start is inclusive and the end is exclusive. Influenced conversations: Not measured. Estimated staff time saved: Not calculated. A hotel-attested link to an enquiry does not prove Veyra caused the sale. Legacy conversions without evidence are excluded from revenue totals and shown separately as an all-time count. Currencies are kept separate.</p>
   <div id="revenueCurrencyTotals" class="card" style="margin:12px 0"></div>
-  <div class="sectionrow"><h2>Offer enquiries awaiting review</h2><span class="muted">Staff can close an enquiry; only owners/admins can attest a sale</span></div>
+  <div class="sectionrow"><h2>Offer enquiry history</h2><span class="muted">Staff can close an enquiry; only owners/admins can attest a sale</span></div>
   <div id="attributionList" style="display:grid;gap:10px"></div>
  </section>
  <section id="panel-escalations" class="panel">
@@ -511,7 +511,7 @@ $("attributionList").addEventListener("click",async e=>{
   const evidenceSource=(prompt("Evidence source: pms_record, payment_receipt, invoice, or hotel_report","hotel_report")||"").trim();
   if(!["pms_record","payment_receipt","invoice","hotel_report"].includes(evidenceSource)){notice("Choose a supported evidence source.","error");return;}
   const evidenceReference=(prompt("Opaque evidence reference only — no guest names, payment details, URLs or tokens:")||"").trim();
-  if(!/^[A-Za-z0-9._:/#-]{1,200}$/.test(evidenceReference)){notice("Enter an opaque reference of 1–200 letters, numbers or . _ : / # - characters.","error");return;}
+  if(!/^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,199}$/.test(evidenceReference)||/:\/\//.test(evidenceReference)||/^www\./i.test(evidenceReference)){notice("Enter an opaque reference of 1–200 letters, numbers or . _ : / # - characters, not a URL.","error");return;}
   const soldAt=(prompt("Sale timestamp with timezone (ISO-8601):",new Date().toISOString())||"").trim();
   if(!/(Z|[+-]\d{2}:\d{2})$/.test(soldAt)||!Number.isFinite(Date.parse(soldAt))){notice("Enter a valid timezone-qualified sale timestamp.","error");return;}
   payload={status:"converted",amount_minor:amountMinor,currency,evidence_source:evidenceSource,evidence_reference:evidenceReference,sold_at:soldAt,notes:""};

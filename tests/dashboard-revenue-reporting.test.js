@@ -10,7 +10,7 @@ test("revenue dashboard states its exact reporting and non-causal metric limits"
   assert.match(html, /id="revenueWindowLabel"/);
   assert.match(html, /windowStart/);
   assert.match(html, /windowEnd/);
-  assert.match(html, /windowTimezone/);
+  assert.match(html, /Rolling 30 × 24-hour UTC window/);
   assert.match(html, /Influenced conversations: Not measured/);
   assert.match(html, /Estimated staff time saved: Not calculated/);
   assert.match(html, /financialVisibility/);

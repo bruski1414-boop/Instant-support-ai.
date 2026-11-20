@@ -15,7 +15,7 @@ test("revenue dashboard states its exact reporting and non-causal metric limits"
   assert.match(html, /Estimated staff time saved: Not calculated/);
   assert.match(html, /financialVisibility/);
   assert.match(html, /Sale amounts and evidence references are restricted/);
-  const scripts = [...html.matchAll(/<script\\b[^>]*>([\\s\\S]*?)<\\/script>/gi)]
+  const scripts = [...html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi)]
     .map(match => match[1])
     .filter(source => source.trim());
   assert.ok(scripts.length > 0, "dashboard must contain an inline application script");

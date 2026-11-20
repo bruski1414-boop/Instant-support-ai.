@@ -255,7 +255,12 @@ function mapMewsPaidAddonEvidence(input = {}) {
       hold(item, "order_item_not_closed");
       continue;
     }
-    utcMillis(item.ClosedUtc, "orderItem.ClosedUtc");
+    const itemClosedAtMs = utcMillis(item.ClosedUtc, "orderItem.ClosedUtc");
+    if (typeof item.UpdatedUtc !== "string" || !item.UpdatedUtc) {
+      hold(item, "order_item_update_timestamp_missing");
+      continue;
+    }
+    const itemUpdatedAtMs = utcMillis(item.UpdatedUtc, "orderItem.UpdatedUtc");
     if (hasAnyRebateInChain(item.Id, rebateParents)) {
       hold(item, "rebate_chain_requires_reconciliation");
       continue;
@@ -302,9 +307,16 @@ function mapMewsPaidAddonEvidence(input = {}) {
       continue;
     }
     const paidAtMs = utcMillis(bill.PaidUtc, "bill.PaidUtc");
+    if (typeof bill.UpdatedUtc !== "string" || !bill.UpdatedUtc) {
+      hold(item, "bill_update_timestamp_missing");
+      continue;
+    }
+    const billUpdatedAtMs = utcMillis(bill.UpdatedUtc, "bill.UpdatedUtc");
+    const issuedAtMs = bill.IssuedUtc ? utcMillis(bill.IssuedUtc, "bill.IssuedUtc") : paidAtMs;
+    const finalityAnchorMs = Math.max(paidAtMs, billUpdatedAtMs, issuedAtMs, itemClosedAtMs, itemUpdatedAtMs);
     const finalityAtMs = Math.max(
-      addIsoDuration(paidAtMs, accountingInterval),
-      addIsoDuration(paidAtMs, operationalInterval)
+      addIsoDuration(finalityAnchorMs, accountingInterval),
+      addIsoDuration(finalityAnchorMs, operationalInterval)
     );
     if (finalityAtMs > nowMs) {
       hold(item, "within_editable_history_window");

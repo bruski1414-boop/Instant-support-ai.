@@ -262,6 +262,12 @@ try {
     body: JSON.stringify({ status: "converted", amount_minor: 235000, currency: "THB", sold_at: new Date().toISOString() }),
   });
   assert.equal(missingEvidenceConversion.status, 400, "a positive amount without evidence must not become confirmed revenue");
+  const urlEvidenceAttempt = await fetch(baseUrl + "/api/admin/offer-attributions/" + tenants[0].attributionId, {
+    method: "PATCH",
+    headers: { cookie: cookieA, "X-CSRF-Token": tenants[0].csrfToken, "content-type": "application/json" },
+    body: JSON.stringify({ status: "converted", amount_minor: 235000, currency: "THB", evidence_source: "hotel_report", evidence_reference: "https://example.test/receipt/1", sold_at: new Date().toISOString() }),
+  });
+  assert.equal(urlEvidenceAttempt.status, 400, "evidence references must not accept URLs");
   const saleEvidence = {
     status: "converted",
     amount_minor: 235000,
@@ -299,10 +305,17 @@ try {
 
   const verifiedTotalsResponse = await fetch(baseUrl + "/api/admin/offer-attributions", { headers: { cookie: cookieA } });
   const verifiedTotalsBody = await verifiedTotalsResponse.json();
+  assert.equal(verifiedTotalsBody.financialVisibility, true);
+  assert.equal(verifiedTotalsBody.windowTimezone, "UTC");
+  assert.equal(verifiedTotalsBody.windowDays, 30);
+  assert.equal(Date.parse(verifiedTotalsBody.windowEnd) - Date.parse(verifiedTotalsBody.windowStart), 30 * 24 * 60 * 60 * 1000);
+  assert.equal(verifiedTotalsBody.enquiryCount, 1);
+  assert.equal(verifiedTotalsBody.enquiryConversationCount, 1);
   assert.equal(verifiedTotalsBody.verifiedTotals.length, 1);
   assert.equal(verifiedTotalsBody.verifiedTotals[0].count, 1);
   assert.equal(verifiedTotalsBody.verifiedTotals[0].amount_minor, "235000");
   assert.equal(verifiedTotalsBody.legacyUnverifiedTotals[0].count, 0);
+  assert.equal(verifiedTotalsBody.legacyUnverifiedScope, "all_time");
 
   const historyResponse = await fetch(baseUrl + "/api/admin/offer-attributions/" + tenants[0].attributionId + "/events", { headers: { cookie: cookieA } });
   assert.equal(historyResponse.status, 200);
@@ -325,6 +338,30 @@ try {
   const attributionBAfter = await fetch(baseUrl + "/api/admin/offer-attributions", { headers: { cookie: cookieB } });
   const attributionBBody = await attributionBAfter.json();
   assert.equal(attributionBBody.attributions[0].status, "enquiry", "tenant A's confirmation must not affect tenant B");
+
+  await pool.query("UPDATE users SET role='staff' WHERE organization_id=$1 AND email=$2", [orgA, tenants[0].email]);
+  try {
+    const staffAttributionResponse = await fetch(baseUrl + "/api/admin/offer-attributions", { headers: { cookie: cookieA } });
+    assert.equal(staffAttributionResponse.status, 200);
+    const staffAttributionBody = await staffAttributionResponse.json();
+    assert.equal(staffAttributionBody.financialVisibility, false);
+    assert.deepEqual(staffAttributionBody.verifiedTotals, []);
+    assert.deepEqual(staffAttributionBody.legacyUnverifiedTotals, []);
+    const staffRecord = staffAttributionBody.attributions[0];
+    for (const field of ["amount_minor", "currency", "notes", "evidence_source", "evidence_reference", "sold_at", "offer_currency", "listed_amount_minor"]) {
+      assert.equal(Object.hasOwn(staffRecord, field), false, "staff response must redact " + field);
+    }
+    const staffSaleAttempt = await fetch(baseUrl + "/api/admin/offer-attributions/" + tenants[0].attributionId, {
+      method: "PATCH",
+      headers: { cookie: cookieA, "X-CSRF-Token": tenants[0].csrfToken, "content-type": "application/json" },
+      body: JSON.stringify(saleEvidence),
+    });
+    assert.equal(staffSaleAttempt.status, 403, "staff cannot attest revenue");
+    const staffHistoryAttempt = await fetch(baseUrl + "/api/admin/offer-attributions/" + tenants[0].attributionId + "/events", { headers: { cookie: cookieA } });
+    assert.equal(staffHistoryAttempt.status, 403, "staff cannot read financial evidence history");
+  } finally {
+    await pool.query("UPDATE users SET role='owner' WHERE organization_id=$1 AND email=$2", [orgA, tenants[0].email]);
+  }
 
   const crossOfferVerify = await fetch(baseUrl + "/api/admin/offers/" + tenants[1].offerId + "/verify", {
     method: "POST",

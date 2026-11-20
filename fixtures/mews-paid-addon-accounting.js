@@ -19,12 +19,13 @@ function createValidMewsAccountingFixture(overrides = {}) {
       }
     },
     confirmedReservationIds: ["reservation-22"],
-    verifiedOrderReservationLinks: [{
+    verifiedOrderItemWrites: [{
       organizationId: "hotel-demo-tenant-a",
       enterpriseId: "enterprise-demo-a",
       serviceOrderId: "order-42",
       reservationId: "reservation-22",
-      source: "mews.orders.add.LinkedReservationId"
+      externalIdentifier: "veyra-addon:upgrade-101",
+      source: "mews.orders.add.LinkedReservationId+Items.ExternalIdentifier"
     }],
     orderItems: [
       {
@@ -88,7 +89,7 @@ function createValidMewsAccountingFixture(overrides = {}) {
     ...overrides,
     configuration: overrides.configuration || input.configuration,
     confirmedReservationIds: overrides.confirmedReservationIds || input.confirmedReservationIds,
-    verifiedOrderReservationLinks: overrides.verifiedOrderReservationLinks || input.verifiedOrderReservationLinks,
+    verifiedOrderItemWrites: overrides.verifiedOrderItemWrites || input.verifiedOrderItemWrites,
     orderItems: overrides.orderItems || input.orderItems,
     bills: overrides.bills || input.bills,
     payments: overrides.payments || input.payments

@@ -52,7 +52,7 @@ Corrective bills, bill-level rebates, and item-level rebate chains are also with
 
 ## Editable-history finality
 
-Mews accounting guidance recommends waiting until the longer of the accounting and operational editable-history windows has elapsed. The mapper reads both ISO-8601 duration values from the Enterprise configuration, computes each calendar-aware expiry from the bill's `PaidUtc`, and compares the later expiry with Mews' `NowUtc`.
+Mews accounting guidance recommends waiting until the longer of the accounting and operational editable-history windows has elapsed. The mapper reads both ISO-8601 duration values from the Enterprise configuration. Its conservative finality anchor is the latest of the bill's `PaidUtc`, optional `IssuedUtc`, required `UpdatedUtc`, and the order item's required `ClosedUtc` and `UpdatedUtc`. It computes each calendar-aware expiry from that anchor and compares the later expiry with Mews' `NowUtc`. Missing required update timestamps are withheld.
 
 Records inside the editable-history window are withheld. Unsupported or missing configuration is an error, not an assumption. A later correction, rebate or chargeback discovered during a subsequent reconciliation must cause the corresponding event to be revised through an auditable ledger adjustment; this mapper does not implement that persistence.
 

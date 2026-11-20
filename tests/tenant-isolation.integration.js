@@ -339,7 +339,7 @@ try {
   const attributionBBody = await attributionBAfter.json();
   assert.equal(attributionBBody.attributions[0].status, "enquiry", "tenant A's confirmation must not affect tenant B");
 
-  await pool.query("UPDATE users SET role='staff' WHERE organization_id=$1 AND email=$2", [orgA, tenants[0].email]);
+  await pool.query("UPDATE users SET role='staff' WHERE organization_id=(SELECT id FROM organizations WHERE slug=$1) AND email=$2", [tenants[0].slug, tenants[0].email]);
   try {
     const staffAttributionResponse = await fetch(baseUrl + "/api/admin/offer-attributions", { headers: { cookie: cookieA } });
     assert.equal(staffAttributionResponse.status, 200);
@@ -360,7 +360,7 @@ try {
     const staffHistoryAttempt = await fetch(baseUrl + "/api/admin/offer-attributions/" + tenants[0].attributionId + "/events", { headers: { cookie: cookieA } });
     assert.equal(staffHistoryAttempt.status, 403, "staff cannot read financial evidence history");
   } finally {
-    await pool.query("UPDATE users SET role='owner' WHERE organization_id=$1 AND email=$2", [orgA, tenants[0].email]);
+    await pool.query("UPDATE users SET role='owner' WHERE organization_id=(SELECT id FROM organizations WHERE slug=$1) AND email=$2", [tenants[0].slug, tenants[0].email]);
   }
 
   const crossOfferVerify = await fetch(baseUrl + "/api/admin/offers/" + tenants[1].offerId + "/verify", {

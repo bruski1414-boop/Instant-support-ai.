@@ -285,7 +285,7 @@ app.delete("/api/admin/offers/:id",requireDb,auth,role("owner","admin"),async(q,
 app.get("/api/admin/offer-attributions",requireDb,auth,role("owner","admin","staff"),async(q,r,n)=>{try{
  const org=q.actor.organization_id;
  const financialVisibility=["owner","admin"].includes(q.actor.role);
- const windowResult=await db.query("SELECT now() AS window_end,now()-interval '30 days' AS window_start");
+ const windowResult=await db.query("SELECT now() AS window_end,now()-interval '720 hours' AS window_start");
  const windowStart=windowResult.rows[0].window_start;
  const windowEnd=windowResult.rows[0].window_end;
  const x=await db.query(financialVisibility

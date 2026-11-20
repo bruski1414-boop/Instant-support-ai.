@@ -37,7 +37,7 @@ test("does not copy guest, account, note, billing-name or payment-detail fields 
 });
 
 test("requires a server-owned Mews LinkedReservationId write record and a currently confirmed reservation", () => {
-  const noLink = createValidMewsAccountingFixture({ verifiedOrderReservationLinks: [] });
+  const noLink = createValidMewsAccountingFixture({ verifiedOrderItemWrites: [] });
   const noLinkResult = mapMewsPaidAddonEvidence(noLink);
   assert.equal(noLinkResult.events.length, 0);
   assert.equal(noLinkResult.withheld[0].reason, "reservation_link_not_verified_or_not_confirmed");
@@ -50,26 +50,36 @@ test("requires a server-owned Mews LinkedReservationId write record and a curren
 
 test("rejects cross-tenant or untrusted order-to-reservation link records", () => {
   const wrongTenant = createValidMewsAccountingFixture({
-    verifiedOrderReservationLinks: [{
+    verifiedOrderItemWrites: [{
       organizationId: "hotel-demo-tenant-b",
       enterpriseId: "enterprise-demo-a",
       serviceOrderId: "order-42",
       reservationId: "reservation-22",
-      source: "mews.orders.add.LinkedReservationId"
+      externalIdentifier: "veyra-addon:upgrade-101",
+      source: "mews.orders.add.LinkedReservationId+Items.ExternalIdentifier"
     }]
   });
   assert.throws(() => mapMewsPaidAddonEvidence(wrongTenant), /server-owned, tenant-scoped/);
 
   const wrongSource = createValidMewsAccountingFixture({
-    verifiedOrderReservationLinks: [{
+    verifiedOrderItemWrites: [{
       organizationId: "hotel-demo-tenant-a",
       enterpriseId: "enterprise-demo-a",
       serviceOrderId: "order-42",
       reservationId: "reservation-22",
+      externalIdentifier: "veyra-addon:upgrade-101",
       source: "guest-supplied"
     }]
   });
   assert.throws(() => mapMewsPaidAddonEvidence(wrongSource), /server-owned, tenant-scoped/);
+});
+
+test("does not accept a Veyra-looking identifier without its exact server-owned order-item write record", () => {
+  const input = createValidMewsAccountingFixture();
+  input.verifiedOrderItemWrites[0].externalIdentifier = "veyra-addon:different-item";
+  const result = mapMewsPaidAddonEvidence(input);
+  assert.equal(result.events.length, 0);
+  assert.equal(result.withheld[0].reason, "reservation_link_not_verified_or_not_confirmed");
 });
 
 test("rejects provider rows from another Mews enterprise", () => {
@@ -270,6 +280,14 @@ test("keeps multiple Veyra add-ons on one fully paid bill as separate evidence r
     Id: "item-103",
     ExternalIdentifier: "veyra-addon:spa-103",
     Amount: { Currency: "EUR", GrossValue: 20, NetValue: 18.87 }
+  });
+  input.verifiedOrderItemWrites.push({
+    organizationId: "hotel-demo-tenant-a",
+    enterpriseId: "enterprise-demo-a",
+    serviceOrderId: "order-42",
+    reservationId: "reservation-22",
+    externalIdentifier: "veyra-addon:spa-103",
+    source: "mews.orders.add.LinkedReservationId+Items.ExternalIdentifier"
   });
   const result = mapMewsPaidAddonEvidence(input);
   assert.equal(result.events.length, 2);

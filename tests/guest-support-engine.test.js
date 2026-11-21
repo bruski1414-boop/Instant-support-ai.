@@ -276,3 +276,54 @@ test("content grounding accepts a reply that preserves an approved negative clai
   });
   assert.equal(result.needsHuman, false);
 });
+
+
+for (const scenario of [
+  {
+    name: "available to unavailable",
+    evidence: "Pool access is available to hotel guests.",
+    reply: "Pool access is unavailable to hotel guests.",
+  },
+  {
+    name: "unavailable to available",
+    evidence: "Pool access is unavailable to hotel guests.",
+    reply: "Pool access is available to hotel guests.",
+  },
+  {
+    name: "not included to included",
+    evidence: "Breakfast is not included in the room rate.",
+    reply: "Breakfast is included in the room rate.",
+  },
+  {
+    name: "included to not included",
+    evidence: "Breakfast is included in the room rate.",
+    reply: "Breakfast is not included in the room rate.",
+  },
+  {
+    name: "permitted to prohibited",
+    evidence: "Bicycles are permitted in the garden.",
+    reply: "Bicycles are prohibited in the garden.",
+  },
+  {
+    name: "prohibited to permitted",
+    evidence: "Bicycles are prohibited in the garden.",
+    reply: "Bicycles are permitted in the garden.",
+  },
+]) {
+  test(`content grounding rejects a contradiction: ${scenario.name}`, async () => {
+    const result = await generateGuestSupportAnswer({
+      ai: fakeAi(JSON.stringify({
+        reply: scenario.reply,
+        needsHuman: false,
+        handoffReason: "",
+      })),
+      model: "test-model",
+      hotelName: "Aster House",
+      approvedKnowledge: scenario.evidence,
+      message: "Can you confirm this hotel policy?",
+    });
+
+    assert.equal(result.needsHuman, true);
+    assert.match(result.handoffReason, /lexical grounding requires staff review/i);
+  });
+}

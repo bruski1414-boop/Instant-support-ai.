@@ -133,6 +133,51 @@ test("content grounding treats Wi-Fi spelling variants as the same approved term
   assert.equal(result.needsHuman, false);
 });
 
+for (const scenario of [
+  {
+    name: "complimentary Wi-Fi paraphrased as free wireless internet",
+    evidence: "Complimentary Wi-Fi is available throughout the property.",
+    reply: "Guests can use free wireless internet across the hotel.",
+  },
+  {
+    name: "free Wi-Fi paraphrased with reversed word order",
+    evidence: "Free Wi-Fi is available throughout the hotel.",
+    reply: "Wireless internet is complimentary across the property.",
+  },
+]) {
+  test(`content grounding accepts a conservative approved synonym paraphrase: ${scenario.name}`, async () => {
+    const result = await generateGuestSupportAnswer({
+      ai: fakeAi(JSON.stringify({
+        reply: scenario.reply,
+        needsHuman: false,
+        handoffReason: "",
+      })),
+      model: "test-model",
+      hotelName: "Aster House",
+      approvedKnowledge: scenario.evidence,
+      message: "Is complimentary Wi-Fi available?",
+    });
+
+    assert.equal(result.needsHuman, false);
+  });
+}
+
+test("content grounding does not infer that Wi-Fi is complimentary when only availability is approved", async () => {
+  const result = await generateGuestSupportAnswer({
+    ai: fakeAi(JSON.stringify({
+      reply: "Complimentary wireless internet is available throughout the hotel.",
+      needsHuman: false,
+      handoffReason: "",
+    })),
+    model: "test-model",
+    hotelName: "Aster House",
+    approvedKnowledge: "Wi-Fi is available throughout the hotel.",
+    message: "Is Wi-Fi available?",
+  });
+
+  assert.equal(result.needsHuman, true);
+});
+
 test("guest-support engine accepts numeric details that are explicitly present in approved knowledge", async () => {
   const result = await generateGuestSupportAnswer({
     ai: fakeAi(JSON.stringify({

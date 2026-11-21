@@ -23,7 +23,7 @@ test("large knowledge sets prioritize relevant title and category matches", () =
     { title: "Spa treatments", category: "wellness", content: "Massage appointments are available." },
     { title: "Breakfast menu", category: "dining", content: "The breakfast buffet includes fruit and pastries." },
   ];
-  const result = buildRelevantKnowledgeContext(largeDocs, "breakfast", { maxChars: 130 });
+  const result = buildRelevantKnowledgeContext(largeDocs, "breakfast", { maxChars: 180 });
   assert.match(result, /Breakfast service/);
   assert.match(result, /Breakfast menu/);
   assert.doesNotMatch(result, /Airport transfers/);

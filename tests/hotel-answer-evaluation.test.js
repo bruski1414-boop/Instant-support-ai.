@@ -195,3 +195,26 @@ test("query evidence is not borrowed from a second unrelated document", () => {
     false,
   );
 });
+
+
+test("end-to-end evaluator rejects a relationship assembled from separate hotel documents", async () => {
+  const documents = [
+    ...syntheticHotelKnowledge,
+    { title: "Beach access", category: "facilities", content: "The beach is open to guests." },
+  ];
+  const report = await evaluateHotelAnswerCases({
+    hotelName: "Synthetic Test Hotel",
+    documents,
+    cases: [{
+      id: "REL01",
+      question: "When is breakfast?",
+      expectedOutcome: "handoff",
+      mockReply: "Breakfast is served on the beach.",
+    }],
+  });
+
+  assert.equal(report.total, 1);
+  assert.equal(report.passed, 1, JSON.stringify(report.results));
+  assert.equal(report.falseAccepts, 0);
+  assert.equal(report.results[0].evidenceMatched, true);
+});

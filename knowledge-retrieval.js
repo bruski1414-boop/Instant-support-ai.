@@ -7,7 +7,7 @@ const QUESTION_FILLER_WORDS = new Set([
   "use", "using", "area", "book", "booking", "tell", "let", "know", "do",
   "does", "did", "is", "are", "was", "were", "be", "been", "being", "please",
   "kindly", "need", "want", "like", "get", "getting", "have", "has", "had",
-  "arrange", "arranged", "request", "requests", "work", "works", "exact", "tell",
+  "arrange", "arranged", "request", "requests", "work", "works", "exact", "tell", "group", "groups",
 ]);
 const STOP_WORDS = new Set([
   "about", "after", "again", "also", "and", "are", "can", "could", "does",
@@ -46,7 +46,7 @@ const SYNONYMS = {
   wellness: ["spa", "massage"],
   restaurant: ["dining"],
   dining: ["restaurant"],
-  food: ["dining", "restaurant"],
+  food: ["dining", "restaurant"],\n  age: ["aged", "ages"],\n  ages: ["age", "aged"],\n  aged: ["age", "ages"],\n  treatment: ["treatments"],\n  treatments: ["treatment"],
 };
 
 function tokenize(value) {

@@ -1,6 +1,13 @@
 "use strict";
 
 const DEFAULT_MAX_CONTEXT_CHARS = 26000;
+const QUESTION_FILLER_WORDS = new Set([
+  "time", "served", "serves", "serve", "open", "opens", "opening", "close",
+  "closes", "closing", "start", "starts", "started", "available", "availability",
+  "use", "using", "area", "book", "booking", "tell", "let", "know", "do",
+  "does", "did", "is", "are", "was", "were", "be", "been", "being", "please",
+  "kindly", "need", "want", "like", "get", "getting", "have", "has", "had",
+]);
 const STOP_WORDS = new Set([
   "about", "after", "again", "also", "and", "are", "can", "could", "does",
   "for", "from", "have", "help", "how", "into", "is", "its", "just", "may",
@@ -64,6 +71,37 @@ function expandQueryTokens(tokens, queryText = "") {
     }
   }
   return [...expanded];
+}
+
+function normalizeGuestQuery(query) {
+  return String(query || "").toLowerCase()
+    .replace(/\\bmorning meal\\b/g, "breakfast")
+    .replace(/\\bmidday meal\\b/g, "lunch")
+    .replace(/\\bevening meal\\b/g, "dinner")
+    .replace(/\\bwireless internet\\b/g, "wifi")
+    .replace(/\\bswimming pool\\b/g, "pool")
+    .replace(/\\bcheck[ -]?out\\b/g, "checkout")
+    .replace(/\\bcheck[ -]?in\\b/g, "checkin");
+}
+
+function hasRelevantKnowledgeMatch(documents, query) {
+  if (!Array.isArray(documents) || documents.length === 0) return false;
+  const queryTokens = [...new Set(tokenize(normalizeGuestQuery(query))
+    .filter((token) => !QUESTION_FILLER_WORDS.has(token)))];
+  if (!queryTokens.length) return false;
+
+  const knowledgeTokens = new Set();
+  for (const doc of documents) {
+    if (!doc || typeof doc !== "object") continue;
+    for (const token of tokenize([doc.title, doc.category, doc.content].join(" "))) {
+      knowledgeTokens.add(token);
+    }
+  }
+
+  return queryTokens.every((token) => {
+    const accepted = [token, ...tokenize(SYNONYMS[token] || [])];
+    return accepted.some((candidate) => knowledgeTokens.has(candidate));
+  });
 }
 
 function scoreDocument(document, queryTokens) {

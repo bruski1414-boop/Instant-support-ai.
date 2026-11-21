@@ -77,3 +77,21 @@ test("paraphrased guest questions retrieve matching approved documents", () => {
   const checkout = buildRelevantKnowledgeContext(expandedDocs, "What time is departure?", { maxChars: 180 });
   assert.match(checkout, /Checkout policy/);
 });
+
+test("wellness, fitness and dining paraphrases retrieve their approved hotel documents", () => {
+  const domainDocs = [
+    { title: "Spa treatments", category: "wellness", content: "Massage appointments are available by reservation." },
+    { title: "Fitness centre", category: "facilities", content: "The gym is open from 6:00 to 22:00." },
+    { title: "Restaurant hours", category: "dining", content: "The restaurant serves dinner from 18:00." },
+    { title: "Laundry service", category: "guest services", content: "Laundry collection is available daily." },
+  ];
+  const cases = [
+    ["Can I book a massage?", "Spa treatments"],
+    ["Where can I do a workout?", "Fitness centre"],
+    ["What time does the restaurant open?", "Restaurant hours"],
+  ];
+  for (const [query, expectedTitle] of cases) {
+    const context = buildRelevantKnowledgeContext(domainDocs, query, { maxChars: 180 });
+    assert.ok(context.includes(expectedTitle), `expected "${query}" to retrieve ${expectedTitle}`);
+  }
+});

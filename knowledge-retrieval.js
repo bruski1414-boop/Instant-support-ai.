@@ -46,7 +46,8 @@ const SYNONYMS = {
   wellness: ["spa", "massage"],
   restaurant: ["dining"],
   dining: ["restaurant"],
-  food: ["dining", "restaurant"],\n  age: ["aged", "ages"],\n  ages: ["age", "aged"],\n  aged: ["age", "ages"],\n  treatment: ["treatments"],\n  treatments: ["treatment"],
+  food: ["dining", "restaurant"],
+  age: ["aged", "ages"],\n  ages: ["age", "aged"],\n  aged: ["age", "ages"],\n  treatment: ["treatments"],\n  treatments: ["treatment"],
 };
 
 function tokenize(value) {

@@ -31,7 +31,14 @@ const SYNONYMS = {
   taxi: ["car", "transport"],
   transfer: ["airport", "transport"],
   gym: ["fitness", "workout"],
-  fitness: ["gym"],
+  fitness: ["gym", "workout"],
+  workout: ["gym", "fitness"],
+  spa: ["massage", "wellness"],
+  massage: ["spa", "wellness"],
+  wellness: ["spa", "massage"],
+  restaurant: ["dining"],
+  dining: ["restaurant"],
+  food: ["dining", "restaurant"],
 };
 
 function tokenize(value) {

@@ -153,3 +153,62 @@ test("strict evidence matching does not confuse a topic match with support for a
   assert.equal(hasRelevantKnowledgeMatch(docs, "How much is a helicopter transfer?"), false);
   assert.equal(hasRelevantKnowledgeMatch(docs, "Is breakfast included in the room rate?"), false);
 });
+
+
+test("synthetic hotel FAQ evaluation covers common supported guest intents", () => {
+  const hotelFaq = [
+    { title: "Breakfast service", category: "dining", content: "Breakfast is served daily from 7:00 to 10:00." },
+    { title: "Swimming pool", category: "facilities", content: "The outdoor swimming pool is open from 8:00 to 20:00." },
+    { title: "Internet access", category: "connectivity", content: "Wireless internet is available throughout the hotel." },
+    { title: "Check-in policy", category: "front desk", content: "Check-in begins at 15:00." },
+    { title: "Checkout policy", category: "front desk", content: "Departure time is 11:00." },
+    { title: "Fitness centre", category: "facilities", content: "The gym is open from 6:00 to 22:00." },
+    { title: "Spa treatments", category: "wellness", content: "Massage appointments are available by reservation." },
+    { title: "Restaurant hours", category: "dining", content: "The restaurant serves dinner from 18:00." },
+    { title: "Airport transfers", category: "transport", content: "Airport transfers can be arranged through reception." },
+  ];
+  const supportedQuestions = [
+    "When is the morning meal served?",
+    "Does your hotel offer a swimming pool?",
+    "Can I connect to the Wi-Fi?",
+    "When does check-in begin?",
+    "What time is departure?",
+    "Where can I do a workout?",
+    "How do I book a massage?",
+    "When does dinner start?",
+    "Can I arrange an airport transfer?",
+  ];
+  for (const question of supportedQuestions) {
+    assert.equal(
+      hasRelevantKnowledgeMatch(hotelFaq, question),
+      true,
+      `expected approved FAQ evidence for: ${question}`,
+    );
+    assert.ok(
+      buildRelevantKnowledgeContext(hotelFaq, question).length > 0,
+      `expected a non-empty context for: ${question}`,
+    );
+  }
+});
+
+test("synthetic hotel FAQ evaluation rejects requests for unsupported facts", () => {
+  const hotelFaq = [
+    { title: "Breakfast service", category: "dining", content: "Breakfast is served daily from 7:00 to 10:00." },
+    { title: "Airport transfers", category: "transport", content: "Airport transfers can be arranged through reception." },
+    { title: "Spa treatments", category: "wellness", content: "Massage appointments are available by reservation." },
+  ];
+  const unsupportedQuestions = [
+    "How much does a helicopter transfer cost?",
+    "Are dogs allowed in guest rooms?",
+    "Is breakfast included in my room rate?",
+    "Can the hotel guarantee a sea-view upgrade?",
+    "What time does room service stop?",
+  ];
+  for (const question of unsupportedQuestions) {
+    assert.equal(
+      hasRelevantKnowledgeMatch(hotelFaq, question),
+      false,
+      `expected staff handoff for unsupported question: ${question}`,
+    );
+  }
+});

@@ -198,3 +198,22 @@ test("numeric grounding guard does not override an explicit model-requested staf
   assert.match(result.reply, /cannot verify the price/i);
   assert.match(result.handoffReason, /Price confirmation required/);
 });
+
+
+test("guest-support engine hands off when a reply adds an unsupported non-numeric location detail", async () => {
+  const result = await generateGuestSupportAnswer({
+    ai: fakeAi(JSON.stringify({
+      reply: "Breakfast is served on the beach.",
+      needsHuman: false,
+      handoffReason: "",
+    })),
+    model: "test-model",
+    hotelName: "Aster House",
+    approvedKnowledge: "Breakfast buffet is served daily from 7:00 to 10:00.",
+    message: "When is breakfast?",
+  });
+
+  assert.equal(result.needsHuman, true);
+  assert.match(result.reply, /cannot verify every detail/i);
+  assert.match(result.handoffReason, /descriptive terms not present/i);
+});

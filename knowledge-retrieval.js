@@ -78,7 +78,7 @@ function normalizeGuestQuery(query) {
     .replace(/\bmorning meal\b/g, "breakfast")
     .replace(/\bmidday meal\b/g, "lunch")
     .replace(/\bevening meal\b/g, "dinner")
-    .replace(/\bwireless internet\b/g, "wifi")
+    .replace(/\bwireless internet\b/g, "wifi")\n    .replace(/\bwi[ -]?fi\b/g, "wifi")
     .replace(/\bswimming pool\b/g, "pool")
     .replace(/\bcheck[ -]?out\b/g, "checkout")
     .replace(/\bcheck[ -]?in\b/g, "checkin");

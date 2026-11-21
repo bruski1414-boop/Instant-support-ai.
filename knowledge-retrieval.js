@@ -41,8 +41,16 @@ function tokenize(value) {
     ?.filter((token) => !STOP_WORDS.has(token)) || [];
 }
 
-function expandQueryTokens(tokens) {
+function expandQueryTokens(tokens, queryText = "") {
   const expanded = new Set(tokens);
+  const normalizedQuery = String(queryText).toLowerCase();
+  for (const [phrase, synonyms] of Object.entries(SYNONYMS)) {
+    if (phrase.includes(" ") && normalizedQuery.includes(phrase)) {
+      for (const synonym of synonyms) {
+        for (const synonymToken of tokenize(synonym)) expanded.add(synonymToken);
+      }
+    }
+  }
   for (const token of tokens) {
     for (const synonym of SYNONYMS[token] || []) {
       for (const synonymToken of tokenize(synonym)) expanded.add(synonymToken);

@@ -107,7 +107,7 @@ function hasRelevantKnowledgeMatch(documents, query) {
   const knowledgeTokens = new Set();
   for (const doc of documents) {
     if (!doc || typeof doc !== "object") continue;
-    for (const token of tokenize([doc.title, doc.category, doc.content].join(" "))) {
+    for (const token of tokenize(normalizeGuestQuery([doc.title, doc.category, doc.content].join(" ")))) {
       knowledgeTokens.add(token);
     }
   }

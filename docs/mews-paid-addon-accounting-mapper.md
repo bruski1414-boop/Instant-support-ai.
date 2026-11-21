@@ -22,9 +22,9 @@ The mapper requires all of the following:
 4. All pages of relevant order items, bills and payments.
 5. Confirmation that corrective bills were included and that rebate chains were followed.
 6. The currently confirmed reservation IDs, derived from a tenant-scoped Mews reservation read.
-7. A server-owned item-write record created only after a successful Mews `orders/add` request, containing the returned `OrderId`, the submitted `LinkedReservationId`, and the exact item-level `ExternalIdentifier` submitted for that Veyra add-on.
+7. A server-owned write record created only after a successful Mews `orders/add` request, containing the returned `OrderId`, submitted `LinkedReservationId`, tenant/Enterprise, and exact item-level `ExternalIdentifier`. The returned `OrderId` is retained as the Mews order reference; it is **not assumed to equal** an order item's `ServiceOrderId.
 
-The item-write record must carry the organization ID, Enterprise ID, Mews OrderId (the service-order identifier on returned order items), reservation ID, exact Veyra external identifier and the fixed source label `mews.orders.add.LinkedReservationId+Items.ExternalIdentifier`. It is written only after a successful API response and is server-owned; it is not an echo returned by Mews. The mapper rejects guest-supplied, spoofed, duplicate or cross-tenant write records. It does not infer a reservation from an arbitrary `ServiceOrderId`: Mews service orders can represent different service-order types.
+The write record carries the organization ID, Enterprise ID, returned Mews `OrderId`, submitted reservation ID, service ID and exact Veyra external identifier. Mews documents `orders/add` as returning `OrderId`, while `orderItems/getAll` returns `ServiceOrderId` and `productServiceOrders/getAll` returns the product service order `Id` plus `LinkedReservationId`. Veyra therefore performs a separate readback: it finds exactly one order item by the exact external identifier, resolves that item's `ServiceOrderId` to one product service order, and verifies that service order's `LinkedReservationId` and service match the server-owned write record. It does not assume `OrderId === ServiceOrderId`. The mapper accepts only the resulting server-owned proof with source label `mews.orders.add+orderItems.getAll+productServiceOrders.getAll` and rejects guest-supplied, spoofed, duplicate or cross-tenant links.
 
 ## Evidence accepted
 
@@ -94,7 +94,7 @@ The mapper is not a substitute for tenant-scoped database uniqueness, authentica
 
 ## Remaining integration blockers
 
-1. The current main branch does not yet contain a Mews `orders/add` add-on writer that persists the returned OrderId together with the submitted LinkedReservationId. The link record must be implemented as a tenant-scoped, idempotent, audited store before this mapper can be called in production.
+1. This PR adds a demo-only `orders/add` writer, tenant-scoped idempotency/audit store and pure readback verifier. They are not yet wired into an authenticated server route or live hotel connection. A reviewed integration composition and owner/admin route with explicit hotel approval remain required before use.
 2. A trusted adapter must fetch and paginate order items, bills, payments, reservations and all corrective/rebate records, then pass only the expected Enterprise's data.
 3. Refund/chargeback evidence needs a safe original-payment-to-item allocation and final-state reconciliation.
 4. A transactional, tenant-scoped ledger ingestion route must persist gross and adjustments with deduplication and an audit event in one transaction.
@@ -106,6 +106,7 @@ No credentials, live Mews account, production configuration, hotel data or guest
 
 - [Orders — Add order and LinkedReservationId / ExternalIdentifier](https://docs.mews.com/connector-api/operations/orders)
 - [Order items — Get all order items, ServiceOrderId, BillId, ExternalIdentifier, Amount and AccountingState](https://docs.mews.com/connector-api/operations/orderitems)
+- [Product service orders — service-order Id, State, ServiceId and LinkedReservationId readback](https://docs.mews.com/connector-api/operations/productserviceorders)
 - [Bills — Receipt, Invoice, State and corrective-bill fields](https://docs.mews.com/connector-api/operations/bills)
 - [Payments — BillId, signed Amount, State and Kind](https://docs.mews.com/connector-api/operations/payments)
 - [Configuration — NowUtc and editable-history intervals](https://docs.mews.com/connector-api/operations/configuration)

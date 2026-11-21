@@ -61,6 +61,14 @@ async function generateGuestSupportAnswer({
   );
 }
 
+function createNoKnowledgeAnswer(message) {
+  return resolveGuestSupportAnswer(message, {
+    reply: "I cannot verify that information from the hotel's approved guidance. Please contact the front desk so the team can assist you.",
+    needsHuman: true,
+    handoffReason: "No approved hotel information matched the guest question.",
+  });
+}
+
 function createAiUnavailableAnswer() {
   return {
     reply: "I am unable to verify a response right now. Please contact the front desk directly so the team can assist you.",
@@ -69,4 +77,4 @@ function createAiUnavailableAnswer() {
   };
 }
 
-module.exports = { generateGuestSupportAnswer, createAiUnavailableAnswer };
+module.exports = { generateGuestSupportAnswer, createAiUnavailableAnswer, createNoKnowledgeAnswer };

@@ -363,3 +363,11 @@ test("staff webhook configuration is encrypted, tenant-scoped and verified befor
   assert.match(dashboard, /id="staffWebhookForm"/);
   assert.match(dashboard, /id="staffWebhookSecret"/);
 });
+
+test("guest chat requires question evidence in approved knowledge even when the full context fits", () => {
+  const server = fs.readFileSync("server.js", "utf8");
+  const retrieval = fs.readFileSync("knowledge-retrieval.js", "utf8");
+  assert.match(server, /hasRelevantKnowledgeMatch\(docs\.rows,msg\)/);
+  assert.match(server, /const noRelevantKnowledge=!hasRelevantKnowledgeMatch\(docs\.rows,msg\)&&!matchedOffers\.length/);
+  assert.match(retrieval, /function hasRelevantKnowledgeMatch\(documents, query\)/);
+});

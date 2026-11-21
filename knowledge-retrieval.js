@@ -89,6 +89,7 @@ function normalizeGuestQuery(query) {
     .replace(/\bwireless internet\b/g, "wifi")
     .replace(/\bwi[ -]?fi\b/g, "wifi")
     .replace(/\bswimming pool\b/g, "pool")
+    .replace(/\bwork out\b/g, "gym")
     .replace(/\bcheck[ -]?out\b/g, "checkout")
     .replace(/\bcheck[ -]?in\b/g, "checkin");
 }

@@ -50,6 +50,7 @@ function buildRelevantKnowledgeContext(
     )
     .map((doc, index) => ({
       index,
+      source: doc,
       text: "[" + String(doc.category || "general") + "] " + doc.title.trim() + "\n" + doc.content.trim(),
     }));
 
@@ -62,7 +63,7 @@ function buildRelevantKnowledgeContext(
   const ranked = normalized
     .map((doc) => ({
       ...doc,
-      score: scoreDocument(doc, queryTokens),
+      score: scoreDocument(doc.source, queryTokens),
     }))
     .filter((doc) => doc.score > 0)
     .sort((a, b) => b.score - a.score || a.index - b.index);

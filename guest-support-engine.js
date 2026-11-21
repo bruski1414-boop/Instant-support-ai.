@@ -18,13 +18,12 @@ const GENERIC_REPLY_WORDS = new Set([
 const APPROVED_TERM_ALIASES = new Map([
   ["complimentary", "free"],
   ["wireless", "wifi"],
-  ["internet", "wifi"],
   ["across", "throughout"],
   ["property", "hotel"],
 ]);
 
 function getDescriptiveTerms(value) {
-  return (String(value || "").toLowerCase().replace(/\bwi[\s-]?fi\b/g, "wifi").match(/[a-z]{3,}/g) || [])
+  return (String(value || "").toLowerCase().replace(/\bwireless\s+internet\b/g, "wifi").replace(/\bwi[\s-]?fi\b/g, "wifi").match(/[a-z]{3,}/g) || [])
     .map((term) => APPROVED_TERM_ALIASES.get(term) || term)
     .filter((term) => !GENERIC_REPLY_WORDS.has(term) && term !== "use");
 }

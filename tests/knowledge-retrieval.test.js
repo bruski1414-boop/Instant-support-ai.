@@ -234,3 +234,16 @@ test("numeric evidence context excludes unrelated hotel documents with coinciden
   assert.doesNotMatch(evidence, /Checkout policy/);
   assert.doesNotMatch(evidence, /6:00|22:00|11:00/);
 });
+
+
+test("strict evidence matching does not combine unrelated documents to manufacture support", () => {
+  const splitFacts = [
+    { title: "Breakfast service", category: "dining", content: "Breakfast is served daily from 7:00 to 10:00." },
+    { title: "Room pricing", category: "rates", content: "Room prices depend on season and room category." },
+  ];
+  assert.equal(
+    hasRelevantKnowledgeMatch(splitFacts, "What is the breakfast price?"),
+    false,
+    "breakfast and price appearing in separate documents must not count as evidence for a breakfast price",
+  );
+});

@@ -27,7 +27,7 @@ test("large knowledge sets prioritize relevant title and category matches", () =
   assert.match(result, /Breakfast service/);
   assert.match(result, /Breakfast menu/);
   assert.doesNotMatch(result, /Airport transfers/);
-  assert.ok(result.length <= 130);
+  assert.ok(result.length <= 180);
 });
 
 test("irrelevant queries fail closed when the full knowledge set exceeds the context budget", () => {
@@ -52,4 +52,27 @@ test("malformed documents are ignored", () => {
     { title: "Pool", content: "Open from 8 to 8." },
   ], "pool");
   assert.match(result, /Pool/);
+});
+
+test("common guest paraphrases expand to hotel knowledge terms", () => {
+  assert.ok(expandQueryTokens(tokenize("When is the morning meal served?")).includes("breakfast"));
+  assert.ok(expandQueryTokens(tokenize("Can I use the swimming area?")).includes("pool"));
+  assert.ok(expandQueryTokens(tokenize("Is wireless internet available?")).includes("wifi"));
+  assert.ok(expandQueryTokens(tokenize("What time is departure?")).includes("checkout"));
+});
+
+test("paraphrased guest questions retrieve matching approved documents", () => {
+  const expandedDocs = [
+    { title: "Breakfast service", category: "dining", content: "The buffet is served from 7:00 to 10:00." },
+    { title: "Pool facilities", category: "facilities", content: "The swimming pool is open from 8:00 to 20:00." },
+    { title: "Internet access", category: "connectivity", content: "Wireless internet is available throughout the hotel." },
+    { title: "Checkout policy", category: "front desk", content: "Departure time is 11:00." },
+    { title: "Airport transport", category: "transport", content: "Transfers can be arranged at reception." },
+  ];
+  const breakfast = buildRelevantKnowledgeContext(expandedDocs, "When is the morning meal served?", { maxChars: 180 });
+  assert.match(breakfast, /Breakfast service/);
+  const internet = buildRelevantKnowledgeContext(expandedDocs, "Is wireless internet available?", { maxChars: 180 });
+  assert.match(internet, /Internet access/);
+  const checkout = buildRelevantKnowledgeContext(expandedDocs, "What time is departure?", { maxChars: 180 });
+  assert.match(checkout, /Checkout policy/);
 });

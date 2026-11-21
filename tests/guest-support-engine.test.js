@@ -327,3 +327,48 @@ for (const scenario of [
     assert.match(result.handoffReason, /lexical grounding requires staff review/i);
   });
 }
+
+
+for (const scenario of [
+  {
+    name: "omitted exception",
+    evidence: "Pool access is available except during scheduled maintenance.",
+    reply: "Pool access is available.",
+  },
+  {
+    name: "omitted only restriction",
+    evidence: "The spa is available only to registered hotel guests.",
+    reply: "The spa is available to registered hotel guests.",
+  },
+  {
+    name: "omitted conditional restriction",
+    evidence: "Children may use the pool provided that an adult accompanies them.",
+    reply: "Children may use the pool.",
+  },
+  {
+    name: "preserved exception",
+    evidence: "Pool access is available except during scheduled maintenance.",
+    reply: "Pool access is available except during scheduled maintenance.",
+  },
+]) {
+  test(\`content grounding checks restrictive qualifications: \${scenario.name}\`, async () => {
+    const result = await generateGuestSupportAnswer({
+      ai: fakeAi(JSON.stringify({
+        reply: scenario.reply,
+        needsHuman: false,
+        handoffReason: "",
+      })),
+      model: "test-model",
+      hotelName: "Aster House",
+      approvedKnowledge: scenario.evidence,
+      message: "What are the pool and spa access rules?",
+    });
+
+    if (scenario.name === "preserved exception") {
+      assert.equal(result.needsHuman, false);
+    } else {
+      assert.equal(result.needsHuman, true);
+      assert.match(result.handoffReason, /lexical grounding requires staff review/i);
+    }
+  });
+}

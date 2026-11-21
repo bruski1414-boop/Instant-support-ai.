@@ -55,10 +55,10 @@ test("malformed documents are ignored", () => {
 });
 
 test("common guest paraphrases expand to hotel knowledge terms", () => {
-  assert.ok(expandQueryTokens(tokenize("When is the morning meal served?")).includes("breakfast"));
+  assert.ok(expandQueryTokens(tokenize("When is the morning meal served?"), "When is the morning meal served?").includes("breakfast"));
   assert.ok(expandQueryTokens(tokenize("Can I use the swimming area?")).includes("pool"));
   assert.ok(expandQueryTokens(tokenize("Is wireless internet available?")).includes("wifi"));
-  assert.ok(expandQueryTokens(tokenize("What time is departure?")).includes("checkout"));
+  assert.ok(expandQueryTokens(tokenize("What time is departure?"), "What time is departure?").includes("checkout"));
 });
 
 test("paraphrased guest questions retrieve matching approved documents", () => {

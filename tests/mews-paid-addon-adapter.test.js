@@ -135,7 +135,7 @@ test("withholds add-ons with direct or chained Mews rebate evidence", () => {
   input.orderItems.push({
     Id: "rebate-1",
     EnterpriseId: "enterprise-demo-a",
-    ServiceOrderId: "order-42",
+    ServiceOrderId: "service-order-44",
     BillId: "bill-9",
     AccountingState: "Closed",
     Amount: { Currency: "EUR", GrossValue: -10, NetValue: -9.43 },
@@ -298,10 +298,11 @@ test("keeps multiple Veyra add-ons on one fully paid bill as separate evidence r
   input.verifiedOrderItemWrites.push({
     organizationId: "hotel-demo-tenant-a",
     enterpriseId: "enterprise-demo-a",
-    serviceOrderId: "order-42",
+    mewsOrderId: "mews-order-7",
+    serviceOrderId: "service-order-44",
     reservationId: "reservation-22",
     externalIdentifier: "veyra-addon:spa-103",
-    source: "mews.orders.add.LinkedReservationId+Items.ExternalIdentifier"
+    source: "mews.orders.add+orderItems.getAll+productServiceOrders.getAll"
   });
   const result = mapMewsPaidAddonEvidence(input);
   assert.equal(result.events.length, 2);

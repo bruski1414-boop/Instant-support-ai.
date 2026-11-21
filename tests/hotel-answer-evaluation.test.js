@@ -118,6 +118,12 @@ test("end-to-end synthetic evaluator measures supported answers and safe handoff
       expectedOutcome: "handoff",
       mockReply: "Breakfast is served from 6:00 to 11:00.",
     },
+    {
+      id: "H12",
+      question: "When is breakfast?",
+      expectedOutcome: "handoff",
+      mockReply: "Breakfast is served on the beach.",
+    },
   ];
 
   const report = await evaluateHotelAnswerCases({
@@ -126,15 +132,16 @@ test("end-to-end synthetic evaluator measures supported answers and safe handoff
     cases,
   });
 
-  assert.equal(report.total, 21);
-  assert.equal(report.passed, 21, JSON.stringify(report.results.filter((item) => !item.passed)));
+  assert.equal(report.total, 22);
+  assert.equal(report.passed, 22, JSON.stringify(report.results.filter((item) => !item.passed)));
   assert.equal(report.failed, 0);
   assert.equal(report.accuracy, 1);
   assert.equal(report.answerCases, 10);
-  assert.equal(report.handoffCases, 11);
+  assert.equal(report.handoffCases, 12);
   assert.equal(report.falseAccepts, 0);
   assert.equal(report.falseHandoffs, 0);
   assert.equal(report.results.find((item) => item.id === "H11").evidenceMatched, true);
+  assert.equal(report.results.find((item) => item.id === "H12").evidenceMatched, true);
 });
 
 test("end-to-end evaluator validates input and handles an empty suite", async () => {

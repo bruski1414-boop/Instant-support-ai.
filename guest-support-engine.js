@@ -16,7 +16,7 @@ const GENERIC_REPLY_WORDS = new Set([
 ]);
 
 function getDescriptiveTerms(value) {
-  return (String(value || "").toLowerCase().match(/[a-z]{3,}/g) || [])
+  return (String(value || "").toLowerCase().replace(/\\bwi[\\s-]?fi\\b/g, "wifi").match(/[a-z]{3,}/g) || [])
     .filter((term) => !GENERIC_REPLY_WORDS.has(term));
 }
 

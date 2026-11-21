@@ -51,7 +51,7 @@ function normalizeGuestSupportAnswer(value) {
 
 function extractNumericClaims(value) {
   return new Set(
-    (String(value || "").match(/\d+(?:,\d{3})*(?:\\.\d+)?/g) || [])
+    (String(value || "").match(/\d+(?:,\d{3})*(?:\.\d+)?/g) || [])
       .map((claim) => claim.replace(/,/g, "")),
   );
 }

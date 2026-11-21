@@ -116,6 +116,18 @@ test("initial workspace bootstrap has a dedicated attempt limit", async () => {
   assert.equal(last.status, 429);
 });
 
+test("guest escalation still returns its safe reply if staff notification handling fails after persistence", () => {
+  const server = fs.readFileSync("server.js", "utf8");
+  assert.match(server, /await c\.query\("COMMIT"\)/);
+  assert.match(server, /catch\(error\)\{console\.error\("Staff escalation notification failed:"/);
+  assert.match(server, /notice=\{configured:false,delivered:false,status:"failed"\}/);
+  assert.match(server, /catch\(error\)\{console\.error\("Staff escalation notification status could not be saved:"/);
+  const notificationStart = server.indexOf("let notice=createdEscalation");
+  const responseStart = server.indexOf("r.json({reply,needsHuman:flagHuman", notificationStart);
+  assert.ok(notificationStart >= 0 && responseStart > notificationStart);
+  assert.match(server.slice(notificationStart, responseStart), /catch\(error\)/);
+});
+
 test("guest widget reuses its server-issued conversation id", () => {
   const widget = fs.readFileSync("widget.js", "utf8");
   const server = fs.readFileSync("server.js", "utf8");
@@ -327,6 +339,21 @@ test("staff notification retries are capped and direct staff to manual fallback"
 });
 
 
+test("staff notification retry claims an atomic attempt slot and blocks concurrent duplicate sends", () => {
+  const server = fs.readFileSync("server.js", "utf8");
+  assert.match(server, /notification_status='sending',notification_attempts=notification_attempts\+1/);
+  assert.match(server, /notification_attempts<5 AND notification_status<>'delivered'/);
+  assert.match(server, /notification_last_attempt_at<now\(\)-interval '2 minutes'/);
+  assert.match(server, /Another staff notification attempt is in progress/);
+  assert.match(server, /manualFollowUpRequired:!result\.delivered/);
+});
+
+test("staff handoff dashboard distinguishes an in-progress notification from an unconfigured webhook", () => {
+  const dashboard = fs.readFileSync("dashboard.html", "utf8");
+  assert.match(dashboard, /Notification attempt in progress — check the status again shortly/);
+  assert.match(dashboard, /notification==="sending"/);
+});
+
 test("staff handoff dashboard makes failed and unconfigured notifications require manual follow-up", () => {
   const dashboard = fs.readFileSync("dashboard.html", "utf8");
   assert.match(dashboard, /No staff notification configured — contact hotel staff manually/);
@@ -361,4 +388,32 @@ test("staff webhook configuration is encrypted, tenant-scoped and verified befor
   assert.match(security, /agent:false/);
   assert.match(dashboard, /id="staffWebhookForm"/);
   assert.match(dashboard, /id="staffWebhookSecret"/);
+});
+
+test("hotel privacy approval is tenant-scoped, owner/admin-only, append-only and retention-matched", () => {
+  const server = fs.readFileSync("server.js", "utf8");
+  const dashboard = fs.readFileSync("dashboard.html", "utf8");
+  assert.match(server, /CREATE TABLE IF NOT EXISTS organization_privacy_approvals\(id UUID PRIMARY KEY/);
+  assert.match(server, /app\.get\("\/api\/admin\/privacy-approval",requireDb,auth,role\("owner","admin"\)/);
+  assert.match(server, /app\.post\("\/api\/admin\/privacy-approval",requireDb,auth,role\("owner","admin"\)/);
+  assert.match(server, /WHERE organization_id=\$1 ORDER BY approved_at DESC LIMIT 1/);
+  assert.match(server, /currentDays!==days/);
+  assert.match(server, /INSERT INTO organization_privacy_approvals/);
+  assert.match(server, /BEGIN/);
+  assert.match(server, /privacy\.approval_attested/);
+  assert.match(server, /COMMIT/);
+  assert.match(server, /ROLLBACK/);
+  const start = server.indexOf('app.get("/api/admin/onboarding"');
+  const end = server.indexOf('app.get("/api/admin/integrations/pms"', start);
+  assert.ok(start >= 0 && end > start, "onboarding route must exist");
+  const route = server.slice(start, end);
+  assert.match(route, /privacyApproval\.rowCount&&privacyApproval\.rows\[0\]\.retention_days/);
+  assert.match(route, /No current hotel-specific attestation matches the saved retention setting/);
+  assert.doesNotMatch(route, /GUEST_DATA_STORAGE_ENABLED/);
+  assert.match(route, /readyForPilot=checks.every\(x=>x.done\)/);
+  assert.match(dashboard, /id="privacyApprovalForm"/);
+  assert.match(dashboard, /id="privacyLawfulBasis"/);
+  assert.match(dashboard, /id="privacyConfirm"/);
+  assert.match(dashboard, /\/api\/admin\/privacy-approval/);
+  assert.match(dashboard, /not legal advice, a privacy certification/);
 });

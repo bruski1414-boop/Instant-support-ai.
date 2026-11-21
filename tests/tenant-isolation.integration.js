@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import { createServer } from "node:http";
 import { randomUUID } from "node:crypto";
 import pg from "pg";
 import knowledgeLoader from "../hotel-knowledge.js";
@@ -26,6 +27,8 @@ const tenants = [
   { name: `Veyra Tenant B ${tag}`, email: `tenant-b-${tag}@example.test`, password: `B-long-test-password-${tag}`, message: `PRIVATE MESSAGE FOR TENANT B ${tag}` },
 ];
 let child;
+let mockAiServer;
+let mockAiRequests = [];
 let childOutput = "";
 let serverReady = false;
 
@@ -105,7 +108,7 @@ async function seedKnowledge(tenant) {
   const inserted = await pool.query("INSERT INTO knowledge_documents(organization_id,title,category,content,approved) VALUES($1,$2,'general',$3,false) RETURNING id", [org.rows[0].id, title, privateContent]);
   tenant.knowledgeId = inserted.rows[0].id;
   tenant.privateKnowledge = privateContent;
-  tenant.approvedKnowledge = "APPROVED KNOWLEDGE FOR " + tenant.name;
+  tenant.approvedKnowledge = "APPROVED KNOWLEDGE FOR " + tenant.name + "\nBreakfast is served daily from 7:00 AM to 10:00 AM.";
   const approved = await pool.query("INSERT INTO knowledge_documents(organization_id,title,category,content,approved) VALUES($1,$2,'general',$3,true) RETURNING id", [org.rows[0].id, "Approved policy " + tenant.name, tenant.approvedKnowledge]);
   tenant.approvedKnowledgeId = approved.rows[0].id;
   await pool.query("INSERT INTO knowledge_documents(organization_id,title,category,content,approved,review_due_at) VALUES($1,$2,'general',$3,true,CURRENT_DATE - INTERVAL '1 day')", [org.rows[0].id, "Expired policy " + tenant.name, "EXPIRED KNOWLEDGE FOR " + tenant.name]);
@@ -153,6 +156,24 @@ async function readStorageConnections(cookie) {
 }
 
 try {
+  mockAiServer = createServer(async (request, response) => {
+    const chunks = [];
+    for await (const chunk of request) chunks.push(chunk);
+    let payload;
+    try { payload = JSON.parse(Buffer.concat(chunks).toString("utf8")); } catch { payload = null; }
+    mockAiRequests.push(payload);
+    response.writeHead(200, { "content-type": "application/json" });
+    response.end(JSON.stringify({
+      id: "chatcmpl-veyra-integration",
+      object: "chat.completion",
+      created: Math.floor(Date.now() / 1000),
+      model: "mock-veyra-model",
+      choices: [{ index: 0, message: { role: "assistant", content: JSON.stringify({ reply: "Breakfast is served daily from 7:00 AM to 10:00 AM.", needsHuman: false, handoffReason: "" }) }, finish_reason: "stop" }],
+      usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 }
+    }));
+  });
+  await new Promise((resolve, reject) => { mockAiServer.once("error", reject); mockAiServer.listen(0, "127.0.0.1", resolve); });
+  const mockAiPort = mockAiServer.address().port;
   child = spawn(process.execPath, ["server.js"], {
     cwd: process.cwd(),
     env: {
@@ -162,10 +183,18 @@ try {
       DATABASE_SSL: "false",
       BOOTSTRAP_TOKEN: `bootstrap-${tag}`,
       PLATFORM_PROVISIONING_TOKEN: token,
-      OPENAI_API_KEY: "",
+      OPENAI_API_KEY: "veyra-test-key-not-a-real-secret",
+      OPENAI_BASE_URL: `http://127.0.0.1:${mockAiPort}/v1`,
       STAFF_WEBHOOK_URL: "",
       STAFF_WEBHOOK_SECRET: "",
-      GUEST_DATA_STORAGE_ENABLED: "false",
+      STAFF_WEBHOOK_ENCRYPTION_KEY: Buffer.alloc(32, 7).toString("base64"),
+      GUEST_DATA_STORAGE_ENABLED: "true",
+      DURABLE_BACKUPS_VERIFIED: "true",
+      TENANT_ISOLATION_TESTS_PASSED: "true",
+      PROVIDER_OAUTH_TESTED: "true",
+      HOTEL_PRIVACY_APPROVED: "true",
+      STAFF_HANDOFF_TESTED: "true",
+      PILOT_RELEASE_APPROVED: "true",
     },
     stdio: ["ignore", "ignore", "pipe"],
   });
@@ -225,6 +254,127 @@ try {
     seedStorageConnection(tenants[0], "microsoft"),
     seedStorageConnection(tenants[1], "google"),
   ]);
+  const orgAForGuestChat = (await pool.query("SELECT id FROM organizations WHERE slug=$1", [tenants[0].slug])).rows[0].id;
+  await pool.query(
+    "INSERT INTO organization_integration_checks(organization_id,integration,verified_at) VALUES($1,'ai_provider',now()),($1,'staff_webhook',now())",
+    [orgAForGuestChat]
+  );
+  // Deliberately invalid ciphertext: exercises safe handoff persistence without making any outbound webhook request.
+  await pool.query(
+    "INSERT INTO organization_staff_webhooks(organization_id,encrypted_config,status) VALUES($1,'invalid-test-ciphertext','configured')",
+    [orgAForGuestChat]
+  );
+
+  const firstGuestChat = await fetch(baseUrl + "/api/public/" + tenants[0].slug + "/chat", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ message: "What time is breakfast?" }),
+  });
+  assert.equal(firstGuestChat.status, 200, "a fully configured test hotel can answer a guest using its approved knowledge");
+  const firstGuestChatBody = await firstGuestChat.json();
+  assert.equal(firstGuestChatBody.reply, "Breakfast is served daily from 7:00 AM to 10:00 AM.");
+  assert.equal(firstGuestChatBody.needsHuman, false);
+  assert.match(firstGuestChatBody.conversationId, /^[0-9a-f-]{36}$/i);
+  assert.match(firstGuestChatBody.conversationToken, /^[A-Za-z0-9_-]{40,64}$/);
+  assert.ok(mockAiRequests.length >= 1, "guest chat must call the isolated mock AI provider");
+  const firstAiMessages = mockAiRequests.at(-1)?.messages || [];
+  assert.ok(firstAiMessages[0]?.content.includes("APPROVED KNOWLEDGE FOR " + tenants[0].name), "AI context must include the hotel's approved knowledge");
+  assert.ok(firstAiMessages[0]?.content.includes("Breakfast is served daily from 7:00 AM to 10:00 AM"), "AI context must include the approved breakfast detail");
+  assert.equal(firstAiMessages[0]?.content.includes("APPROVED KNOWLEDGE FOR " + tenants[1].name), false, "AI context must not include another hotel's knowledge");
+
+  const followUpGuestChat = await fetch(baseUrl + "/api/public/" + tenants[0].slug + "/chat", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      message: "Please connect me to a human.",
+      conversationId: firstGuestChatBody.conversationId,
+      conversationToken: firstGuestChatBody.conversationToken,
+    }),
+  });
+  assert.equal(followUpGuestChat.status, 200, "guest conversation should remain available when staff notification configuration is invalid");
+  const followUpBody = await followUpGuestChat.json();
+  assert.equal(followUpBody.needsHuman, true, "explicit human request must trigger staff escalation");
+  assert.match(followUpBody.reply, /hotel team|front desk/i);
+  assert.equal(followUpBody.notificationDelivered, false, "invalid webhook ciphertext must never be reported as delivered");
+  assert.equal(followUpBody.notificationStatus, "not_configured");
+  assert.equal(followUpBody.conversationId, firstGuestChatBody.conversationId);
+  const persistedGuestChat = await pool.query(
+    "SELECT c.status, count(m.id)::int AS message_count FROM conversations c JOIN messages m ON m.conversation_id=c.id WHERE c.id=$1 AND c.organization_id=$2 GROUP BY c.id",
+    [firstGuestChatBody.conversationId, orgAForGuestChat]
+  );
+  assert.equal(persistedGuestChat.rowCount, 1);
+  assert.equal(persistedGuestChat.rows[0].status, "escalated");
+  assert.equal(persistedGuestChat.rows[0].message_count, 4, "both guest turns and assistant replies must persist in the same conversation");
+  const persistedEscalation = await pool.query(
+    "SELECT id,notification_status,notification_attempts FROM escalations WHERE conversation_id=$1 AND organization_id=$2",
+    [firstGuestChatBody.conversationId, orgAForGuestChat]
+  );
+  assert.equal(persistedEscalation.rowCount, 1, "explicit human request must create a staff escalation");
+  assert.equal(persistedEscalation.rows[0].notification_status, "not_configured");
+  assert.equal(persistedEscalation.rows[0].notification_attempts, 0, "invalid webhook configuration must not consume a delivery attempt");
+  // Exercise the retry claim against real PostgreSQL row locking. Exactly one
+  // of two simultaneous attempts may acquire the two-minute sending lease.
+  const escalationId = persistedEscalation.rows[0].id;
+  const claimRetrySlot = () => pool.query(
+    "UPDATE escalations SET notification_status='sending',notification_attempts=notification_attempts+1,notification_last_attempt_at=now() WHERE id=$1 AND organization_id=$2 AND notification_attempts<5 AND notification_status<>'delivered' AND (notification_status<>'sending' OR notification_last_attempt_at<now()-interval '2 minutes') RETURNING id",
+    [escalationId, orgAForGuestChat],
+  );
+  const concurrentRetryClaims = await Promise.all([claimRetrySlot(), claimRetrySlot()]);
+  assert.equal(concurrentRetryClaims.filter(result => result.rowCount === 1).length, 1, "only one concurrent PostgreSQL retry claim may succeed");
+  let retryState = await pool.query(
+    "SELECT notification_status,notification_attempts FROM escalations WHERE id=$1 AND organization_id=$2",
+    [escalationId, orgAForGuestChat],
+  );
+  assert.equal(retryState.rows[0].notification_status, "sending");
+  assert.equal(retryState.rows[0].notification_attempts, 1, "concurrent claims must consume only one attempt");
+
+  await pool.query(
+    "UPDATE escalations SET notification_last_attempt_at=now()-interval '3 minutes' WHERE id=$1 AND organization_id=$2",
+    [escalationId, orgAForGuestChat],
+  );
+  const staleLeaseRetry = await claimRetrySlot();
+  assert.equal(staleLeaseRetry.rowCount, 1, "a sending lease older than two minutes may be reclaimed");
+
+  await pool.query(
+    "UPDATE escalations SET notification_status='failed',notification_attempts=5 WHERE id=$1 AND organization_id=$2",
+    [escalationId, orgAForGuestChat],
+  );
+  const exhaustedRetry = await claimRetrySlot();
+  assert.equal(exhaustedRetry.rowCount, 0, "the fifth-attempt limit must block further claims");
+  await pool.query(
+    "UPDATE escalations SET notification_status='not_configured',notification_attempts=0,notification_last_attempt_at=NULL WHERE id=$1 AND organization_id=$2",
+    [escalationId, orgAForGuestChat],
+  );
+
+  // Verify the full staff handoff lifecycle through the authenticated API.
+  const claimHandoff = await fetch(baseUrl + "/api/admin/escalations/" + escalationId, {
+    method: "PATCH",
+    headers: { cookie: cookieA, "X-CSRF-Token": tenants[0].csrfToken, "content-type": "application/json" },
+    body: JSON.stringify({ status: "claimed" }),
+  });
+  assert.equal(claimHandoff.status, 200, "hotel staff must be able to claim a guest handoff");
+  const claimedHandoff = await claimHandoff.json();
+  assert.equal(claimedHandoff.escalation.status, "claimed");
+  const claimedConversation = await pool.query(
+    "SELECT status FROM conversations WHERE id=$1 AND organization_id=$2",
+    [firstGuestChatBody.conversationId, orgAForGuestChat],
+  );
+  assert.equal(claimedConversation.rows[0].status, "escalated", "claiming a handoff must keep the guest conversation escalated");
+
+  const resolveHandoff = await fetch(baseUrl + "/api/admin/escalations/" + escalationId, {
+    method: "PATCH",
+    headers: { cookie: cookieA, "X-CSRF-Token": tenants[0].csrfToken, "content-type": "application/json" },
+    body: JSON.stringify({ status: "resolved" }),
+  });
+  assert.equal(resolveHandoff.status, 200, "hotel staff must be able to resolve the guest handoff");
+  const resolvedHandoff = await resolveHandoff.json();
+  assert.equal(resolvedHandoff.escalation.status, "resolved");
+  assert.ok(resolvedHandoff.escalation.resolved_at, "resolution timestamp must be recorded");
+  const resolvedConversation = await pool.query(
+    "SELECT status FROM conversations WHERE id=$1 AND organization_id=$2",
+    [firstGuestChatBody.conversationId, orgAForGuestChat],
+  );
+  assert.equal(resolvedConversation.rows[0].status, "resolved", "resolving the handoff must resolve the guest conversation");
 
 
   const offersAResponse = await fetch(baseUrl + "/api/admin/offers", { headers: { cookie: cookieA } });
@@ -445,5 +595,6 @@ try {
       child.once("exit", () => { clearTimeout(timeout); resolve(); });
     });
   }
+  if (mockAiServer) await new Promise(resolve => mockAiServer.close(resolve));
   await pool.end();
 }

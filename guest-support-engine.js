@@ -31,6 +31,10 @@ function hasNegation(value) {
   return /\b(?:not|never|no|without|neither|cannot|can't|isn't|aren't|doesn't|don't|won't)\b/i.test(String(value || ""));
 }
 
+function hasRestrictiveQualification(value) {
+  return /\b(?:only|except|unless|excluding|excluded|subject\s+to|provided\s+that|as\s+long\s+as)\b/i.test(String(value || ""));
+}
+
 function hasUnsupportedContentTerms(reply, approvedKnowledge) {
   const evidence = String(approvedKnowledge || "");
   const evidenceTerms = new Set(getDescriptiveTerms(evidence));
@@ -45,6 +49,7 @@ function hasUnsupportedContentTerms(reply, approvedKnowledge) {
     .map((sentence) => ({
       terms: new Set(getDescriptiveTerms(sentence)),
       negated: hasNegation(sentence),
+      qualified: hasRestrictiveQualification(sentence),
     }))
     .filter((sentence) => sentence.terms.size > 0);
 
@@ -52,9 +57,11 @@ function hasUnsupportedContentTerms(reply, approvedKnowledge) {
     const terms = getDescriptiveTerms(clause);
     if (!terms.length) continue;
     const clauseNegated = hasNegation(clause);
+    const clauseQualified = hasRestrictiveQualification(clause);
     const supportedTogether = evidenceSentences.some((sentence) =>
       terms.every((term) => sentence.terms.has(term)) &&
-      sentence.negated === clauseNegated
+      sentence.negated === clauseNegated &&
+      sentence.qualified === clauseQualified
     );
     if (!supportedTogether) return true;
   }

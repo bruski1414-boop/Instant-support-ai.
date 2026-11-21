@@ -132,6 +132,28 @@ function scoreDocument(document, queryTokens) {
   return score;
 }
 
+function buildEvidenceKnowledgeContext(documents, query) {
+  if (!Array.isArray(documents) || documents.length === 0) return "";
+  const queryTokens = expandQueryTokens(
+    [...new Set(tokenize(normalizeGuestQuery(query))
+      .filter((token) => !QUESTION_FILLER_WORDS.has(token)))],
+    query,
+  );
+  if (queryTokens.length === 0) return "";
+
+  return documents
+    .filter((doc) =>
+      doc &&
+      typeof doc.title === "string" &&
+      typeof doc.content === "string" &&
+      doc.title.trim() &&
+      doc.content.trim() &&
+      scoreDocument(doc, queryTokens) > 0
+    )
+    .map((doc) => "[" + String(doc.category || "general") + "] " + doc.title.trim() + "\\n" + doc.content.trim())
+    .join("\\n\\n");
+}
+
 function buildRelevantKnowledgeContext(
   documents,
   query,

@@ -1,6 +1,6 @@
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
-const { generateGuestSupportAnswer } = require("../guest-support-engine");
+const { generateGuestSupportAnswer, createNoKnowledgeAnswer } = require("../guest-support-engine");
 
 function fakeAi(content, inspect) {
   return {
@@ -99,4 +99,19 @@ test("AI outage fallback gives a clear front-desk instruction and always request
   assert.match(result.reply, /unable to verify a response right now/i);
   assert.match(result.reply, /contact the front desk directly/i);
   assert.match(result.handoffReason, /provider unavailable or timed out/i);
+});
+
+test("no matching approved knowledge deterministically requires staff review", () => {
+  const result = createNoKnowledgeAnswer("What is the price of a helicopter transfer?");
+  assert.equal(result.needsHuman, true);
+  assert.match(result.reply, /cannot verify that information/i);
+  assert.match(result.reply, /contact the front desk/i);
+  assert.match(result.handoffReason, /No approved hotel information matched/);
+});
+
+test("no-knowledge fallback still preserves immediate-danger safety handling", () => {
+  const result = createNoKnowledgeAnswer("There is smoke in the hallway.");
+  assert.equal(result.needsHuman, true);
+  assert.match(result.reply, /local emergency services now/);
+  assert.match(result.reply, /Do not wait for a chat reply/);
 });

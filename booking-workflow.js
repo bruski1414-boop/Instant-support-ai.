@@ -38,6 +38,55 @@ function calculateDeposit(totalAmountMinor, depositPercent = 50) {
   };
 }
 
+function normalizeBookingAvailabilitySnapshot(snapshot, now = Date.now()) {
+  if (!snapshot || typeof snapshot !== "object" || Array.isArray(snapshot)) {
+    throw new PmsIntegrationError("AVAILABILITY_NOT_VERIFIED", "A live availability snapshot is required.", 409);
+  }
+  const propertyReference = typeof snapshot.propertyReference === "string" ? snapshot.propertyReference.trim() : "";
+  const roomTypeCode = typeof snapshot.roomTypeCode === "string" ? snapshot.roomTypeCode.trim() : "";
+  const sourceEventId = typeof snapshot.sourceEventId === "string" ? snapshot.sourceEventId.trim() : "";
+  const observedAt = typeof snapshot.observedAt === "string" ? Date.parse(snapshot.observedAt) : NaN;
+  const validUntil = typeof snapshot.validUntil === "string" ? Date.parse(snapshot.validUntil) : NaN;
+  const roomsAvailable = snapshot.roomsAvailable;
+  if (!propertyReference || propertyReference.length > 160 ||
+      !roomTypeCode || roomTypeCode.length > 80 ||
+      !sourceEventId || sourceEventId.length > 200 ||
+      !Number.isSafeInteger(roomsAvailable) || roomsAvailable < 0 ||
+      !Number.isFinite(observedAt) || !Number.isFinite(validUntil) ||
+      new Date(observedAt).toISOString() !== snapshot.observedAt ||
+      new Date(validUntil).toISOString() !== snapshot.validUntil ||
+      observedAt > now || validUntil <= now || validUntil <= observedAt ||
+      validUntil - observedAt > 15 * 60 * 1000) {
+    throw new PmsIntegrationError(
+      "AVAILABILITY_NOT_VERIFIED",
+      "A valid, unexpired live availability snapshot is required before taking a deposit.",
+      409,
+    );
+  }
+  return Object.freeze({
+    propertyReference, roomTypeCode, sourceEventId, observedAt: new Date(observedAt).toISOString(),
+    validUntil: new Date(validUntil).toISOString(), roomsAvailable,
+    arrivalDate: snapshot.arrivalDate, departureDate: snapshot.departureDate,
+  });
+}
+
+function verifyAvailabilityForBooking(snapshot, dates, roomTypeId, now = Date.now()) {
+  const availability = normalizeBookingAvailabilitySnapshot(snapshot, now);
+  const observedAt = Date.parse(availability.observedAt);
+  if (now - observedAt > 5 * 60 * 1000 ||
+      availability.roomTypeCode !== roomTypeId ||
+      availability.arrivalDate !== dates.checkIn ||
+      availability.departureDate !== dates.checkOut ||
+      availability.roomsAvailable < 1) {
+    throw new PmsIntegrationError(
+      "AVAILABILITY_NOT_VERIFIED",
+      "Live availability must be recent and match the exact room type and stay dates before taking a deposit.",
+      409,
+    );
+  }
+  return availability;
+}
+
 function buildBookingIntent(input = {}) {
   const dates = validateDateRange(input);
   const guest = normalizeGuestDetails(input.guest);
@@ -52,14 +101,18 @@ function buildBookingIntent(input = {}) {
       !/^[A-Za-z0-9_-]{12,100}$/.test(idempotencyKey)) {
     throw new PmsIntegrationError("INVALID_BOOKING_INTENT", "A valid room, guest count, currency and unique request key are required.");
   }
-  const verifiedAt = typeof input.availabilityVerifiedAt === "string" ? Date.parse(input.availabilityVerifiedAt) : NaN;
-  if (input.availabilityVerified !== true || !Number.isFinite(verifiedAt) ||
-      Date.now() - verifiedAt > 5 * 60 * 1000 || verifiedAt > Date.now()) {
-    throw new PmsIntegrationError("AVAILABILITY_NOT_VERIFIED", "Live room availability must be rechecked immediately before taking a deposit.", 409);
-  }
+  const availability = verifyAvailabilityForBooking(input.availabilitySnapshot, dates, roomTypeId);
   const amounts = calculateDeposit(totalAmountMinor, 50);
   return {
     ...dates, guest, roomTypeId, guestCount, currency, ...amounts,
+    availabilityEvidence: {
+      propertyReference: availability.propertyReference,
+      roomTypeCode: availability.roomTypeCode,
+      sourceEventId: availability.sourceEventId,
+      observedAt: availability.observedAt,
+      validUntil: availability.validUntil,
+      roomsAvailable: availability.roomsAvailable,
+    },
     idempotencyKey, state: "awaiting_payment", createdAt: new Date().toISOString(),
   };
 }
@@ -90,5 +143,6 @@ function assertBookingTransition(currentState, nextState, evidence = {}) {
 }
 
 module.exports = {
-  BOOKING_STATES, normalizeGuestDetails, calculateDeposit, buildBookingIntent, assertBookingTransition,
+  BOOKING_STATES, normalizeGuestDetails, calculateDeposit, normalizeBookingAvailabilitySnapshot,
+  verifyAvailabilityForBooking, buildBookingIntent, assertBookingTransition,
 };

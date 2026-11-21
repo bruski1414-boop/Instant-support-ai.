@@ -26,7 +26,8 @@ const SYNONYMS = {
   "evening meal": ["dinner"],
   evening: ["dinner"],
   pool: ["swimming", "swimming pool"],
-  swimming: ["pool"],\n  swim: ["pool", "swimming"],
+  swimming: ["pool"],
+  swim: ["pool", "swimming"],
   wifi: ["wireless", "internet"],
   wireless: ["wifi", "internet"],
   internet: ["wifi", "wireless"],
@@ -37,7 +38,8 @@ const SYNONYMS = {
   "check-in": ["checkin", "arrival"],
   arrival: ["checkin", "check-in"],
   taxi: ["car", "transport"],
-  transfer: ["airport", "transport"],\n  pickup: ["airport", "transfer"],
+  transfer: ["airport", "transport"],
+  pickup: ["airport", "transfer"],
   gym: ["fitness", "workout"],
   fitness: ["gym", "workout"],
   workout: ["gym", "fitness"],
@@ -47,7 +49,11 @@ const SYNONYMS = {
   restaurant: ["dining"],
   dining: ["restaurant"],
   food: ["dining", "restaurant"],
-  age: ["aged", "ages"],\n  ages: ["age", "aged"],\n  aged: ["age", "ages"],\n  treatment: ["treatments"],\n  treatments: ["treatment"],
+  age: ["aged", "ages"],
+  ages: ["age", "aged"],
+  aged: ["age", "ages"],
+  treatment: ["treatments"],
+  treatments: ["treatment"],
 };
 
 function tokenize(value) {

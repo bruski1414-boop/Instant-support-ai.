@@ -104,17 +104,18 @@ function hasRelevantKnowledgeMatch(documents, query) {
     .filter((token) => !QUESTION_FILLER_WORDS.has(token)))];
   if (!queryTokens.length) return false;
 
-  const knowledgeTokens = new Set();
-  for (const doc of documents) {
-    if (!doc || typeof doc !== "object") continue;
-    for (const token of tokenize(normalizeGuestQuery([doc.title, doc.category, doc.content].join(" ")))) {
-      knowledgeTokens.add(token);
-    }
-  }
-
-  return queryTokens.every((token) => {
-    const accepted = [token, ...tokenize(SYNONYMS[token] || [])];
-    return accepted.some((candidate) => knowledgeTokens.has(candidate));
+  // Require one approved document to support every meaningful query term.
+  // Combining tokens across unrelated documents can make an unsupported
+  // detail (for example, a breakfast price) appear supported by coincidence.
+  return documents.some((doc) => {
+    if (!doc || typeof doc !== "object") return false;
+    const documentTokens = new Set(
+      tokenize(normalizeGuestQuery([doc.title, doc.category, doc.content].join(" "))),
+    );
+    return queryTokens.every((token) => {
+      const accepted = [token, ...tokenize(SYNONYMS[token] || [])];
+      return accepted.some((candidate) => documentTokens.has(candidate));
+    });
   });
 }
 

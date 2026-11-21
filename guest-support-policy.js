@@ -49,6 +49,36 @@ function normalizeGuestSupportAnswer(value) {
   };
 }
 
+function extractNumericClaims(value) {
+  return new Set(
+    (String(value || "").match(/\d+(?:,\d{3})*(?:\.\d+)?/g) || [])
+      .map((claim) => claim.replace(/,/g, "")),
+  );
+}
+
+function extractCurrencyClaims(value) {
+  return new Set(
+    (String(value || "").match(/[$€£¥₹]|\b(?:USD|EUR|GBP|THB|AUD|CAD|SGD|JPY|CNY|CHF|HKD|INR|baht|dollars?|euros?|pounds?|yen)\b/gi) || [])
+      .map((claim) => claim.toLowerCase()),
+  );
+}
+
+function hasUnsupportedNumericClaims(reply, approvedKnowledge) {
+  const answerNumbers = extractNumericClaims(reply);
+  const knowledgeNumbers = extractNumericClaims(approvedKnowledge);
+  for (const claim of answerNumbers) {
+    if (!knowledgeNumbers.has(claim)) return true;
+  }
+
+  const answerCurrencies = extractCurrencyClaims(reply);
+  const knowledgeCurrencies = extractCurrencyClaims(approvedKnowledge);
+  for (const claim of answerCurrencies) {
+    if (!knowledgeCurrencies.has(claim)) return true;
+  }
+
+  return false;
+}
+
 function requiresHumanHandoff(message, normalizedAnswer) {
   return requiresStaffEscalation(message) || normalizedAnswer?.needsHuman === true;
 }
@@ -81,4 +111,5 @@ module.exports = {
   resolveGuestSupportAnswer,
   buildGuestSupportSystemPrompt,
   normalizeGuestSupportAnswer,
+  hasUnsupportedNumericClaims,
 };

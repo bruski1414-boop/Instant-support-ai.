@@ -341,7 +341,8 @@ test("guest chat converts AI provider failures into a persisted staff handoff in
   const server = fs.readFileSync("server.js", "utf8");
   assert.match(server, /catch\(error\)\{console\.error\("Guest support AI request failed:"/);
   assert.match(server, /resolvedAnswer=createAiUnavailableAnswer\(\)/);
-  assert.match(server, /const \{generateGuestSupportAnswer,createAiUnavailableAnswer\}=require\("\.\/guest-support-engine"\)/);
+  assert.match(server, /const \{generateGuestSupportAnswer,createAiUnavailableAnswer,createNoKnowledgeAnswer\}=require\("\.\/guest-support-engine"\)/);
+  assert.match(server, /if\(noRelevantKnowledge\)\{resolvedAnswer=createNoKnowledgeAnswer\(msg\);\}/);
   assert.match(server, /const flagHuman=resolvedAnswer\.needsHuman/);
 });
 
@@ -361,4 +362,12 @@ test("staff webhook configuration is encrypted, tenant-scoped and verified befor
   assert.match(security, /agent:false/);
   assert.match(dashboard, /id="staffWebhookForm"/);
   assert.match(dashboard, /id="staffWebhookSecret"/);
+});
+
+test("guest chat requires question evidence in approved knowledge even when the full context fits", () => {
+  const server = fs.readFileSync("server.js", "utf8");
+  const retrieval = fs.readFileSync("knowledge-retrieval.js", "utf8");
+  assert.match(server, /hasRelevantKnowledgeMatch\(docs\.rows,msg\)/);
+  assert.match(server, /const noRelevantKnowledge=!hasRelevantKnowledgeMatch\(docs\.rows,msg\)&&!matchedOffers\.length/);
+  assert.match(retrieval, /function hasRelevantKnowledgeMatch\(documents, query\)/);
 });

@@ -95,3 +95,38 @@ test("wellness, fitness and dining paraphrases retrieve their approved hotel doc
     assert.ok(context.includes(expectedTitle), `expected "${query}" to retrieve ${expectedTitle}`);
   }
 });
+
+test("strict evidence matching accepts a supported FAQ question in a small knowledge base", () => {
+  const smallDocs = [
+    { title: "Breakfast service", category: "dining", content: "Breakfast is served daily from 7:00 to 10:00." },
+    { title: "Swimming pool", category: "facilities", content: "The outdoor pool is open from 8:00 to 20:00." },
+  ];
+  assert.equal(hasRelevantKnowledgeMatch(smallDocs, "What time is breakfast served?"), true);
+  assert.equal(hasRelevantKnowledgeMatch(smallDocs, "Can I use the swimming area?"), true);
+});
+
+test("strict evidence matching rejects unsupported details even when one word overlaps", () => {
+  const smallDocs = [
+    { title: "Airport transfers", category: "transport", content: "Airport transfers can be arranged through reception." },
+    { title: "Breakfast service", category: "dining", content: "Breakfast is served from 7:00 to 10:00." },
+  ];
+  assert.equal(hasRelevantKnowledgeMatch(smallDocs, "What is the price of a helicopter transfer?"), false);
+  assert.equal(hasRelevantKnowledgeMatch(smallDocs, "Can you arrange a helicopter transfer?"), false);
+  assert.equal(hasRelevantKnowledgeMatch(smallDocs, "Tell me about quantum teleportation"), false);
+});
+
+test("strict evidence matching handles approved hotel terminology synonyms", () => {
+  const docs = [
+    { title: "Internet access", category: "connectivity", content: "Wireless internet is available throughout the hotel." },
+    { title: "Checkout policy", category: "front desk", content: "Departure time is 11:00." },
+    { title: "Spa treatments", category: "wellness", content: "Massage appointments are available by reservation." },
+  ];
+  assert.equal(hasRelevantKnowledgeMatch(docs, "Is Wi-Fi available?"), true);
+  assert.equal(hasRelevantKnowledgeMatch(docs, "What time is departure?"), true);
+  assert.equal(hasRelevantKnowledgeMatch(docs, "Can I book a massage?"), true);
+});
+
+test("strict evidence matching fails closed for empty or generic questions", () => {
+  assert.equal(hasRelevantKnowledgeMatch([], "When is breakfast?"), false);
+  assert.equal(hasRelevantKnowledgeMatch(docs, "Hello, can you help me?"), false);
+});

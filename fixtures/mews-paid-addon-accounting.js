@@ -50,7 +50,7 @@ function createValidMewsAccountingFixture(overrides = {}) {
         Id: "item-102",
         EnterpriseId: "enterprise-demo-a",
         ServiceId: "service-spa",
-        ServiceOrderId: "order-42",
+        ServiceOrderId: "service-order-44",
         BillId: "bill-9",
         ExternalIdentifier: null,
         AccountingState: "Closed",

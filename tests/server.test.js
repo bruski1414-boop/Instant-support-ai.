@@ -341,7 +341,8 @@ test("guest chat converts AI provider failures into a persisted staff handoff in
   const server = fs.readFileSync("server.js", "utf8");
   assert.match(server, /catch\(error\)\{console\.error\("Guest support AI request failed:"/);
   assert.match(server, /resolvedAnswer=createAiUnavailableAnswer\(\)/);
-  assert.match(server, /const \{generateGuestSupportAnswer,createAiUnavailableAnswer,createNoKnowledgeAnswer\}=require\("\.\/guest-support-engine"\)/);\n  assert.match(server, /if\(noRelevantKnowledge\)\{resolvedAnswer=createNoKnowledgeAnswer\(msg\);\}/);
+  assert.match(server, /const \{generateGuestSupportAnswer,createAiUnavailableAnswer,createNoKnowledgeAnswer\}=require\("\.\/guest-support-engine"\)/);
+  assert.match(server, /if\(noRelevantKnowledge\)\{resolvedAnswer=createNoKnowledgeAnswer\(msg\);\}/);
   assert.match(server, /const flagHuman=resolvedAnswer\.needsHuman/);
 });
 

@@ -3,6 +3,7 @@
 const {
   buildRelevantKnowledgeContext,
   hasRelevantKnowledgeMatch,
+  buildEvidenceKnowledgeContext,
 } = require("./knowledge-retrieval");
 const {
   generateGuestSupportAnswer,

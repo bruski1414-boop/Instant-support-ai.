@@ -4,6 +4,7 @@ const {
   buildRelevantKnowledgeContext,
   tokenize,
   expandQueryTokens,
+  hasRelevantKnowledgeMatch,
 } = require("../knowledge-retrieval");
 
 const docs = [

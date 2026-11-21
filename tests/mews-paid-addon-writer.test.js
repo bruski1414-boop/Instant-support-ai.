@@ -19,7 +19,7 @@ function setup(overrides = {}) {
     }
   };
   const store = {
-    async claim(input) { state.claimInput = input; return overrides.claim ? overrides.claim(input) : state.claim; },
+    async claim(input) { state.claimInput = input; return overrides.claim ? overrides.claim(input) : { status: "acquired", externalIdentifier: input.externalIdentifier }; },
     async complete(input) { state.completed = input; if (overrides.complete) return overrides.complete(input); },
     async markUncertain(input) { state.uncertain = input; if (overrides.markUncertain) return overrides.markUncertain(input); }
   };

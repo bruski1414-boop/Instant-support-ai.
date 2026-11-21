@@ -131,3 +131,25 @@ test("strict evidence matching fails closed for empty or generic questions", () 
   assert.equal(hasRelevantKnowledgeMatch([], "When is breakfast?"), false);
   assert.equal(hasRelevantKnowledgeMatch(docs, "Hello, can you help me?"), false);
 });
+
+
+test("strict evidence matching accepts natural phrasing without requiring filler words in hotel documents", () => {
+  const docs = [
+    { title: "Breakfast service", category: "dining", content: "Breakfast is served daily from 7:00 to 10:00." },
+    { title: "Pool facilities", category: "facilities", content: "The outdoor swimming pool is open from 8:00 to 20:00." },
+    { title: "Internet access", category: "connectivity", content: "Wireless internet is available throughout the hotel." },
+  ];
+  assert.equal(hasRelevantKnowledgeMatch(docs, "What are the breakfast hours?"), true);
+  assert.equal(hasRelevantKnowledgeMatch(docs, "Does your hotel offer a swimming pool?"), true);
+  assert.equal(hasRelevantKnowledgeMatch(docs, "Can I get wireless internet?"), true);
+});
+
+test("strict evidence matching does not confuse a topic match with support for a new detail", () => {
+  const docs = [
+    { title: "Breakfast service", category: "dining", content: "Breakfast is served daily from 7:00 to 10:00." },
+    { title: "Airport transfers", category: "transport", content: "Airport transfers can be arranged through reception." },
+  ];
+  assert.equal(hasRelevantKnowledgeMatch(docs, "What time is breakfast for children?"), false);
+  assert.equal(hasRelevantKnowledgeMatch(docs, "How much is a helicopter transfer?"), false);
+  assert.equal(hasRelevantKnowledgeMatch(docs, "Is breakfast included in the room rate?"), false);
+});

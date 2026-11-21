@@ -162,6 +162,22 @@ for (const scenario of [
   });
 }
 
+test("content grounding does not equate generic internet access with approved Wi-Fi", async () => {
+  const result = await generateGuestSupportAnswer({
+    ai: fakeAi(JSON.stringify({
+      reply: "Complimentary internet is available throughout the hotel.",
+      needsHuman: false,
+      handoffReason: "",
+    })),
+    model: "test-model",
+    hotelName: "Aster House",
+    approvedKnowledge: "Complimentary Wi-Fi is available throughout the hotel.",
+    message: "Is Wi-Fi available?",
+  });
+
+  assert.equal(result.needsHuman, true);
+});
+
 test("content grounding does not infer that Wi-Fi is complimentary when only availability is approved", async () => {
   const result = await generateGuestSupportAnswer({
     ai: fakeAi(JSON.stringify({

@@ -12,9 +12,11 @@ const STOP_WORDS = new Set([
 const SYNONYMS = {
   breakfast: ["morning meal"],
   "morning meal": ["breakfast"],
+  morning: ["breakfast"],
   lunch: ["midday meal"],
   dinner: ["evening meal"],
   "evening meal": ["dinner"],
+  evening: ["dinner"],
   pool: ["swimming", "swimming pool"],
   swimming: ["pool"],
   wifi: ["wireless", "internet"],
@@ -22,8 +24,10 @@ const SYNONYMS = {
   internet: ["wifi", "wireless"],
   checkout: ["departure", "check-out"],
   "check-out": ["checkout", "departure"],
+  departure: ["checkout", "check-out"],
   checkin: ["arrival", "check-in"],
   "check-in": ["checkin", "arrival"],
+  arrival: ["checkin", "check-in"],
   taxi: ["car", "transport"],
   transfer: ["airport", "transport"],
   gym: ["fitness", "workout"],
@@ -88,7 +92,7 @@ function buildRelevantKnowledgeContext(
   const fullContext = normalized.map((doc) => doc.text).join("\n\n");
   if (fullContext.length <= maxChars) return fullContext;
 
-  const queryTokens = expandQueryTokens([...new Set(tokenize(query))]);
+  const queryTokens = expandQueryTokens([...new Set(tokenize(query))], query);
   if (queryTokens.length === 0) return "";
 
   const ranked = normalized

@@ -9,6 +9,32 @@ const {
   assertBookingTransition,
 } = require("../booking-workflow");
 
+function freshAvailability(overrides = {}) {
+  const now = Date.now();
+  return {
+    propertyReference: "shebara-demo-property",
+    roomTypeCode: "deluxe",
+    arrivalDate: "2027-01-10",
+    departureDate: "2027-01-12",
+    roomsAvailable: 2,
+    observedAt: new Date(now - 60_000).toISOString(),
+    validUntil: new Date(now + 4 * 60_000).toISOString(),
+    sourceEventId: "availability_event_123",
+    ...overrides,
+  };
+}
+
+function bookingInput(overrides = {}) {
+  return {
+    checkIn: "2027-01-10", checkOut: "2027-01-12",
+    guest: { name: "Alex Guest", phone: "+66812345678" },
+    roomTypeId: "deluxe", guestCount: 2, currency: "THB",
+    totalAmountMinor: 100000, idempotencyKey: "booking_req_12345",
+    availabilitySnapshot: freshAvailability(),
+    ...overrides,
+  };
+}
+
 test("guest details require an international phone number and reject markup", () => {
   assert.deepEqual(normalizeGuestDetails({
     name: " Alex Guest ", phone: "+66812345678", email: "ALEX@example.com",
@@ -25,25 +51,64 @@ test("50 percent deposit is calculated in integer minor currency units", () => {
   assert.throws(() => calculateDeposit(10000, 30), e => e.code === "INVALID_DEPOSIT_AMOUNT");
 });
 
-test("booking intent requires fresh verified availability and safe guest data", () => {
-  const now = new Date().toISOString();
-  const intent = buildBookingIntent({
-    checkIn: "2027-01-10", checkOut: "2027-01-12",
-    guest: { name: "Alex Guest", phone: "+66812345678" },
-    roomTypeId: "deluxe", guestCount: 2, currency: "THB",
-    totalAmountMinor: 100000, idempotencyKey: "booking_req_12345",
-    availabilityVerified: true, availabilityVerifiedAt: now,
-  });
+test("booking intent requires a fresh snapshot matching the exact room type and stay dates", () => {
+  const intent = buildBookingIntent(bookingInput());
   assert.equal(intent.depositAmountMinor, 50000);
   assert.equal(intent.balanceAmountMinor, 50000);
   assert.equal(intent.state, "awaiting_payment");
-  assert.throws(() => buildBookingIntent({
-    checkIn: "2027-01-10", checkOut: "2027-01-12",
-    guest: { name: "Alex Guest", phone: "+66812345678" },
-    roomTypeId: "deluxe", guestCount: 2, currency: "THB",
-    totalAmountMinor: 100000, idempotencyKey: "booking_req_12345",
-    availabilityVerified: false,
-  }), e => e.code === "AVAILABILITY_NOT_VERIFIED");
+  assert.deepEqual(intent.availabilityEvidence, {
+    propertyReference: "shebara-demo-property",
+    roomTypeCode: "deluxe",
+    sourceEventId: "availability_event_123",
+    observedAt: intent.availabilityEvidence.observedAt,
+    validUntil: intent.availabilityEvidence.validUntil,
+    roomsAvailable: 2,
+  });
+});
+
+test("booking intent rejects a boolean claim without provider availability evidence", () => {
+  assert.throws(() => buildBookingIntent(bookingInput({
+    availabilitySnapshot: undefined,
+    availabilityVerified: true,
+    availabilityVerifiedAt: new Date().toISOString(),
+  })), e => e.code === "AVAILABILITY_NOT_VERIFIED");
+});
+
+test("booking intent rejects stale, expired, future, or zero-inventory snapshots", () => {
+  const now = Date.now();
+  assert.throws(() => buildBookingIntent(bookingInput({
+    availabilitySnapshot: freshAvailability({
+      observedAt: new Date(now - 6 * 60_000).toISOString(),
+      validUntil: new Date(now + 4 * 60_000).toISOString(),
+    }),
+  })), e => e.code === "AVAILABILITY_NOT_VERIFIED");
+  assert.throws(() => buildBookingIntent(bookingInput({
+    availabilitySnapshot: freshAvailability({
+      observedAt: new Date(now - 60_000).toISOString(),
+      validUntil: new Date(now - 1_000).toISOString(),
+    }),
+  })), e => e.code === "AVAILABILITY_NOT_VERIFIED");
+  assert.throws(() => buildBookingIntent(bookingInput({
+    availabilitySnapshot: freshAvailability({
+      observedAt: new Date(now + 60_000).toISOString(),
+      validUntil: new Date(now + 4 * 60_000).toISOString(),
+    }),
+  })), e => e.code === "AVAILABILITY_NOT_VERIFIED");
+  assert.throws(() => buildBookingIntent(bookingInput({
+    availabilitySnapshot: freshAvailability({ roomsAvailable: 0 }),
+  })), e => e.code === "AVAILABILITY_NOT_VERIFIED");
+});
+
+test("booking intent rejects snapshots for a different room type or date range", () => {
+  assert.throws(() => buildBookingIntent(bookingInput({
+    availabilitySnapshot: freshAvailability({ roomTypeCode: "suite" }),
+  })), e => e.code === "AVAILABILITY_NOT_VERIFIED");
+  assert.throws(() => buildBookingIntent(bookingInput({
+    availabilitySnapshot: freshAvailability({ arrivalDate: "2027-01-11" }),
+  })), e => e.code === "AVAILABILITY_NOT_VERIFIED");
+  assert.throws(() => buildBookingIntent(bookingInput({
+    availabilitySnapshot: freshAvailability({ departureDate: "2027-01-13" }),
+  })), e => e.code === "AVAILABILITY_NOT_VERIFIED");
 });
 
 test("payment and PMS confirmation require independently verified evidence", () => {

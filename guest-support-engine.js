@@ -59,7 +59,7 @@ async function generateGuestSupportAnswer({
   const normalizedAnswer = normalizeGuestSupportAnswer(parsedAnswer);
   if (
     !normalizedAnswer.needsHuman &&
-    hasUnsupportedNumericClaims(normalizedAnswer.reply, approvedKnowledge)
+    hasUnsupportedNumericClaims(normalizedAnswer.reply, numericEvidence)
   ) {
     return resolveGuestSupportAnswer(message, {
       reply: "I cannot verify those details from the hotel's approved information. Please contact the front desk so the team can confirm them.",

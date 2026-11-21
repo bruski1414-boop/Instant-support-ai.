@@ -96,7 +96,7 @@ test("claims, fetches and stores a PII-free reservation snapshot atomically", as
           async getReservations(input) {
             assert.deepEqual(input.reservationIds, [reservationId]);
             assert.deepEqual(input.enterpriseIds, [row.enterprise_id]);
-            return { reservations: [reservation] };
+            return { reservations: [{ ...reservation, id: reservation.id.toUpperCase() }] };
           }
         }
       };

@@ -100,7 +100,9 @@ function createMewsInboxProcessor({ db, mewsStore, clock = () => new Date(), bat
         reservationIds: [row.entity_id],
         count: 10
       });
-      const matches = result.reservations.filter((item) => item.id === row.entity_id);
+      const matches = Array.isArray(result.reservations)
+        ? result.reservations.filter((item) => typeof item?.id === "string" && item.id.toLowerCase() === row.entity_id.toLowerCase())
+        : [];
       if (matches.length !== 1) throw new Error("reservation_not_found_or_ambiguous");
       const snapshot = normalizeMewsReservationSnapshot(matches[0], {
         expectedId: row.entity_id,

@@ -12,7 +12,7 @@ const GENERIC_REPLY_WORDS = new Set([
   "please", "thank", "thanks", "yes", "no", "hotel", "guest", "guests", "here",
   "there", "available", "throughout", "welcomes", "welcome", "kindly", "also",
   "just", "only", "more", "most", "some", "any", "all", "each", "every",
-  "runs", "run", "costs", "cost",
+  "runs", "run", "costs", "cost", "served",
 ]);
 
 function hasUnsupportedContentTerms(reply, approvedKnowledge) {

@@ -6,6 +6,8 @@ import knowledgeLoader from "../hotel-knowledge.js";
 const { loadApprovedKnowledge } = knowledgeLoader;
 import pmsIntegration from "../pms-integration.js";
 const { recordWebhookEvent } = pmsIntegration;
+import addonWriteStoreModule from "../mews-addon-write-store.js";
+const { createPostgresMewsAddonWriteStore } = addonWriteStoreModule;
 const { Pool } = pg;
 
 if (process.env.CI !== "true" || process.env.VEYRA_TENANT_TEST_DATABASE !== "true") {
@@ -256,18 +258,112 @@ try {
     body: JSON.stringify({ status: "converted", amount_minor: -1, currency: "THB" }),
   });
   assert.equal(invalidConversion.status, 400, "completed sale requires a valid non-negative actual amount");
+  const missingEvidenceConversion = await fetch(baseUrl + "/api/admin/offer-attributions/" + tenants[0].attributionId, {
+    method: "PATCH",
+    headers: { cookie: cookieA, "X-CSRF-Token": tenants[0].csrfToken, "content-type": "application/json" },
+    body: JSON.stringify({ status: "converted", amount_minor: 235000, currency: "THB", sold_at: new Date().toISOString() }),
+  });
+  assert.equal(missingEvidenceConversion.status, 400, "a positive amount without evidence must not become confirmed revenue");
+  const urlEvidenceAttempt = await fetch(baseUrl + "/api/admin/offer-attributions/" + tenants[0].attributionId, {
+    method: "PATCH",
+    headers: { cookie: cookieA, "X-CSRF-Token": tenants[0].csrfToken, "content-type": "application/json" },
+    body: JSON.stringify({ status: "converted", amount_minor: 235000, currency: "THB", evidence_source: "hotel_report", evidence_reference: "https://example.test/receipt/1", sold_at: new Date().toISOString() }),
+  });
+  assert.equal(urlEvidenceAttempt.status, 400, "evidence references must not accept URLs");
+  const saleEvidence = {
+    status: "converted",
+    amount_minor: 235000,
+    currency: "THB",
+    evidence_source: "hotel_report",
+    evidence_reference: "synthetic-sale-tenant-a-001",
+    sold_at: new Date().toISOString(),
+    notes: "Confirmed by hotel owner"
+  };
   const ownAttributionUpdate = await fetch(baseUrl + "/api/admin/offer-attributions/" + tenants[0].attributionId, {
     method: "PATCH",
     headers: { cookie: cookieA, "X-CSRF-Token": tenants[0].csrfToken, "content-type": "application/json" },
-    body: JSON.stringify({ status: "converted", amount_minor: 235000, currency: "THB", notes: "Confirmed by hotel staff" }),
+    body: JSON.stringify(saleEvidence),
   });
-  assert.equal(ownAttributionUpdate.status, 200, "tenant A can confirm its own sale");
+  assert.equal(ownAttributionUpdate.status, 200, "tenant A can attest its own sale with evidence");
   const confirmedAttribution = await ownAttributionUpdate.json();
   assert.equal(confirmedAttribution.attribution.amount_minor, "235000");
   assert.equal(confirmedAttribution.attribution.status, "converted");
+  assert.equal(confirmedAttribution.attribution.evidence_status, "evidence_attested");
+  assert.equal(confirmedAttribution.attribution.evidence_reference, "synthetic-sale-tenant-a-001");
+
+  const repeatedAttributionUpdate = await fetch(baseUrl + "/api/admin/offer-attributions/" + tenants[0].attributionId, {
+    method: "PATCH",
+    headers: { cookie: cookieA, "X-CSRF-Token": tenants[0].csrfToken, "content-type": "application/json" },
+    body: JSON.stringify(saleEvidence),
+  });
+  assert.equal(repeatedAttributionUpdate.status, 200, "replaying the same sale evidence is idempotent");
+  const changedSaleEvidence = { ...saleEvidence, amount_minor: 240000 };
+  const replacementAttributionUpdate = await fetch(baseUrl + "/api/admin/offer-attributions/" + tenants[0].attributionId, {
+    method: "PATCH",
+    headers: { cookie: cookieA, "X-CSRF-Token": tenants[0].csrfToken, "content-type": "application/json" },
+    body: JSON.stringify(changedSaleEvidence),
+  });
+  assert.equal(replacementAttributionUpdate.status, 409, "an evidence-attested sale cannot be overwritten");
+
+  const verifiedTotalsResponse = await fetch(baseUrl + "/api/admin/offer-attributions", { headers: { cookie: cookieA } });
+  const verifiedTotalsBody = await verifiedTotalsResponse.json();
+  assert.equal(verifiedTotalsBody.financialVisibility, true);
+  assert.equal(verifiedTotalsBody.windowTimezone, "UTC");
+  assert.equal(verifiedTotalsBody.windowDays, 30);
+  assert.equal(Date.parse(verifiedTotalsBody.windowEnd) - Date.parse(verifiedTotalsBody.windowStart), 30 * 24 * 60 * 60 * 1000);
+  assert.equal(verifiedTotalsBody.enquiryCount, 1);
+  assert.equal(verifiedTotalsBody.enquiryConversationCount, 1);
+  assert.equal(verifiedTotalsBody.verifiedTotals.length, 1);
+  assert.equal(verifiedTotalsBody.verifiedTotals[0].count, 1);
+  assert.equal(verifiedTotalsBody.verifiedTotals[0].amount_minor, "235000");
+  assert.equal(verifiedTotalsBody.legacyUnverifiedTotals[0].count, 0);
+  assert.equal(verifiedTotalsBody.legacyUnverifiedScope, "all_time");
+
+  const historyResponse = await fetch(baseUrl + "/api/admin/offer-attributions/" + tenants[0].attributionId + "/events", { headers: { cookie: cookieA } });
+  assert.equal(historyResponse.status, 200);
+  const historyBody = await historyResponse.json();
+  assert.equal(historyBody.events.length, 1);
+  assert.equal(historyBody.events[0].new_evidence_reference, "synthetic-sale-tenant-a-001");
+  const crossHistoryResponse = await fetch(baseUrl + "/api/admin/offer-attributions/" + tenants[1].attributionId + "/events", { headers: { cookie: cookieA } });
+  assert.equal(crossHistoryResponse.status, 404, "tenant A cannot read tenant B's evidence history");
+
+  const eventCount = await pool.query("SELECT count(*)::int AS count FROM hotel_offer_attribution_events WHERE organization_id=(SELECT id FROM organizations WHERE slug=$1) AND attribution_id=$2", [tenants[0].slug, tenants[0].attributionId]);
+  assert.equal(eventCount.rows[0].count, 1, "idempotent replay must not duplicate the audit event");
+  await assert.rejects(
+    pool.query("UPDATE hotel_offer_attributions SET amount_minor=240000 WHERE id=$1 AND organization_id=(SELECT id FROM organizations WHERE slug=$2)", [tenants[0].attributionId, tenants[0].slug]),
+    /immutable/
+  );
+  await assert.rejects(
+    pool.query("UPDATE hotel_offer_attributions SET status='converted' WHERE id=$1 AND organization_id=(SELECT id FROM organizations WHERE slug=$2)", [tenants[1].attributionId, tenants[1].slug]),
+    /complete evidence/
+  );
   const attributionBAfter = await fetch(baseUrl + "/api/admin/offer-attributions", { headers: { cookie: cookieB } });
   const attributionBBody = await attributionBAfter.json();
   assert.equal(attributionBBody.attributions[0].status, "enquiry", "tenant A's confirmation must not affect tenant B");
+
+  await pool.query("UPDATE users SET role='staff' WHERE organization_id=(SELECT id FROM organizations WHERE slug=$1) AND email=$2", [tenants[0].slug, tenants[0].email]);
+  try {
+    const staffAttributionResponse = await fetch(baseUrl + "/api/admin/offer-attributions", { headers: { cookie: cookieA } });
+    assert.equal(staffAttributionResponse.status, 200);
+    const staffAttributionBody = await staffAttributionResponse.json();
+    assert.equal(staffAttributionBody.financialVisibility, false);
+    assert.deepEqual(staffAttributionBody.verifiedTotals, []);
+    assert.deepEqual(staffAttributionBody.legacyUnverifiedTotals, []);
+    const staffRecord = staffAttributionBody.attributions[0];
+    for (const field of ["amount_minor", "currency", "notes", "evidence_source", "evidence_reference", "sold_at", "offer_currency", "listed_amount_minor"]) {
+      assert.equal(Object.hasOwn(staffRecord, field), false, "staff response must redact " + field);
+    }
+    const staffSaleAttempt = await fetch(baseUrl + "/api/admin/offer-attributions/" + tenants[0].attributionId, {
+      method: "PATCH",
+      headers: { cookie: cookieA, "X-CSRF-Token": tenants[0].csrfToken, "content-type": "application/json" },
+      body: JSON.stringify(saleEvidence),
+    });
+    assert.equal(staffSaleAttempt.status, 403, "staff cannot attest revenue");
+    const staffHistoryAttempt = await fetch(baseUrl + "/api/admin/offer-attributions/" + tenants[0].attributionId + "/events", { headers: { cookie: cookieA } });
+    assert.equal(staffHistoryAttempt.status, 403, "staff cannot read financial evidence history");
+  } finally {
+    await pool.query("UPDATE users SET role='owner' WHERE organization_id=(SELECT id FROM organizations WHERE slug=$1) AND email=$2", [tenants[0].slug, tenants[0].email]);
+  }
 
   const crossOfferVerify = await fetch(baseUrl + "/api/admin/offers/" + tenants[1].offerId + "/verify", {
     method: "POST",
@@ -365,6 +461,131 @@ try {
 
   const orgA = (await pool.query("SELECT id FROM organizations WHERE slug=$1", [tenants[0].slug])).rows[0].id;
   const orgB = (await pool.query("SELECT id FROM organizations WHERE slug=$1", [tenants[1].slug])).rows[0].id;
+
+  const addonWriteStore = createPostgresMewsAddonWriteStore({ db: pool });
+  await addonWriteStore.ensureSchema();
+  const addonWriteKey = "mews-addon-write-" + tag;
+  const addonHashA = "a".repeat(64);
+  const addonHashB = "b".repeat(64);
+  const addonExternalA = "veyra-addon:integration-" + tag + "-a";
+  const addonExternalB = "veyra-addon:integration-" + tag + "-b";
+  const addonClaimA = await addonWriteStore.claim({
+    organizationId: orgA,
+    idempotencyKey: addonWriteKey,
+    requestHash: addonHashA,
+    enterpriseId: "synthetic-enterprise-a",
+    serviceId: "synthetic-service-a",
+    reservationId: "synthetic-reservation-a",
+    externalIdentifier: addonExternalA
+  });
+  assert.equal(addonClaimA.status, "acquired", "tenant A's first add-on write claim must be acquired");
+  const addonReplayA = await addonWriteStore.claim({
+    organizationId: orgA,
+    idempotencyKey: addonWriteKey,
+    requestHash: addonHashA,
+    enterpriseId: "synthetic-enterprise-a",
+    serviceId: "synthetic-service-a",
+    reservationId: "synthetic-reservation-a",
+    externalIdentifier: "veyra-addon:must-not-replace-a"
+  });
+  assert.equal(addonReplayA.status, "in_progress", "an in-progress replay must not create a second provider write");
+  assert.equal(addonReplayA.externalIdentifier, addonExternalA, "replay must retain the original external identifier");
+  const addonConflictA = await addonWriteStore.claim({
+    organizationId: orgA,
+    idempotencyKey: addonWriteKey,
+    requestHash: addonHashB,
+    enterpriseId: "synthetic-enterprise-a",
+    serviceId: "synthetic-service-a",
+    reservationId: "synthetic-reservation-a",
+    externalIdentifier: "veyra-addon:must-not-replace-b"
+  });
+  assert.equal(addonConflictA.status, "conflict", "the same idempotency key cannot represent different request data");
+  await addonWriteStore.markUncertain({
+    organizationId: orgA,
+    idempotencyKey: addonWriteKey,
+    requestHash: addonHashA,
+    reasonCode: "provider_outcome_unknown"
+  });
+  const addonARecord = await addonWriteStore.get({ organizationId: orgA, idempotencyKey: addonWriteKey });
+  assert.equal(addonARecord.status, "uncertain", "ambiguous provider outcomes must remain blocked for manual reconciliation");
+  assert.equal(addonARecord.result, null, "uncertain writes must not look like successful paid revenue");
+  const addonUncertainReplay = await addonWriteStore.claim({
+    organizationId: orgA,
+    idempotencyKey: addonWriteKey,
+    requestHash: addonHashA,
+    enterpriseId: "synthetic-enterprise-a",
+    serviceId: "synthetic-service-a",
+    reservationId: "synthetic-reservation-a",
+    externalIdentifier: "veyra-addon:must-not-replace-c"
+  });
+  assert.equal(addonUncertainReplay.status, "uncertain", "uncertain writes must never be automatically retried");
+
+  const addonClaimB = await addonWriteStore.claim({
+    organizationId: orgB,
+    idempotencyKey: addonWriteKey,
+    requestHash: addonHashA,
+    enterpriseId: "synthetic-enterprise-b",
+    serviceId: "synthetic-service-b",
+    reservationId: "synthetic-reservation-b",
+    externalIdentifier: addonExternalB
+  });
+  assert.equal(addonClaimB.status, "acquired", "the same idempotency key is independent in another tenant");
+  const addonResultB = {
+    status: "submitted_pending_readback",
+    mewsOrderId: "synthetic-mews-order-b"
+  };
+  await addonWriteStore.complete({
+    organizationId: orgB,
+    idempotencyKey: addonWriteKey,
+    requestHash: addonHashA,
+    mewsOrderId: "synthetic-mews-order-b",
+    result: addonResultB
+  });
+  const addonReplayB = await addonWriteStore.claim({
+    organizationId: orgB,
+    idempotencyKey: addonWriteKey,
+    requestHash: addonHashA,
+    enterpriseId: "synthetic-enterprise-b",
+    serviceId: "synthetic-service-b",
+    reservationId: "synthetic-reservation-b",
+    externalIdentifier: "veyra-addon:must-not-replace-d"
+  });
+  assert.equal(addonReplayB.status, "completed", "completed provider writes must replay the stored result");
+  assert.deepEqual(addonReplayB.result, addonResultB);
+  assert.equal(await addonWriteStore.get({ organizationId: orgA, idempotencyKey: addonWriteKey }).then(row => row.externalIdentifier), addonExternalA);
+  assert.equal(await addonWriteStore.get({ organizationId: orgB, idempotencyKey: addonWriteKey }).then(row => row.externalIdentifier), addonExternalB);
+  assert.equal(await addonWriteStore.get({ organizationId: orgA, idempotencyKey: "not-" + addonWriteKey }), null, "tenant-scoped lookup must not expose another request");
+  await assert.rejects(
+    addonWriteStore.complete({
+      organizationId: orgA,
+      idempotencyKey: addonWriteKey,
+      requestHash: addonHashB,
+      mewsOrderId: "synthetic-mews-order-b",
+      result: addonResultB
+    }),
+    /cannot be completed/
+  );
+  const addonAuditA = await addonWriteStore.listAuditEvents({ organizationId: orgA, idempotencyKey: addonWriteKey });
+  const addonAuditB = await addonWriteStore.listAuditEvents({ organizationId: orgB, idempotencyKey: addonWriteKey });
+  assert.deepEqual(addonAuditA.map(event => event.eventType), ["write_claimed", "provider_outcome_uncertain"]);
+  assert.deepEqual(addonAuditB.map(event => event.eventType), ["write_claimed", "provider_order_accepted"]);
+  await assert.rejects(
+    pool.query("UPDATE mews_addon_write_audit SET reason_code='tampered' WHERE organization_id=$1 AND idempotency_key=$2", [orgB, addonWriteKey]),
+    /immutable/
+  );
+  await assert.rejects(
+    addonWriteStore.claim({
+      organizationId: orgB,
+      idempotencyKey: addonWriteKey + "-duplicate-external",
+      requestHash: "c".repeat(64),
+      enterpriseId: "synthetic-enterprise-b",
+      serviceId: "synthetic-service-b",
+      reservationId: "synthetic-reservation-b",
+      externalIdentifier: addonExternalB
+    }),
+    /duplicate key value|unique constraint/i
+  );
+
   const webhookReceivedAt = new Date();
   const webhookEvent = {
     eventId: "tenant-isolation-event-" + tag,

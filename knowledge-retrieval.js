@@ -98,10 +98,22 @@ function normalizeGuestQuery(query) {
     .replace(/\bcheck[ -]?in\b/g, "checkin");
 }
 
+function getMeaningfulQueryTokens(query) {
+  const normalized = normalizeGuestQuery(query);
+  const tokens = tokenize(normalized)
+    .filter((token) => !QUESTION_FILLER_WORDS.has(token));
+
+  // "How much for breakfast?" expresses a price request even though
+  // "much" itself is a filler word. Preserve that missing intent explicitly.
+  if (/\\bhow much\\b/.test(normalized) && !/\\b(time|long|far|many)\\b/.test(normalized)) {
+    tokens.push("price", "cost");
+  }
+  return [...new Set(tokens)];
+}
+
 function hasRelevantKnowledgeMatch(documents, query) {
   if (!Array.isArray(documents) || documents.length === 0) return false;
-  const queryTokens = [...new Set(tokenize(normalizeGuestQuery(query))
-    .filter((token) => !QUESTION_FILLER_WORDS.has(token)))];
+  const queryTokens = getMeaningfulQueryTokens(query);
   if (!queryTokens.length) return false;
 
   // Require one approved document to support every meaningful query term.
@@ -135,11 +147,7 @@ function scoreDocument(document, queryTokens) {
 
 function buildEvidenceKnowledgeContext(documents, query) {
   if (!Array.isArray(documents) || documents.length === 0) return "";
-  const queryTokens = expandQueryTokens(
-    [...new Set(tokenize(normalizeGuestQuery(query))
-      .filter((token) => !QUESTION_FILLER_WORDS.has(token)))],
-    query,
-  );
+  const queryTokens = expandQueryTokens(getMeaningfulQueryTokens(query), query);
   if (queryTokens.length === 0) return "";
 
   return documents
@@ -182,7 +190,7 @@ function buildRelevantKnowledgeContext(
   const fullContext = normalized.map((doc) => doc.text).join("\n\n");
   if (fullContext.length <= maxChars) return fullContext;
 
-  const queryTokens = expandQueryTokens([...new Set(tokenize(query))], query);
+  const queryTokens = expandQueryTokens(getMeaningfulQueryTokens(query), query);
   if (queryTokens.length === 0) return "";
 
   const ranked = normalized

@@ -166,6 +166,7 @@ test("synthetic hotel FAQ evaluation covers common supported guest intents", () 
     { title: "Spa treatments", category: "wellness", content: "Massage appointments are available by reservation." },
     { title: "Restaurant hours", category: "dining", content: "The restaurant serves dinner from 18:00." },
     { title: "Airport transfers", category: "transport", content: "Airport transfers can be arranged through reception." },
+    { title: "Parking facilities", category: "facilities", content: "Guest parking is available in the underground car park." },
   ];
   const supportedQuestions = [
     "When is the morning meal served?",
@@ -177,6 +178,7 @@ test("synthetic hotel FAQ evaluation covers common supported guest intents", () 
     "How do I book a massage?",
     "When does dinner start?",
     "Can I arrange an airport transfer?",
+    "Is guest parking available?",
   ];
   for (const question of supportedQuestions) {
     assert.equal(
@@ -203,6 +205,11 @@ test("synthetic hotel FAQ evaluation rejects requests for unsupported facts", ()
     "Is breakfast included in my room rate?",
     "Can the hotel guarantee a sea-view upgrade?",
     "What time does room service stop?",
+    "Is the airport transfer free?",
+    "Can I book a helicopter?",
+    "Are connecting rooms guaranteed?",
+    "Does the pool have a lifeguard?",
+    "Can I get a late checkout?",
   ];
   for (const question of unsupportedQuestions) {
     assert.equal(

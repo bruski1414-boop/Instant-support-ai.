@@ -2,6 +2,7 @@ const {
   buildGuestSupportSystemPrompt,
   normalizeGuestSupportAnswer,
   resolveGuestSupportAnswer,
+  hasUnsupportedNumericClaims,
 } = require("./guest-support-policy");
 
 async function generateGuestSupportAnswer({
@@ -55,10 +56,19 @@ async function generateGuestSupportAnswer({
     parsedAnswer = null;
   }
 
-  return resolveGuestSupportAnswer(
-    message,
-    normalizeGuestSupportAnswer(parsedAnswer),
-  );
+  const normalizedAnswer = normalizeGuestSupportAnswer(parsedAnswer);
+  if (
+    !normalizedAnswer.needsHuman &&
+    hasUnsupportedNumericClaims(normalizedAnswer.reply, approvedKnowledge)
+  ) {
+    return resolveGuestSupportAnswer(message, {
+      reply: "I cannot verify those details from the hotel's approved information. Please contact the front desk so the team can confirm them.",
+      needsHuman: true,
+      handoffReason: "The AI response included numeric or currency details not present in approved hotel information.",
+    });
+  }
+
+  return resolveGuestSupportAnswer(message, normalizedAnswer);
 }
 
 function createNoKnowledgeAnswer(message) {

@@ -51,6 +51,11 @@ CREATE INDEX IF NOT EXISTS mews_addon_write_audit_tenant_idx
 CREATE OR REPLACE FUNCTION prevent_mews_addon_write_audit_mutation()
 RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
+  IF TG_OP = 'DELETE' AND NOT EXISTS (
+    SELECT 1 FROM organizations WHERE id = OLD.organization_id
+  ) THEN
+    RETURN OLD;
+  END IF;
   RAISE EXCEPTION 'Mews add-on write audit is immutable';
 END;
 $$;

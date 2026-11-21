@@ -75,13 +75,13 @@ function expandQueryTokens(tokens, queryText = "") {
 
 function normalizeGuestQuery(query) {
   return String(query || "").toLowerCase()
-    .replace(/\\bmorning meal\\b/g, "breakfast")
-    .replace(/\\bmidday meal\\b/g, "lunch")
-    .replace(/\\bevening meal\\b/g, "dinner")
-    .replace(/\\bwireless internet\\b/g, "wifi")
-    .replace(/\\bswimming pool\\b/g, "pool")
-    .replace(/\\bcheck[ -]?out\\b/g, "checkout")
-    .replace(/\\bcheck[ -]?in\\b/g, "checkin");
+    .replace(/\bmorning meal\b/g, "breakfast")
+    .replace(/\bmidday meal\b/g, "lunch")
+    .replace(/\bevening meal\b/g, "dinner")
+    .replace(/\bwireless internet\b/g, "wifi")
+    .replace(/\bswimming pool\b/g, "pool")
+    .replace(/\bcheck[ -]?out\b/g, "checkout")
+    .replace(/\bcheck[ -]?in\b/g, "checkin");
 }
 
 function hasRelevantKnowledgeMatch(documents, query) {

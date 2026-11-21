@@ -116,6 +116,18 @@ test("initial workspace bootstrap has a dedicated attempt limit", async () => {
   assert.equal(last.status, 429);
 });
 
+test("guest escalation still returns its safe reply if staff notification handling fails after persistence", () => {
+  const server = fs.readFileSync("server.js", "utf8");
+  assert.match(server, /await c\.query\("COMMIT"\)/);
+  assert.match(server, /catch\(error\)\{console\.error\("Staff escalation notification failed:"/);
+  assert.match(server, /notice=\{configured:false,delivered:false,status:"failed"\}/);
+  assert.match(server, /catch\(error\)\{console\.error\("Staff escalation notification status could not be saved:"/);
+  const notificationStart = server.indexOf("let notice=createdEscalation");
+  const responseStart = server.indexOf("r.json({reply,needsHuman:flagHuman", notificationStart);
+  assert.ok(notificationStart >= 0 && responseStart > notificationStart);
+  assert.match(server.slice(notificationStart, responseStart), /catch\(error\)/);
+});
+
 test("guest widget reuses its server-issued conversation id", () => {
   const widget = fs.readFileSync("widget.js", "utf8");
   const server = fs.readFileSync("server.js", "utf8");
@@ -326,6 +338,21 @@ test("staff notification retries are capped and direct staff to manual fallback"
   assert.match(server, /notification_status===\"delivered\"\)return r\.status\(409\)/);
 });
 
+
+test("staff notification retry claims an atomic attempt slot and blocks concurrent duplicate sends", () => {
+  const server = fs.readFileSync("server.js", "utf8");
+  assert.match(server, /notification_status='sending',notification_attempts=notification_attempts\+1/);
+  assert.match(server, /notification_attempts<5 AND notification_status<>'delivered'/);
+  assert.match(server, /notification_last_attempt_at<now\(\)-interval '2 minutes'/);
+  assert.match(server, /Another staff notification attempt is in progress/);
+  assert.match(server, /manualFollowUpRequired:!result\.delivered/);
+});
+
+test("staff handoff dashboard distinguishes an in-progress notification from an unconfigured webhook", () => {
+  const dashboard = fs.readFileSync("dashboard.html", "utf8");
+  assert.match(dashboard, /Notification attempt in progress — check the status again shortly/);
+  assert.match(dashboard, /notification==="sending"/);
+});
 
 test("staff handoff dashboard makes failed and unconfigured notifications require manual follow-up", () => {
   const dashboard = fs.readFileSync("dashboard.html", "utf8");

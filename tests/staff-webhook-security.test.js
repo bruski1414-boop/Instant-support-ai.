@@ -39,6 +39,29 @@ test("webhook URL validation requires HTTPS, a hostname and public DNS answers",
   await assert.rejects(resolvePublicWebhook("https://hotel.example/hooks", async () => [{ address: "93.184.216.34", family: 4 }, { address: "192.168.1.2", family: 4 }]));
 });
 
+test("webhook URL validation rejects credentials, fragments, nonstandard ports and local hostnames", async () => {
+  const lookup = async () => [{ address: "93.184.216.34", family: 4 }];
+  for (const url of [
+    "https://user:pass@hotel.example/hooks",
+    "https://hotel.example:8443/hooks",
+    "https://hotel.example/hooks#fragment",
+    "https://printer.local/hooks",
+    "https://service.localhost/hooks",
+  ]) {
+    await assert.rejects(resolvePublicWebhook(url, lookup), undefined, url);
+  }
+});
+
+test("webhook URL validation rejects empty DNS answers and mixed public/private IPv6 answers", async () => {
+  await assert.rejects(resolvePublicWebhook("https://hotel.example/hooks", async () => []));
+  await assert.rejects(resolvePublicWebhook("https://hotel.example/hooks", async () => [
+    { address: "93.184.216.34", family: 4 },
+    { address: "fd00::1", family: 6 },
+  ]));
+  assert.equal(isPublicAddress("2001:4860:4860::8888"), true);
+  assert.equal(isPublicAddress("fd00::1"), false);
+});
+
 test("public address validation rejects private, loopback and documentation ranges", () => {
   for (const address of ["10.0.0.1","127.0.0.1","169.254.1.1","172.16.0.1","192.168.1.1","192.0.2.4","::1","fc00::1","fe80::1","2001:db8::1"]) {
     assert.equal(isPublicAddress(address), false, address);

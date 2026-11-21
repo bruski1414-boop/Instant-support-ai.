@@ -53,10 +53,11 @@ test("rejects cross-tenant or untrusted order-to-reservation link records", () =
     verifiedOrderItemWrites: [{
       organizationId: "hotel-demo-tenant-b",
       enterpriseId: "enterprise-demo-a",
-      serviceOrderId: "order-42",
+      mewsOrderId: "mews-order-7",
+      serviceOrderId: "service-order-44",
       reservationId: "reservation-22",
       externalIdentifier: "veyra-addon:upgrade-101",
-      source: "mews.orders.add.LinkedReservationId+Items.ExternalIdentifier"
+      source: "mews.orders.add+orderItems.getAll+productServiceOrders.getAll"
     }]
   });
   assert.throws(() => mapMewsPaidAddonEvidence(wrongTenant), /server-owned, tenant-scoped/);

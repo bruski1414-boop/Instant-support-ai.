@@ -5,6 +5,29 @@ const {
   hasUnsupportedNumericClaims,
 } = require("./guest-support-policy");
 
+const GENERIC_REPLY_WORDS = new Set([
+  "the", "and", "for", "from", "with", "that", "this", "when", "what", "where",
+  "your", "you", "our", "their", "there", "are", "was", "were", "has", "have",
+  "had", "can", "could", "would", "should", "will", "may", "might", "not", "but",
+  "please", "thank", "thanks", "yes", "no", "hotel", "guest", "guests", "here",
+  "there", "available", "throughout", "welcomes", "welcome", "kindly", "also",
+  "just", "only", "more", "most", "some", "any", "all", "each", "every",
+]);
+
+function hasUnsupportedContentTerms(reply, approvedKnowledge) {
+  const evidenceTerms = new Set(
+    (String(approvedKnowledge || "").toLowerCase().match(/[a-z]{3,}/g) || []),
+  );
+  const replyTerms = new Set(
+    (String(reply || "").toLowerCase().match(/[a-z]{3,}/g) || []),
+  );
+
+  for (const term of replyTerms) {
+    if (!GENERIC_REPLY_WORDS.has(term) && !evidenceTerms.has(term)) return true;
+  }
+  return false;
+}
+
 async function generateGuestSupportAnswer({
   ai,
   model,
@@ -69,6 +92,18 @@ async function generateGuestSupportAnswer({
     });
   }
 
+
+  if (
+    !normalizedAnswer.needsHuman &&
+    hasUnsupportedContentTerms(normalizedAnswer.reply, approvedKnowledge)
+  ) {
+    return resolveGuestSupportAnswer(message, {
+      reply: "I cannot verify every detail of that answer from the hotel's approved information. Please contact the front desk so the team can confirm it.",
+      needsHuman: true,
+      handoffReason: "The AI response included descriptive terms not present in the approved hotel information; lexical grounding requires staff review.",
+    });
+  }
+
   return resolveGuestSupportAnswer(message, normalizedAnswer);
 }
 
@@ -88,4 +123,4 @@ function createAiUnavailableAnswer() {
   };
 }
 
-module.exports = { generateGuestSupportAnswer, createAiUnavailableAnswer, createNoKnowledgeAnswer };
+module.exports = { generateGuestSupportAnswer, createAiUnavailableAnswer, createNoKnowledgeAnswer, hasUnsupportedContentTerms };

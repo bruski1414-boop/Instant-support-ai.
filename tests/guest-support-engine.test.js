@@ -252,3 +252,27 @@ test("content grounding still accepts a descriptive claim supported together in 
   assert.equal(result.needsHuman, false);
   assert.match(result.reply, /Breakfast buffet is served daily/i);
 });
+
+
+test("content grounding rejects a reply that reverses an approved negative claim", async () => {
+  const result = await generateGuestSupportAnswer({
+    ai: fakeAi(JSON.stringify({ reply: "Breakfast is served on the beach.", needsHuman: false, handoffReason: "" })),
+    model: "test-model",
+    hotelName: "Aster House",
+    approvedKnowledge: "Breakfast is not served on the beach.",
+    message: "Is breakfast served on the beach?",
+  });
+  assert.equal(result.needsHuman, true);
+  assert.match(result.handoffReason, /lexical grounding requires staff review/i);
+});
+
+test("content grounding accepts a reply that preserves an approved negative claim", async () => {
+  const result = await generateGuestSupportAnswer({
+    ai: fakeAi(JSON.stringify({ reply: "Breakfast is not served on the beach.", needsHuman: false, handoffReason: "" })),
+    model: "test-model",
+    hotelName: "Aster House",
+    approvedKnowledge: "Breakfast is not served on the beach.",
+    message: "Is breakfast served on the beach?",
+  });
+  assert.equal(result.needsHuman, false);
+});

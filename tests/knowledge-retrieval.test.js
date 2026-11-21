@@ -3,6 +3,7 @@ const assert = require("node:assert/strict");
 const {
   buildRelevantKnowledgeContext,
   tokenize,
+  expandQueryTokens,
 } = require("../knowledge-retrieval");
 
 const docs = [

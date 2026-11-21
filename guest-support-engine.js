@@ -22,7 +22,7 @@ function getDescriptiveTerms(value) {
 
 function splitIntoClaimClauses(value) {
   return String(value || "")
-    .split(/(?:[.!?;]+|\\n+|\\s+\\b(?:and|but|while|whereas)\\b\\s+)/i)
+    .split(/(?:[.!?;]+|\n+|\s+\b(?:and|but|while|whereas)\b\s+)/i)
     .map((clause) => clause.trim())
     .filter(Boolean);
 }
@@ -38,7 +38,7 @@ function hasUnsupportedContentTerms(reply, approvedKnowledge) {
   // Avoid borrowing separate facts from different sentences/documents to
   // support one claim. This remains a lexical heuristic, not entailment.
   const evidenceSentences = evidence
-    .split(/[.!?;]+|\\n+/)
+    .split(/[.!?;]+|\n+/)
     .map((sentence) => new Set(getDescriptiveTerms(sentence)))
     .filter((terms) => terms.size > 0);
 

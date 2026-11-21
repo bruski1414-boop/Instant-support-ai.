@@ -129,6 +129,7 @@ function buildRelevantKnowledgeContext(
 module.exports = {
   DEFAULT_MAX_CONTEXT_CHARS,
   tokenize,
+  expandQueryTokens,
   scoreDocument,
   buildRelevantKnowledgeContext,
 };

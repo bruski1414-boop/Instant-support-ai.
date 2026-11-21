@@ -115,3 +115,86 @@ test("no-knowledge fallback still preserves immediate-danger safety handling", (
   assert.match(result.reply, /local emergency services now/);
   assert.match(result.reply, /Do not wait for a chat reply/);
 });
+
+
+test("guest-support engine accepts numeric details that are explicitly present in approved knowledge", async () => {
+  const result = await generateGuestSupportAnswer({
+    ai: fakeAi(JSON.stringify({
+      reply: "Breakfast runs from 7:00 to 10:00. The transfer costs 1,500 THB.",
+      needsHuman: false,
+      handoffReason: "",
+    })),
+    model: "test-model",
+    hotelName: "Aster House",
+    approvedKnowledge: "Breakfast: 7:00–10:00. Airport transfer price: 1,500 THB.",
+    message: "When is breakfast and what is the transfer price?",
+  });
+
+  assert.equal(result.needsHuman, false);
+  assert.match(result.reply, /7:00 to 10:00/);
+  assert.match(result.reply, /1,500 THB/);
+});
+
+test("guest-support engine hands off when the model invents opening times", async () => {
+  const result = await generateGuestSupportAnswer({
+    ai: fakeAi(JSON.stringify({
+      reply: "Breakfast is served from 6:00 to 11:00.",
+      needsHuman: false,
+      handoffReason: "",
+    })),
+    model: "test-model",
+    hotelName: "Aster House",
+    approvedKnowledge: "Breakfast is served from 7:00 to 10:00.",
+    message: "When is breakfast?",
+  });
+
+  assert.equal(result.needsHuman, true);
+  assert.match(result.reply, /cannot verify those details/i);
+  assert.match(result.handoffReason, /numeric or currency details not present/i);
+});
+
+test("guest-support engine hands off when the model invents a price or changes its currency", async () => {
+  const inventedPrice = await generateGuestSupportAnswer({
+    ai: fakeAi(JSON.stringify({
+      reply: "The airport transfer costs 2,500 THB.",
+      needsHuman: false,
+      handoffReason: "",
+    })),
+    model: "test-model",
+    hotelName: "Aster House",
+    approvedKnowledge: "Airport transfers can be arranged through reception. The price must be confirmed by staff.",
+    message: "How much is the airport transfer?",
+  });
+  assert.equal(inventedPrice.needsHuman, true);
+
+  const wrongCurrency = await generateGuestSupportAnswer({
+    ai: fakeAi(JSON.stringify({
+      reply: "The transfer costs $1,500.",
+      needsHuman: false,
+      handoffReason: "",
+    })),
+    model: "test-model",
+    hotelName: "Aster House",
+    approvedKnowledge: "Airport transfer price: 1,500 THB.",
+    message: "What is the airport transfer price?",
+  });
+  assert.equal(wrongCurrency.needsHuman, true);
+});
+
+test("numeric grounding guard does not override an explicit model-requested staff handoff", async () => {
+  const result = await generateGuestSupportAnswer({
+    ai: fakeAi(JSON.stringify({
+      reply: "I cannot verify the price. Please contact the front desk.",
+      needsHuman: true,
+      handoffReason: "Price confirmation required.",
+    })),
+    model: "test-model",
+    hotelName: "Aster House",
+    approvedKnowledge: "Airport transfer details are confirmed by staff.",
+    message: "What is the airport transfer price?",
+  });
+
+  assert.equal(result.needsHuman, true);
+  assert.match(result.reply, /cannot verify the price/i);
+  assert.match(result.handoffReason, /Price confirmation required/);
+});

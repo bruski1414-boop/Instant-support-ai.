@@ -157,3 +157,34 @@ test("breakfast numeric evidence cannot borrow gym or checkout times", () => {
   assert.doesNotMatch(evidence, /Fitness centre|Checkout policy/);
   assert.equal(hasUnsupportedNumericClaims("Breakfast is served from 6:00 to 11:00.", evidence), true);
 });
+
+
+test("mixed-intent questions fail closed when only one part is supported", () => {
+  const mixedQuestions = [
+    "When is breakfast and how much does it cost?",
+    "Is the pool open and can I bring my dog?",
+    "What time is checkout and can you guarantee a late checkout?",
+    "Can I use Wi-Fi and what is the password?",
+    "When is dinner and can you reserve a yacht?",
+    "Can I book a massage and what is the exact price?",
+  ];
+
+  for (const question of mixedQuestions) {
+    assert.equal(
+      hasRelevantKnowledgeMatch(syntheticHotelKnowledge, question),
+      false,
+      `expected the unsupported part to block a partial answer: ${question}`,
+    );
+  }
+});
+
+test("query evidence is not borrowed from a second unrelated document", () => {
+  const splitEvidence = [
+    { title: "Breakfast service", category: "dining", content: "Breakfast is served daily." },
+    { title: "Room prices", category: "rates", content: "Prices vary by season." },
+  ];
+  assert.equal(
+    hasRelevantKnowledgeMatch(splitEvidence, "What is the breakfast price?"),
+    false,
+  );
+});

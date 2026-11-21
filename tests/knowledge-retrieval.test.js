@@ -219,3 +219,17 @@ test("synthetic hotel FAQ evaluation rejects requests for unsupported facts", ()
     );
   }
 });
+
+
+test("numeric evidence context excludes unrelated hotel documents with coincidentally matching numbers", () => {
+  const hotelFaq = [
+    { title: "Breakfast service", category: "dining", content: "Breakfast is served daily from 7:00 to 10:00." },
+    { title: "Fitness centre", category: "facilities", content: "The gym is open from 6:00 to 22:00." },
+    { title: "Checkout policy", category: "front desk", content: "Departure time is 11:00." },
+  ];
+  const evidence = buildEvidenceKnowledgeContext(hotelFaq, "When is breakfast?");
+  assert.match(evidence, /Breakfast service/);
+  assert.doesNotMatch(evidence, /Fitness centre/);
+  assert.doesNotMatch(evidence, /Checkout policy/);
+  assert.doesNotMatch(evidence, /6:00|22:00|11:00/);
+});

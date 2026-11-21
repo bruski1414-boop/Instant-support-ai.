@@ -2,6 +2,8 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const { hasRelevantKnowledgeMatch } = require("../knowledge-retrieval");
 const { evaluateHotelAnswerCases } = require("../hotel-answer-evaluation");
+const { buildEvidenceKnowledgeContext } = require("../knowledge-retrieval");
+const { hasUnsupportedNumericClaims } = require("../guest-support-policy");
 
 const syntheticHotelKnowledge = [
   { title: "Breakfast service", category: "dining", content: "Breakfast buffet is served daily from 7:00 to 10:00." },
@@ -146,4 +148,12 @@ test("end-to-end evaluator validates input and handles an empty suite", async ()
   const empty = await evaluateHotelAnswerCases({ documents: syntheticHotelKnowledge, cases: [] });
   assert.equal(empty.total, 0);
   assert.equal(empty.accuracy, 0);
+});
+
+
+test("breakfast numeric evidence cannot borrow gym or checkout times", () => {
+  const evidence = buildEvidenceKnowledgeContext(syntheticHotelKnowledge, "When is breakfast?");
+  assert.match(evidence, /Breakfast service/);
+  assert.doesNotMatch(evidence, /Fitness centre|Checkout policy/);
+  assert.equal(hasUnsupportedNumericClaims("Breakfast is served from 6:00 to 11:00.", evidence), true);
 });

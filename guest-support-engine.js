@@ -15,16 +15,40 @@ const GENERIC_REPLY_WORDS = new Set([
   "runs", "run", "costs", "cost", "served",
 ]);
 
-function hasUnsupportedContentTerms(reply, approvedKnowledge) {
-  const evidenceTerms = new Set(
-    (String(approvedKnowledge || "").toLowerCase().match(/[a-z]{3,}/g) || []),
-  );
-  const replyTerms = new Set(
-    (String(reply || "").toLowerCase().match(/[a-z]{3,}/g) || []),
-  );
+function getDescriptiveTerms(value) {
+  return (String(value || "").toLowerCase().match(/[a-z]{3,}/g) || [])
+    .filter((term) => !GENERIC_REPLY_WORDS.has(term));
+}
 
-  for (const term of replyTerms) {
-    if (!GENERIC_REPLY_WORDS.has(term) && !evidenceTerms.has(term)) return true;
+function splitIntoClaimClauses(value) {
+  return String(value || "")
+    .split(/(?:[.!?;]+|\\n+|\\s+\\b(?:and|but|while|whereas)\\b\\s+)/i)
+    .map((clause) => clause.trim())
+    .filter(Boolean);
+}
+
+function hasUnsupportedContentTerms(reply, approvedKnowledge) {
+  const evidence = String(approvedKnowledge || "");
+  const evidenceTerms = new Set(getDescriptiveTerms(evidence));
+  const replyTerms = getDescriptiveTerms(reply);
+
+  // First reject descriptive words that do not appear anywhere in approved context.
+  if (replyTerms.some((term) => !evidenceTerms.has(term))) return true;
+
+  // Avoid borrowing separate facts from different sentences/documents to
+  // support one claim. This remains a lexical heuristic, not entailment.
+  const evidenceSentences = evidence
+    .split(/[.!?;]+|\\n+/)
+    .map((sentence) => new Set(getDescriptiveTerms(sentence)))
+    .filter((terms) => terms.size > 0);
+
+  for (const clause of splitIntoClaimClauses(reply)) {
+    const terms = getDescriptiveTerms(clause);
+    if (!terms.length) continue;
+    const supportedTogether = evidenceSentences.some((sentenceTerms) =>
+      terms.every((term) => sentenceTerms.has(term))
+    );
+    if (!supportedTogether) return true;
   }
   return false;
 }

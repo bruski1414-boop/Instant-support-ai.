@@ -247,3 +247,13 @@ test("strict evidence matching does not combine unrelated documents to manufactu
     "breakfast and price appearing in separate documents must not count as evidence for a breakfast price",
   );
 });
+
+
+test("implicit how-much phrasing is treated as a price request, not a breakfast-hours question", () => {
+  const breakfastOnly = [
+    { title: "Breakfast service", category: "dining", content: "Breakfast is served daily from 7:00 to 10:00." },
+  ];
+  assert.equal(hasRelevantKnowledgeMatch(breakfastOnly, "How much for breakfast?"), false);
+  assert.equal(hasRelevantKnowledgeMatch(breakfastOnly, "How much is breakfast?"), false);
+  assert.equal(hasRelevantKnowledgeMatch(breakfastOnly, "How much time does breakfast service take?"), true);
+});

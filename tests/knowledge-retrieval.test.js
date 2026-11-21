@@ -255,5 +255,5 @@ test("implicit how-much phrasing is treated as a price request, not a breakfast-
   ];
   assert.equal(hasRelevantKnowledgeMatch(breakfastOnly, "How much for breakfast?"), false);
   assert.equal(hasRelevantKnowledgeMatch(breakfastOnly, "How much is breakfast?"), false);
-  assert.equal(hasRelevantKnowledgeMatch(breakfastOnly, "How much time does breakfast service take?"), true);
+  assert.equal(hasRelevantKnowledgeMatch(breakfastOnly, "How much time for breakfast?"), true);
 });

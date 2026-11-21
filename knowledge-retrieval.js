@@ -105,7 +105,7 @@ function getMeaningfulQueryTokens(query) {
 
   // "How much for breakfast?" expresses a price request even though
   // "much" itself is a filler word. Preserve that missing intent explicitly.
-  if (/\\bhow much\\b/.test(normalized) && !/\\b(time|long|far|many)\\b/.test(normalized)) {
+  if (/\bhow much\b/.test(normalized) && !/\b(time|long|far|many)\b/.test(normalized)) {
     tokens.push("price", "cost");
   }
   return [...new Set(tokens)];

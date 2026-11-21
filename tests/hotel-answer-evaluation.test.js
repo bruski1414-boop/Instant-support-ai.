@@ -125,7 +125,7 @@ test("end-to-end synthetic evaluator measures supported answers and safe handoff
   });
 
   assert.equal(report.total, 21);
-  assert.equal(report.passed, 21);
+  assert.equal(report.passed, 21, JSON.stringify(report.results.filter((item) => !item.passed)));
   assert.equal(report.failed, 0);
   assert.equal(report.accuracy, 1);
   assert.equal(report.answerCases, 10);

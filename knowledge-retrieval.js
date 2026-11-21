@@ -176,5 +176,7 @@ module.exports = {
   tokenize,
   expandQueryTokens,
   scoreDocument,
+  normalizeGuestQuery,
+  hasRelevantKnowledgeMatch,
   buildRelevantKnowledgeContext,
 };

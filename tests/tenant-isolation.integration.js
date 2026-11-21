@@ -429,7 +429,92 @@ try {
   const preservedB = await pool.query("SELECT id FROM knowledge_documents WHERE id=$1 AND organization_id=$2", [tenants[1].knowledgeId, orgB]);
   assert.equal(deletedA.rowCount, 0, "tenant A's selected document must be deleted");
   assert.equal(preservedB.rowCount, 1, "tenant A deletion must not affect tenant B's document");
-  console.log("PASS: tenant-scoped transcripts, knowledge, storage connections, revenue offers and sale attribution verified for two hotel workspaces.");
+
+  // Retention cleanup must be tenant-scoped, require explicit confirmation,
+  // preserve conversations with unresolved escalations, and cascade child messages.
+  const retentionEligible = await pool.query(
+    "INSERT INTO conversations(organization_id,channel,status,last_message_at) VALUES($1,'website','resolved',now()-interval '45 days') RETURNING id",
+    [orgA]
+  );
+  const retentionProtected = await pool.query(
+    "INSERT INTO conversations(organization_id,channel,status,last_message_at) VALUES($1,'website','resolved',now()-interval '45 days') RETURNING id",
+    [orgA]
+  );
+  const retentionTenantB = await pool.query(
+    "INSERT INTO conversations(organization_id,channel,status,last_message_at) VALUES($1,'website','resolved',now()-interval '45 days') RETURNING id",
+    [orgB]
+  );
+  await pool.query(
+    "INSERT INTO messages(conversation_id,role,content) VALUES($1,'guest','synthetic retention test message')",
+    [retentionEligible.rows[0].id]
+  );
+  await pool.query(
+    "INSERT INTO messages(conversation_id,role,content) VALUES($1,'guest','synthetic protected test message')",
+    [retentionProtected.rows[0].id]
+  );
+  await pool.query(
+    "INSERT INTO messages(conversation_id,role,content) VALUES($1,'guest','synthetic tenant B test message')",
+    [retentionTenantB.rows[0].id]
+  );
+  await pool.query(
+    "INSERT INTO escalations(organization_id,conversation_id,reason,status) VALUES($1,$2,'Synthetic unresolved retention test','open')",
+    [orgA, retentionProtected.rows[0].id]
+  );
+
+  const retentionAInitial = await fetch(baseUrl + "/api/admin/retention", { headers: { cookie: cookieA } });
+  assert.equal(retentionAInitial.status, 200);
+  assert.equal((await retentionAInitial.json()).enabled, false, "retention must start disabled for a new hotel");
+  const retentionBInitial = await fetch(baseUrl + "/api/admin/retention", { headers: { cookie: cookieB } });
+  assert.equal(retentionBInitial.status, 200);
+  assert.equal((await retentionBInitial.json()).enabled, false, "tenant A policy must not enable tenant B retention");
+
+  const retentionPolicy = await fetch(baseUrl + "/api/admin/retention", {
+    method: "PUT",
+    headers: { cookie: cookieA, "X-CSRF-Token": tenants[0].csrfToken, "content-type": "application/json" },
+    body: JSON.stringify({ retentionDays: 30 }),
+  });
+  assert.equal(retentionPolicy.status, 200, "tenant A owner can configure a supported retention period");
+  const retentionPreviewA = await fetch(baseUrl + "/api/admin/retention", { headers: { cookie: cookieA } });
+  const retentionPreviewABody = await retentionPreviewA.json();
+  assert.equal(retentionPreviewABody.retentionDays, 30);
+  assert.equal(retentionPreviewABody.eligibleConversations, 1, "only old resolved conversations without unresolved escalations are eligible");
+  const retentionPreviewB = await fetch(baseUrl + "/api/admin/retention", { headers: { cookie: cookieB } });
+  assert.equal((await retentionPreviewB.json()).enabled, false, "tenant A policy must not change tenant B settings");
+
+  const unconfirmedCleanup = await fetch(baseUrl + "/api/admin/retention/cleanup", {
+    method: "POST",
+    headers: { cookie: cookieA, "X-CSRF-Token": tenants[0].csrfToken, "content-type": "application/json" },
+    body: JSON.stringify({ confirm: false }),
+  });
+  assert.equal(unconfirmedCleanup.status, 400, "retention cleanup must reject missing explicit confirmation");
+  const retentionCleanup = await fetch(baseUrl + "/api/admin/retention/cleanup", {
+    method: "POST",
+    headers: { cookie: cookieA, "X-CSRF-Token": tenants[0].csrfToken, "content-type": "application/json" },
+    body: JSON.stringify({ confirm: true }),
+  });
+  assert.equal(retentionCleanup.status, 200);
+  assert.equal((await retentionCleanup.json()).deleted, 1, "cleanup must delete exactly the one eligible tenant A conversation");
+
+  const deletedRetentionConversation = await pool.query("SELECT id FROM conversations WHERE id=$1", [retentionEligible.rows[0].id]);
+  const deletedRetentionMessages = await pool.query("SELECT id FROM messages WHERE conversation_id=$1", [retentionEligible.rows[0].id]);
+  const protectedRetentionConversation = await pool.query("SELECT id FROM conversations WHERE id=$1", [retentionProtected.rows[0].id]);
+  const protectedRetentionEscalation = await pool.query("SELECT id FROM escalations WHERE conversation_id=$1 AND status='open'", [retentionProtected.rows[0].id]);
+  const tenantBRetentionConversation = await pool.query("SELECT id FROM conversations WHERE id=$1 AND organization_id=$2", [retentionTenantB.rows[0].id, orgB]);
+  assert.equal(deletedRetentionConversation.rowCount, 0, "eligible conversation must be deleted");
+  assert.equal(deletedRetentionMessages.rowCount, 0, "conversation deletion must cascade to its messages");
+  assert.equal(protectedRetentionConversation.rowCount, 1, "conversation with an unresolved escalation must be preserved");
+  assert.equal(protectedRetentionEscalation.rowCount, 1, "unresolved escalation must remain intact");
+  assert.equal(tenantBRetentionConversation.rowCount, 1, "tenant A cleanup must never delete tenant B conversations");
+  const retentionAudit = await pool.query(
+    "SELECT action,target_type,target_id,actor_user_id FROM audit_logs WHERE organization_id=$1 AND action='retention.cleanup_executed' ORDER BY created_at DESC LIMIT 1",
+    [orgA]
+  );
+  assert.equal(retentionAudit.rowCount, 1, "retention cleanup must create an audit record");
+  assert.equal(retentionAudit.rows[0].target_type, "conversation_batch");
+  assert.equal(retentionAudit.rows[0].target_id, "1");
+  assert.equal(retentionAudit.rows[0].actor_user_id, (await pool.query("SELECT id FROM users WHERE organization_id=$1 AND email=$2", [orgA, tenants[0].email])).rows[0].id);
+
+  console.log("PASS: tenant-scoped transcripts, knowledge, storage connections, retention cleanup, revenue offers and sale attribution verified for two hotel workspaces.");
 } finally {
   if (serverReady) {
     for (const tenant of tenants) {

@@ -117,6 +117,22 @@ test("no-knowledge fallback still preserves immediate-danger safety handling", (
 });
 
 
+test("content grounding treats Wi-Fi spelling variants as the same approved term", async () => {
+  const result = await generateGuestSupportAnswer({
+    ai: fakeAi(JSON.stringify({
+      reply: "The wifi network is available throughout the property.",
+      needsHuman: false,
+      handoffReason: "",
+    })),
+    model: "test-model",
+    hotelName: "Aster House",
+    approvedKnowledge: "The Wi-Fi network is available throughout the property.",
+    message: "Is Wi-Fi available?",
+  });
+
+  assert.equal(result.needsHuman, false);
+});
+
 test("guest-support engine accepts numeric details that are explicitly present in approved knowledge", async () => {
   const result = await generateGuestSupportAnswer({
     ai: fakeAi(JSON.stringify({

@@ -27,6 +27,10 @@ function splitIntoClaimClauses(value) {
     .filter(Boolean);
 }
 
+function hasNegation(value) {
+  return /\b(?:not|never|no|without|neither|cannot|can't|isn't|aren't|doesn't|don't|won't)\b/i.test(String(value || ""));
+}
+
 function hasUnsupportedContentTerms(reply, approvedKnowledge) {
   const evidence = String(approvedKnowledge || "");
   const evidenceTerms = new Set(getDescriptiveTerms(evidence));
@@ -35,18 +39,22 @@ function hasUnsupportedContentTerms(reply, approvedKnowledge) {
   // First reject descriptive words that do not appear anywhere in approved context.
   if (replyTerms.some((term) => !evidenceTerms.has(term))) return true;
 
-  // Avoid borrowing separate facts from different sentences/documents to
-  // support one claim. This remains a lexical heuristic, not entailment.
+  // Match descriptive terms and negation polarity within the same evidence sentence.
   const evidenceSentences = evidence
     .split(/[.!?;]+|\n+/)
-    .map((sentence) => new Set(getDescriptiveTerms(sentence)))
-    .filter((terms) => terms.size > 0);
+    .map((sentence) => ({
+      terms: new Set(getDescriptiveTerms(sentence)),
+      negated: hasNegation(sentence),
+    }))
+    .filter((sentence) => sentence.terms.size > 0);
 
   for (const clause of splitIntoClaimClauses(reply)) {
     const terms = getDescriptiveTerms(clause);
     if (!terms.length) continue;
-    const supportedTogether = evidenceSentences.some((sentenceTerms) =>
-      terms.every((term) => sentenceTerms.has(term))
+    const clauseNegated = hasNegation(clause);
+    const supportedTogether = evidenceSentences.some((sentence) =>
+      terms.every((term) => sentence.terms.has(term)) &&
+      sentence.negated === clauseNegated
     );
     if (!supportedTogether) return true;
   }

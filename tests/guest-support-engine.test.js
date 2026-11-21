@@ -217,3 +217,38 @@ test("guest-support engine hands off when a reply adds an unsupported non-numeri
   assert.match(result.reply, /cannot verify every detail/i);
   assert.match(result.handoffReason, /descriptive terms not present/i);
 });
+
+
+test("content grounding does not combine separate sentences to invent a relationship", async () => {
+  const result = await generateGuestSupportAnswer({
+    ai: fakeAi(JSON.stringify({
+      reply: "Breakfast is served on the beach.",
+      needsHuman: false,
+      handoffReason: "",
+    })),
+    model: "test-model",
+    hotelName: "Aster House",
+    approvedKnowledge: "Breakfast buffet is served daily from 7:00 to 10:00. The beach is open to guests.",
+    message: "When is breakfast?",
+  });
+
+  assert.equal(result.needsHuman, true);
+  assert.match(result.handoffReason, /lexical grounding requires staff review/i);
+});
+
+test("content grounding still accepts a descriptive claim supported together in one sentence", async () => {
+  const result = await generateGuestSupportAnswer({
+    ai: fakeAi(JSON.stringify({
+      reply: "Breakfast buffet is served daily.",
+      needsHuman: false,
+      handoffReason: "",
+    })),
+    model: "test-model",
+    hotelName: "Aster House",
+    approvedKnowledge: "Breakfast buffet is served daily from 7:00 to 10:00.",
+    message: "What is served for breakfast?",
+  });
+
+  assert.equal(result.needsHuman, false);
+  assert.match(result.reply, /Breakfast buffet is served daily/i);
+});

@@ -9,11 +9,42 @@ const STOP_WORDS = new Set([
   "where", "which", "who", "will", "with", "would", "you", "your",
 ]);
 
+const SYNONYMS = {
+  breakfast: ["morning meal"],
+  "morning meal": ["breakfast"],
+  lunch: ["midday meal"],
+  dinner: ["evening meal"],
+  "evening meal": ["dinner"],
+  pool: ["swimming", "swimming pool"],
+  swimming: ["pool"],
+  wifi: ["wireless", "internet"],
+  wireless: ["wifi", "internet"],
+  internet: ["wifi", "wireless"],
+  checkout: ["departure", "check-out"],
+  "check-out": ["checkout", "departure"],
+  checkin: ["arrival", "check-in"],
+  "check-in": ["checkin", "arrival"],
+  taxi: ["car", "transport"],
+  transfer: ["airport", "transport"],
+  gym: ["fitness", "workout"],
+  fitness: ["gym"],
+};
+
 function tokenize(value) {
   return String(value || "")
     .toLowerCase()
     .match(/[a-z0-9]{3,}/g)
     ?.filter((token) => !STOP_WORDS.has(token)) || [];
+}
+
+function expandQueryTokens(tokens) {
+  const expanded = new Set(tokens);
+  for (const token of tokens) {
+    for (const synonym of SYNONYMS[token] || []) {
+      for (const synonymToken of tokenize(synonym)) expanded.add(synonymToken);
+    }
+  }
+  return [...expanded];
 }
 
 function scoreDocument(document, queryTokens) {
@@ -57,7 +88,7 @@ function buildRelevantKnowledgeContext(
   const fullContext = normalized.map((doc) => doc.text).join("\n\n");
   if (fullContext.length <= maxChars) return fullContext;
 
-  const queryTokens = [...new Set(tokenize(query))];
+  const queryTokens = expandQueryTokens([...new Set(tokenize(query))]);
   if (queryTokens.length === 0) return "";
 
   const ranked = normalized

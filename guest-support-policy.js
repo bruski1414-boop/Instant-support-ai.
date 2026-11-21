@@ -51,14 +51,14 @@ function normalizeGuestSupportAnswer(value) {
 
 function extractNumericClaims(value) {
   return new Set(
-    (String(value || "").match(/\\d+(?:,\\d{3})*(?:\\.\\d+)?/g) || [])
+    (String(value || "").match(/\d+(?:,\d{3})*(?:\\.\d+)?/g) || [])
       .map((claim) => claim.replace(/,/g, "")),
   );
 }
 
 function extractCurrencyClaims(value) {
   return new Set(
-    (String(value || "").match(/[$€£¥₹]|\\b(?:USD|EUR|GBP|THB|AUD|CAD|SGD|JPY|CNY|CHF|HKD|INR|baht|dollars?|euros?|pounds?|yen)\\b/gi) || [])
+    (String(value || "").match(/[$€£¥₹]|\b(?:USD|EUR|GBP|THB|AUD|CAD|SGD|JPY|CNY|CHF|HKD|INR|baht|dollars?|euros?|pounds?|yen)\b/gi) || [])
       .map((claim) => claim.toLowerCase()),
   );
 }
@@ -111,4 +111,5 @@ module.exports = {
   resolveGuestSupportAnswer,
   buildGuestSupportSystemPrompt,
   normalizeGuestSupportAnswer,
+  hasUnsupportedNumericClaims,
 };

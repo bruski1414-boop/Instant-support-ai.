@@ -10,6 +10,7 @@ async function generateGuestSupportAnswer({
   model,
   hotelName,
   approvedKnowledge,
+  numericEvidence = approvedKnowledge,
   history = [],
   message,
 }) {

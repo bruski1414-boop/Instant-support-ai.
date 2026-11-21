@@ -1,6 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const { hasRelevantKnowledgeMatch } = require("../knowledge-retrieval");
+const { evaluateHotelAnswerCases } = require("../hotel-answer-evaluation");
 
 const syntheticHotelKnowledge = [
   { title: "Breakfast service", category: "dining", content: "Breakfast buffet is served daily from 7:00 to 10:00." },
@@ -68,4 +69,81 @@ test("synthetic hotel evaluation dataset stays fictional and contains no guest r
     typeof item.content === "string" &&
     !/email|phone number|passport|booking id/i.test(item.content)
   ));
+});
+
+
+test("end-to-end synthetic evaluator measures supported answers and safe handoffs", async () => {
+  const supportedReplies = [
+    "Breakfast buffet is served daily from 7:00 to 10:00.",
+    "The outdoor swimming pool is open from 8:00 to 20:00.",
+    "Wireless internet is available throughout the hotel.",
+    "Departure and checkout time is 11:00.",
+    "The gym and fitness centre are open from 6:00 to 22:00.",
+    "The restaurant serves dinner from 18:00 to 22:00.",
+    "Massage and spa treatments are available by appointment.",
+    "Airport transfers can be arranged through reception.",
+    "Laundry collection and return service is available daily.",
+    "The children's club welcomes children aged 4 to 12 from 9:00 to 17:00.",
+  ];
+  const unsupportedReplies = [
+    "Breakfast costs 500 THB per person.",
+    "Reception can book a helicopter transfer for 2,500 THB.",
+    "The restaurant phone number is 0123456789.",
+    "Yes, dogs can use the pool.",
+    "A spa treatment costs 3,000 THB.",
+    "Late checkout is guaranteed until 15:00.",
+    "Yes, the hotel has a private beach.",
+    "We can arrange a medical appointment.",
+    "Yes, you can reserve a yacht.",
+    "Airport transfers are included for free.",
+  ];
+  const cases = [
+    ...supportedQuestions.map((question, index) => ({
+      id: `S${String(index + 1).padStart(2, "0")}`,
+      question,
+      expectedOutcome: "answer",
+      mockReply: supportedReplies[index],
+    })),
+    ...unsupportedQuestions.map((question, index) => ({
+      id: `H${String(index + 1).padStart(2, "0")}`,
+      question,
+      expectedOutcome: "handoff",
+      mockReply: unsupportedReplies[index],
+    })),
+    {
+      id: "H11",
+      question: "When is breakfast?",
+      expectedOutcome: "handoff",
+      mockReply: "Breakfast is served from 6:00 to 11:00.",
+    },
+  ];
+
+  const report = await evaluateHotelAnswerCases({
+    hotelName: "Synthetic Test Hotel",
+    documents: syntheticHotelKnowledge,
+    cases,
+  });
+
+  assert.equal(report.total, 21);
+  assert.equal(report.passed, 21);
+  assert.equal(report.failed, 0);
+  assert.equal(report.accuracy, 1);
+  assert.equal(report.answerCases, 10);
+  assert.equal(report.handoffCases, 11);
+  assert.equal(report.falseAccepts, 0);
+  assert.equal(report.falseHandoffs, 0);
+  assert.equal(report.results.find((item) => item.id === "H11").evidenceMatched, true);
+});
+
+test("end-to-end evaluator validates input and handles an empty suite", async () => {
+  await assert.rejects(
+    () => evaluateHotelAnswerCases({
+      documents: syntheticHotelKnowledge,
+      cases: [{ id: "bad", question: "Hello", expectedOutcome: "unknown", mockReply: "Hi" }],
+    }),
+    /Each evaluation case needs an id/,
+  );
+  const empty = await evaluateHotelAnswerCases({ documents: syntheticHotelKnowledge, cases: [] });
+  assert.equal(empty.total, 0);
+  assert.equal(empty.accuracy, 0);
 });

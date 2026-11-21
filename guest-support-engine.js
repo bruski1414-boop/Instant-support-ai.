@@ -10,7 +10,7 @@ const GENERIC_REPLY_WORDS = new Set([
   "your", "you", "our", "their", "there", "are", "was", "were", "has", "have",
   "had", "can", "could", "would", "should", "will", "may", "might", "not", "but",
   "please", "thank", "thanks", "yes", "no", "hotel", "guest", "guests", "here",
-  "there", "available", "throughout", "welcomes", "welcome", "kindly", "also",
+  "there", "throughout", "welcomes", "welcome", "kindly", "also",
   "just", "only", "more", "most", "some", "any", "all", "each", "every",
   "runs", "run", "costs", "cost", "served",
 ]);

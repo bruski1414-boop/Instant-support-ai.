@@ -6,7 +6,7 @@ const QUESTION_FILLER_WORDS = new Set([
   "closes", "closing", "start", "starts", "started", "available", "availability",
   "use", "using", "area", "book", "booking", "tell", "let", "know", "do",
   "does", "did", "is", "are", "was", "were", "be", "been", "being", "please",
-  "kindly", "need", "want", "like", "get", "getting", "have", "has", "had",
+  "kindly", "need", "want", "like", "get", "getting", "have", "has", "had",\n  "arrange", "arranged", "request", "requests", "work", "works", "exact", "tell",
 ]);
 const STOP_WORDS = new Set([
   "about", "after", "again", "also", "and", "are", "can", "could", "does",
@@ -25,7 +25,7 @@ const SYNONYMS = {
   "evening meal": ["dinner"],
   evening: ["dinner"],
   pool: ["swimming", "swimming pool"],
-  swimming: ["pool"],
+  swimming: ["pool"],\n  swim: ["pool", "swimming"],
   wifi: ["wireless", "internet"],
   wireless: ["wifi", "internet"],
   internet: ["wifi", "wireless"],
@@ -36,7 +36,7 @@ const SYNONYMS = {
   "check-in": ["checkin", "arrival"],
   arrival: ["checkin", "check-in"],
   taxi: ["car", "transport"],
-  transfer: ["airport", "transport"],
+  transfer: ["airport", "transport"],\n  pickup: ["airport", "transfer"],
   gym: ["fitness", "workout"],
   fitness: ["gym", "workout"],
   workout: ["gym", "fitness"],

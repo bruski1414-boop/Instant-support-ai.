@@ -351,7 +351,7 @@ for (const scenario of [
     reply: "Pool access is available except during scheduled maintenance.",
   },
 ]) {
-  test(\`content grounding checks restrictive qualifications: \${scenario.name}\`, async () => {
+  test(`content grounding checks restrictive qualifications: ${scenario.name}`, async () => {
     const result = await generateGuestSupportAnswer({
       ai: fakeAi(JSON.stringify({
         reply: scenario.reply,

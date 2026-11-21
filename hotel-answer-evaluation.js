@@ -57,6 +57,7 @@ async function evaluateHotelAnswerCases({
           model: "synthetic-evaluation-model",
           hotelName,
           approvedKnowledge: context,
+          numericEvidence: buildEvidenceKnowledgeContext(documents, item.question),
           message: item.question,
         })
       : createNoKnowledgeAnswer(item.question);

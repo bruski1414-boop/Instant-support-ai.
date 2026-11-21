@@ -8,6 +8,9 @@ const QUESTION_FILLER_WORDS = new Set([
   "does", "did", "is", "are", "was", "were", "be", "been", "being", "please",
   "kindly", "need", "want", "like", "get", "getting", "have", "has", "had",
   "arrange", "arranged", "request", "requests", "work", "works", "exact", "tell", "group", "groups",
+  "hotel", "hotels", "property", "properties", "offer", "offers", "offered",
+  "provide", "provides", "provided", "hours", "hour", "begin", "begins",
+  "end", "ends", "much", "many", "any", "some", "anywhere", "around",
 ]);
 const STOP_WORDS = new Set([
   "about", "after", "again", "also", "and", "are", "can", "could", "does",

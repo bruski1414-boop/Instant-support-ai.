@@ -22,17 +22,18 @@ function createValidMewsAccountingFixture(overrides = {}) {
     verifiedOrderItemWrites: [{
       organizationId: "hotel-demo-tenant-a",
       enterpriseId: "enterprise-demo-a",
-      serviceOrderId: "order-42",
+      mewsOrderId: "mews-order-7",
+      serviceOrderId: "service-order-44",
       reservationId: "reservation-22",
       externalIdentifier: "veyra-addon:upgrade-101",
-      source: "mews.orders.add.LinkedReservationId+Items.ExternalIdentifier"
+      source: "mews.orders.add+orderItems.getAll+productServiceOrders.getAll"
     }],
     orderItems: [
       {
         Id: "item-101",
         EnterpriseId: "enterprise-demo-a",
         ServiceId: "service-spa",
-        ServiceOrderId: "order-42",
+        ServiceOrderId: "service-order-44",
         BillId: "bill-9",
         ExternalIdentifier: "veyra-addon:upgrade-101",
         AccountingState: "Closed",

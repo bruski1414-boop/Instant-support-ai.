@@ -15,11 +15,19 @@ const GENERIC_REPLY_WORDS = new Set([
   "runs", "run", "costs", "cost", "served",
 ]);
 
-function getDescriptiveTerms(value) {
-  return (String(value || "").toLowerCase().replace(/\bwi[\s-]?fi\b/g, "wifi").match(/[a-z]{3,}/g) || [])
-    .filter((term) => !GENERIC_REPLY_WORDS.has(term));
-}
+const APPROVED_TERM_ALIASES = new Map([
+  ["complimentary", "free"],
+  ["wireless", "wifi"],
+  ["internet", "wifi"],
+  ["across", "throughout"],
+  ["property", "hotel"],
+]);
 
+function getDescriptiveTerms(value) {
+  return (String(value || "").toLowerCase().replace(/\\bwi[\\s-]?fi\\b/g, "wifi").match(/[a-z]{3,}/g) || [])
+    .map((term) => APPROVED_TERM_ALIASES.get(term) || term)
+    .filter((term) => !GENERIC_REPLY_WORDS.has(term) && term !== "use");
+}
 function splitIntoClaimClauses(value) {
   return String(value || "")
     .split(/(?:[.!?;]+|\n+|\s+\b(?:and|but|while|whereas)\b\s+)/i)

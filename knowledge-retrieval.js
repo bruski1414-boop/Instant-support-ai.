@@ -214,5 +214,6 @@ module.exports = {
   scoreDocument,
   normalizeGuestQuery,
   hasRelevantKnowledgeMatch,
+  buildEvidenceKnowledgeContext,
   buildRelevantKnowledgeContext,
 };

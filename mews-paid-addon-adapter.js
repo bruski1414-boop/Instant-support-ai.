@@ -10,6 +10,7 @@ const { reconcilePaidAddons } = require("./paid-addon-reconciliation");
 const VEYRA_EXTERNAL_ID = /^veyra-addon:[A-Za-z0-9._:-]{1,120}$/;
 const SAFE_ID = /^[A-Za-z0-9._:-]{1,200}$/;
 const ADJUSTMENT_KINDS = new Set(["Refund", "Chargeback", "ChargebackReversal"]);
+const WRITE_READBACK_SOURCE = "mews.orders.add+orderItems.getAll+productServiceOrders.getAll";
 
 function requiredId(value, field) {
   if (typeof value !== "string" || !SAFE_ID.test(value.trim())) {
@@ -177,9 +178,10 @@ function mapMewsPaidAddonEvidence(input = {}) {
   for (const link of input.verifiedOrderItemWrites) {
     if (!link || typeof link !== "object" || Array.isArray(link) ||
         link.organizationId !== organizationId || link.enterpriseId !== expectedEnterpriseId ||
-        link.source !== "mews.orders.add.LinkedReservationId+Items.ExternalIdentifier") {
+        link.source !== WRITE_READBACK_SOURCE) {
       throw new Error("Order-item write records must be server-owned, tenant-scoped Mews evidence.");
     }
+    const mewsOrderId = requiredId(link.mewsOrderId, "verified write mewsOrderId");
     const serviceOrderId = requiredId(link.serviceOrderId, "verified write serviceOrderId");
     const reservationId = requiredId(link.reservationId, "verified write reservationId");
     const externalIdentifier = typeof link.externalIdentifier === "string" ? link.externalIdentifier.trim() : "";
@@ -194,7 +196,7 @@ function mapMewsPaidAddonEvidence(input = {}) {
       throw new Error("A Mews service order cannot have conflicting reservation links.");
     }
     reservationByServiceOrder.set(serviceOrderId, reservationId);
-    verifiedOrderItemWrites.set(externalIdentifier, { serviceOrderId, reservationId });
+    verifiedOrderItemWrites.set(externalIdentifier, { mewsOrderId, serviceOrderId, reservationId });
   }
 
   const billById = new Map(bills.map(bill => [bill.Id, bill]));

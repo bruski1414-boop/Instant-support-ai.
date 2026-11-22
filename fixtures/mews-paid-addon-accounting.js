@@ -26,6 +26,10 @@ function createValidMewsAccountingFixture(overrides = {}) {
       serviceOrderId: "service-order-44",
       reservationId: "reservation-22",
       externalIdentifier: "veyra-addon:upgrade-101",
+      serviceOrderState: "Confirmed",
+      serviceOrderUpdatedAt: "2026-11-20T08:59:00.000Z",
+      serviceOrderCancelledAt: null,
+      verifiedAt: "2026-11-20T09:00:00.000Z",
       source: "mews.orders.add+orderItems.getAll+productServiceOrders.getAll"
     }],
     orderItems: [

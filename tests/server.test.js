@@ -429,6 +429,7 @@ test("login attempts have a dedicated rate limit without throttling authenticate
   }
   assert.deepEqual(responses.slice(0, 5).map(response => response.status), [503, 503, 503, 503, 503]);
   assert.equal(responses[5].status, 429);
+  assert.ok(responses[5].headers.has("ratelimit"), "429 response should include standard rate-limit metadata");
   const sessionRead = await fetch(`${baseUrl}/api/auth/me`);
   assert.equal(sessionRead.status, 503);
 });

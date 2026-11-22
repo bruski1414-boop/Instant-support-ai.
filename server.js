@@ -15,6 +15,7 @@ const {selectRelevantOffers,buildOfferContext}=require("./hotel-offers");
 const {buildPilotReadiness}=require("./pilot-readiness");
 const {PmsIntegrationError,createPmsRegistry,createSandboxAdapter}=require("./pms-integration");
 const {createPmsCredentialVault}=require("./pms-credential-vault");
+const {createPostgresPaidAddonLedgerStore}=require("./paid-addon-ledger-store");
 const {deliverStaffEscalation}=require("./staff-notifications");
 const {encryptWebhookConfig,decryptWebhookConfig,resolvePublicWebhook,postSignedWebhook}=require("./staff-webhook-security");
 const app=express();
@@ -25,6 +26,7 @@ const ai=process.env.OPENAI_API_KEY?new OpenAI({apiKey:process.env.OPENAI_API_KE
 const db=process.env.DATABASE_URL?new Pool({connectionString:process.env.DATABASE_URL,ssl:process.env.DATABASE_SSL==="false"?false:{rejectUnauthorized:false},max:5,connectionTimeoutMillis:5000}):null;
 const pmsRegistry=createPmsRegistry([createSandboxAdapter()]);
 const pmsCredentialVault=createPmsCredentialVault();
+const paidAddonLedgerStore=db?createPostgresPaidAddonLedgerStore({db}):null;
 const scrypt=promisify(crypto.scrypt);
 const prod=process.env.NODE_ENV==="production";
 const cookie=prod?"__Host-veyra_session":"veyra_session";
@@ -447,5 +449,5 @@ app.get("/setup.html",publicFile("setup.html","html"));
 app.get("/invite.html",publicFile("invite.html","html"));
 app.get("/widget.js",publicFile("widget.js","javascript"));
 app.use((e,_q,r,_n)=>{console.error("Veyra API error:",e?.message||"unknown");if(!r.headersSent)r.status(500).json({error:"Something went wrong. Please try again."});});
-async function start(){if(db){await db.query(schema);await db.query("DELETE FROM sessions WHERE expires_at<now()");await db.query("DELETE FROM storage_oauth_states WHERE expires_at<now()");}app.listen(PORT,"0.0.0.0",()=>console.log("Veyra listening on "+PORT+(db?" with PostgreSQL":" in demo mode")));}
+async function start(){if(db){await db.query(schema);await paidAddonLedgerStore.ensureSchema();await db.query("DELETE FROM sessions WHERE expires_at<now()");await db.query("DELETE FROM storage_oauth_states WHERE expires_at<now()");}app.listen(PORT,"0.0.0.0",()=>console.log("Veyra listening on "+PORT+(db?" with PostgreSQL":" in demo mode")));}
 start().catch(e=>{console.error("Startup failed:",e.message);process.exit(1);});

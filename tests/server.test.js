@@ -416,4 +416,9 @@ test("authentication and admin API responses are explicitly non-cacheable", asyn
     assert.equal(response.headers.get("pragma"), "no-cache");
     assert.equal(response.headers.get("expires"), "0");
   }
+  const missingRoute = await fetch(`${baseUrl}/api/admin/not-a-real-route`);
+  assert.equal(missingRoute.status, 404);
+  assert.equal(missingRoute.headers.get("cache-control"), "private, no-store");
+  assert.equal(missingRoute.headers.get("pragma"), "no-cache");
+  assert.equal(missingRoute.headers.get("expires"), "0");
 });

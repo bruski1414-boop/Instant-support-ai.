@@ -316,7 +316,10 @@ try {
     mockAiServer.listen(0, "127.0.0.1", resolve);
   });
   const mockAiPort = mockAiServer.address().port;
-  const concurrencyPort = 31000 + Math.floor(Math.random() * 20000);
+  let concurrencyPort;
+  do {
+    concurrencyPort = 31000 + Math.floor(Math.random() * 20000);
+  } while (concurrencyPort === port || concurrencyPort === mockAiPort);
   const concurrencyBaseUrl = "http://127.0.0.1:" + concurrencyPort;
   let concurrencyOutput = "";
   concurrencyChild = spawn(process.execPath, ["server.js"], {

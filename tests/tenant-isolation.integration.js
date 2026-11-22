@@ -368,7 +368,7 @@ try {
   assert.ok(initialTurn.conversationId && initialTurn.conversationToken, "the server must issue a conversation reference and guest token");
 
   const firstConcurrentMessage = "What are the breakfast hours?";
-  const secondConcurrentMessage = "What are the breakfast hours? Please confirm the 7:00 AM to 10:00 AM times.";
+  const secondConcurrentMessage = "What are the breakfast hours?";
   const firstConcurrentTurn = fetch(guestChatUrl, {
     method: "POST",
     headers: { "content-type": "application/json" },

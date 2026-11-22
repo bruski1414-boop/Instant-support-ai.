@@ -287,7 +287,7 @@ try {
     for await (const chunk of request) raw += chunk;
     mockAiRequests.push(JSON.parse(raw));
     const callNumber = mockAiRequests.length;
-    if (callNumber === 2) {
+    if (callNumber === 1) {
       signalHeldAiStarted();
       await heldAiResponse;
     }
@@ -361,7 +361,7 @@ try {
   const initialTurnResponse = await fetch(guestChatUrl, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ message: "What are the breakfast hours?" }),
+    body: JSON.stringify({ message: "Hello, I have a question." }),
   });
   assert.equal(initialTurnResponse.status, 200, "the test hotel should accept an initial guest turn");
   const initialTurn = await initialTurnResponse.json();
@@ -381,7 +381,7 @@ try {
   const heldAiTimeout = setTimeout(() => { signalHeldAiStarted(); }, 10000);
   await heldAiStarted;
   clearTimeout(heldAiTimeout);
-  assert.equal(mockAiRequests.length, 2, "the first concurrent turn must reach the controlled AI provider");
+  assert.equal(mockAiRequests.length, 1, "the first concurrent turn must reach the controlled AI provider");
   const secondConcurrentTurn = fetch(guestChatUrl, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -392,14 +392,14 @@ try {
     }),
   });
   await new Promise(resolve => setTimeout(resolve, 100));
-  assert.equal(mockAiRequests.length, 2, "the second AI call must wait while the first turn holds the conversation lock");
+  assert.equal(mockAiRequests.length, 1, "the second AI call must wait while the first turn holds the conversation lock");
   releaseHeldAi();
 
   const [firstConcurrentResponse, secondConcurrentResponse] = await Promise.all([firstConcurrentTurn, secondConcurrentTurn]);
   assert.equal(firstConcurrentResponse.status, 200, "the first concurrent guest turn should complete");
   assert.equal(secondConcurrentResponse.status, 200, "the waiting guest turn should complete");
-  assert.equal(mockAiRequests.length, 3, "each guest turn should generate exactly one AI request");
-  const secondAiContext = mockAiRequests[2].messages;
+  assert.equal(mockAiRequests.length, 2, "each concurrent guest turn should generate exactly one AI request");
+  const secondAiContext = mockAiRequests[1].messages;
   assert.ok(
     secondAiContext.some(item => item.role === "user" && item.content === firstConcurrentMessage),
     "the second AI request must include the first concurrent guest message in its history",

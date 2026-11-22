@@ -159,6 +159,17 @@ test("two hotel workspaces remain isolated across live API resources", { skip: !
     "INSERT INTO messages(conversation_id,role,content) VALUES($1,'guest','Private Alpha guest message'),($2,'guest','Private Beta guest message')",
     [alphaConversation.rows[0].id, betaConversation.rows[0].id]
   );
+  const orderedMessages = await pool.query(
+    "SELECT conversation_id,content,sequence_no FROM messages WHERE conversation_id=ANY($1::uuid[]) ORDER BY sequence_no",
+    [[alphaConversation.rows[0].id, betaConversation.rows[0].id]]
+  );
+  assert.equal(orderedMessages.rowCount, 2, "each seeded conversation should retain its own message");
+  assert.notEqual(orderedMessages.rows[0].sequence_no, orderedMessages.rows[1].sequence_no, "message insertion order should be globally unique");
+  assert.deepEqual(
+    new Set(orderedMessages.rows.map((row) => row.conversation_id)),
+    new Set([alphaConversation.rows[0].id, betaConversation.rows[0].id]),
+    "sequence ordering must not mix conversation ownership"
+  );
   const alphaEscalation = await pool.query(
     "INSERT INTO escalations(organization_id,conversation_id,reason) VALUES($1,$2,'Alpha private escalation') RETURNING id",
     [alphaId, alphaConversation.rows[0].id]

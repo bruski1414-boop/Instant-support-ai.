@@ -12,6 +12,18 @@ This branch adds a pure, read-only mapping layer from synthetic Mews Connector A
 
 The output is labelled `hotel_reported_unlinked`. It is provider evidence for later review, not proof of incremental revenue or a €2,000/month return.
 
+## Transactional ledger persistence foundation
+
+`paid-addon-ledger-store.js` adds a tenant-scoped PostgreSQL persistence boundary for the canonical mapper output.
+
+- Each event is keyed by the hotel organization, Mews provider and Mews order-item ID, with a second tenant-scoped uniqueness constraint on the Veyra external identifier.
+- An identical replay is counted as a duplicate. Reusing either identifier with different evidence causes the whole batch transaction to roll back.
+- Event and audit rows are immutable. The event and its `paid_addon_ingested` audit row are committed together.
+- Only allowlisted opaque provider IDs, integer minor-unit money, currency, payment evidence IDs and timestamps are persisted. Guest names, account details, notes, card data and conversation IDs are not copied.
+- V1 accepts only fully paid, unadjusted add-ons and preserves `hotel_reported_unlinked`. Refunds and chargebacks remain withheld until an original-payment-to-item allocation is proven.
+
+The store schema is initialized with the application database schema, but there is not yet an authenticated route or provider transport that invokes ingestion. The PostgreSQL integration test exercises two independent tenants, exact replay, conflicting-evidence rollback, privacy minimization and immutable audit/event rows. This is a persistence foundation, not a live Mews integration.
+
 ## Required inputs from a trusted server-side Mews adapter
 
 The mapper requires all of the following:

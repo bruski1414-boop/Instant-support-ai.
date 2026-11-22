@@ -122,7 +122,7 @@ test("guest widget reuses its server-issued conversation id", () => {
   assert.match(widget, /conversationId:conversationId/);
   assert.match(widget, /conversationToken:conversationToken/);
   assert.match(server, /guest_token_hash=\$3/);
-  assert.match(server, /hash\(requestedToken\)/);
+  assert.match(server, /hash\(guestToken\)/);
   assert.match(widget, /conversationId=data\.conversationId\|\|conversationId/);
   assert.match(server, /WHERE id=\$1 AND organization_id=\$2/);
   assert.match(server, /LIMIT 8/);

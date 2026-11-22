@@ -449,3 +449,39 @@ for (const scenario of [
     }
   });
 }
+
+
+for (const claim of [
+  "I've booked your airport transfer.",
+  "Your reservation is confirmed.",
+  "The refund has been processed.",
+  "The hotel team has been notified.",
+]) {
+  test(\`guest-support engine rejects unverified completed-action claim: \${claim}\`, async () => {
+    const result = await generateGuestSupportAnswer({
+      ai: fakeAi(JSON.stringify({ reply: claim, needsHuman: false, handoffReason: "" })),
+      model: "test-model",
+      hotelName: "Aster House",
+      approvedKnowledge: "Airport transfers can be arranged through reception. Reservations are handled by staff. Refund requests require staff review.",
+      message: "Can you arrange this for me?",
+    });
+    assert.equal(result.needsHuman, true);
+    assert.match(result.reply, /cannot confirm that this action has been completed/i);
+    assert.match(result.handoffReason, /without a confirmed action result/i);
+  });
+}
+
+test("guest-support engine does not flag an uncompleted-action explanation as a completed action", async () => {
+  const result = await generateGuestSupportAnswer({
+    ai: fakeAi(JSON.stringify({
+      reply: "I cannot confirm that your reservation has been booked. Please contact the front desk.",
+      needsHuman: false,
+      handoffReason: "",
+    })),
+    model: "test-model",
+    hotelName: "Aster House",
+    approvedKnowledge: "Reservations are handled by front desk staff.",
+    message: "Is my reservation booked?",
+  });
+  assert.equal(result.needsHuman, false);
+});

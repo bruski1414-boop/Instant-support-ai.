@@ -368,7 +368,7 @@ test("guest chat requires question evidence in approved knowledge even when the 
   const server = fs.readFileSync("server.js", "utf8");
   const retrieval = fs.readFileSync("knowledge-retrieval.js", "utf8");
   assert.match(server, /hasRelevantKnowledgeMatch\(docs\.rows,msg\)/);
-  assert.match(server, /const noRelevantKnowledge=!hasRelevantKnowledgeMatch\(docs\.rows,msg\)&&!matchedOffers\.length/);
+  assert.match(server, /noRelevantKnowledge=!hasRelevantKnowledgeMatch\(docs\.rows,msg\)&&!matchedOffers\.length/);
   assert.match(retrieval, /function hasRelevantKnowledgeMatch\(documents, query\)/);
 });
 

@@ -457,7 +457,7 @@ for (const claim of [
   "The refund has been processed.",
   "The hotel team has been notified.",
 ]) {
-  test(\`guest-support engine rejects unverified completed-action claim: \${claim}\`, async () => {
+  test("guest-support engine rejects unverified completed-action claim: " + claim, async () => {
     const result = await generateGuestSupportAnswer({
       ai: fakeAi(JSON.stringify({ reply: claim, needsHuman: false, handoffReason: "" })),
       model: "test-model",

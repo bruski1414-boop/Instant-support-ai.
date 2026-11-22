@@ -407,3 +407,13 @@ test("guest turns lock a conversation before reading history or generating the n
   assert.ok(persist > generation, "the turn must be persisted before the lock is released");
   assert.match(route, /await c\.query\("COMMIT"\)/);
 });
+
+test("authentication and admin API responses are explicitly non-cacheable", async () => {
+  for (const route of ["/api/auth/me", "/api/admin/settings"]) {
+    const response = await fetch(`${baseUrl}${route}`);
+    assert.equal(response.status, 503);
+    assert.equal(response.headers.get("cache-control"), "private, no-store");
+    assert.equal(response.headers.get("pragma"), "no-cache");
+    assert.equal(response.headers.get("expires"), "0");
+  }
+});

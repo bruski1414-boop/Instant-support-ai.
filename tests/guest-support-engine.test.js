@@ -1,6 +1,6 @@
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
-const { generateGuestSupportAnswer, createNoKnowledgeAnswer } = require("../guest-support-engine");
+const { generateGuestSupportAnswer, createNoKnowledgeAnswer, hasUnverifiedCompletionClaims } = require("../guest-support-engine");
 
 function fakeAi(content, inspect) {
   return {
@@ -471,17 +471,13 @@ for (const claim of [
   });
 }
 
-test("guest-support engine does not flag an uncompleted-action explanation as a completed action", async () => {
-  const result = await generateGuestSupportAnswer({
-    ai: fakeAi(JSON.stringify({
-      reply: "I cannot confirm that your reservation has been booked. Please contact the front desk.",
-      needsHuman: false,
-      handoffReason: "",
-    })),
-    model: "test-model",
-    hotelName: "Aster House",
-    approvedKnowledge: "Reservations are handled by front desk staff.",
-    message: "Is my reservation booked?",
-  });
-  assert.equal(result.needsHuman, false);
+test("completion-claim detector distinguishes uncertainty from a confirmed action", () => {
+  assert.equal(
+    hasUnverifiedCompletionClaims("I cannot confirm that your reservation has been booked."),
+    false,
+  );
+  assert.equal(
+    hasUnverifiedCompletionClaims("Your reservation has been booked."),
+    true,
+  );
 });

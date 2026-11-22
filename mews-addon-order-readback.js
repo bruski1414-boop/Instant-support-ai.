@@ -9,6 +9,17 @@ function required(value, field) {
   return value.trim();
 }
 
+function canonicalUtc(value, field) {
+  if (typeof value !== "string" || !/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$/.test(value)) {
+    throw new Error(field + " must be a canonical UTC timestamp.");
+  }
+  const parsed = Date.parse(value);
+  if (!Number.isFinite(parsed) || new Date(parsed).toISOString() !== value) {
+    throw new Error(field + " must be a canonical UTC timestamp.");
+  }
+  return value;
+}
+
 function uniqueRows(rows, field, expectedEnterpriseId, enterpriseOptional = false) {
   if (!Array.isArray(rows)) throw new Error(field + " must be a complete array.");
   const seen = new Set();
@@ -33,10 +44,13 @@ function resolveMewsAddonOrderReadback({
   writeRecord,
   orderItems,
   productServiceOrders,
-  paginationComplete
+  paginationComplete,
+  verifiedAt
 } = {}) {
   const organization = required(organizationId, "organizationId");
   const enterprise = required(expectedEnterpriseId, "expectedEnterpriseId");
+  const readbackVerifiedAt = canonicalUtc(verifiedAt, "verifiedAt");
+  const readbackVerifiedAtMs = Date.parse(readbackVerifiedAt);
   if (paginationComplete !== true) throw new Error("Complete order-item and product-service-order pagination is required.");
   if (!writeRecord || typeof writeRecord !== "object" || Array.isArray(writeRecord) ||
       writeRecord.organizationId !== organization || writeRecord.enterpriseId !== enterprise ||
@@ -61,11 +75,13 @@ function resolveMewsAddonOrderReadback({
   const linkedOrders = serviceOrders.filter(order => order.Id === serviceOrderId);
   if (linkedOrders.length !== 1) throw new Error("The order item's service order must resolve exactly once.");
   const serviceOrder = linkedOrders[0];
+  const serviceOrderUpdatedAt = canonicalUtc(serviceOrder.UpdatedUtc, "productServiceOrder.UpdatedUtc");
   if (serviceOrder.ServiceId !== serviceId ||
       serviceOrder.LinkedReservationId !== reservationId ||
       !["Confirmed", "Started", "Processed"].includes(serviceOrder.State) ||
-      (serviceOrder.CancelledUtc !== null && serviceOrder.CancelledUtc !== undefined)) {
-    throw new Error("The Mews service order does not verify the submitted reservation link.");
+      (serviceOrder.CancelledUtc !== null && serviceOrder.CancelledUtc !== undefined) ||
+      Date.parse(serviceOrderUpdatedAt) > readbackVerifiedAtMs) {
+    throw new Error("The Mews service order does not verify the submitted reservation link and current state.");
   }
 
   return Object.freeze({
@@ -75,6 +91,10 @@ function resolveMewsAddonOrderReadback({
     serviceOrderId,
     reservationId,
     externalIdentifier,
+    serviceOrderState: serviceOrder.State,
+    serviceOrderUpdatedAt,
+    serviceOrderCancelledAt: null,
+    verifiedAt: readbackVerifiedAt,
     source: SOURCE
   });
 }

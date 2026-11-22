@@ -307,15 +307,37 @@ app.post("/api/public/:slug/chat",async(q,r,n)=>{
  const requestedConversation=q.body?.conversationId,requestedToken=q.body?.conversationToken;
  if(requestedConversation!==undefined&&requestedConversation!==null&&requestedConversation!==""&&(typeof requestedConversation!=="string"||!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(requestedConversation)))return r.status(400).json({error:"Invalid conversation reference."});
  if(requestedConversation&&(typeof requestedToken!=="string"||!/^[A-Za-z0-9_-]{40,64}$/.test(requestedToken)))return r.status(400).json({error:"Conversation access token required."});
- let conversationId=null,history=[];
- if(requestedConversation){const existing=await db.query("SELECT id FROM conversations WHERE id=$1 AND organization_id=$2 AND guest_token_hash=$3",[requestedConversation,org.id,hash(requestedToken)]);if(!existing.rowCount)return r.status(404).json({error:"Conversation not found."});conversationId=existing.rows[0].id;const previous=await db.query("SELECT m.role,m.content FROM messages m JOIN conversations c ON c.id=m.conversation_id WHERE m.conversation_id=$1 AND c.organization_id=$2 AND m.role IN ('guest','assistant') ORDER BY m.sequence_no DESC LIMIT 8",[conversationId,org.id]);history=previous.rows.reverse().map(m=>({role:m.role==="guest"?"user":"assistant",content:String(m.content).slice(0,1500)}));}
  const guestToken=requestedConversation?requestedToken:crypto.randomBytes(32).toString("base64url");
- let resolvedAnswer;if(noRelevantKnowledge){resolvedAnswer=createNoKnowledgeAnswer(msg);}else{try{resolvedAnswer=await generateGuestSupportAnswer({ai,model:MODEL,hotelName:org.name,approvedKnowledge:knowledge,numericEvidence:numericKnowledgeContext,history,message:msg.trim()});}catch(error){console.error("Guest support AI request failed:",error.message);resolvedAnswer=createAiUnavailableAnswer();}}
- const reply=resolvedAnswer.reply;const flagHuman=resolvedAnswer.needsHuman;
- const c=await db.connect();let cid=conversationId,eid,createdEscalation=false,existingNotificationStatus="not_configured";try{await c.query("BEGIN");if(!cid){const x=await c.query("INSERT INTO conversations(organization_id,channel,status,guest_token_hash) VALUES($1,'website',$2,$3) RETURNING id",[org.id,flagHuman?"escalated":"open",hash(guestToken)]);cid=x.rows[0].id;}else{const locked=await c.query("SELECT id FROM conversations WHERE id=$1 AND organization_id=$2 AND guest_token_hash=$3 FOR UPDATE",[cid,org.id,hash(guestToken)]);if(!locked.rowCount){await c.query("ROLLBACK");return r.status(404).json({error:"Conversation not found."});}}
- await c.query("INSERT INTO messages(conversation_id,role,content) VALUES($1,'guest',$2),($1,'assistant',$3)",[cid,msg.trim(),reply]);for(const offer of matchedOffers){await c.query("INSERT INTO hotel_offer_attributions(organization_id,offer_id,conversation_id,status) VALUES($1,$2,$3,'enquiry') ON CONFLICT(organization_id,offer_id,conversation_id) DO NOTHING",[org.id,offer.id,cid]);}await c.query("UPDATE conversations SET last_message_at=now(),status=CASE WHEN $2 THEN 'escalated' WHEN status='resolved' THEN 'open' ELSE status END WHERE id=$1 AND organization_id=$3",[cid,flagHuman,org.id]);
- if(flagHuman){const prior=await c.query("SELECT id,notification_status FROM escalations WHERE conversation_id=$1 AND organization_id=$2 AND status<>'resolved' ORDER BY created_at DESC LIMIT 1",[cid,org.id]);if(prior.rowCount){eid=prior.rows[0].id;existingNotificationStatus=prior.rows[0].notification_status;}else{const e=await c.query("INSERT INTO escalations(organization_id,conversation_id,reason) VALUES($1,$2,$3) RETURNING id",[org.id,cid,String(resolvedAnswer.handoffReason||"Staff review required").slice(0,300)]);eid=e.rows[0].id;createdEscalation=true;}}
- await c.query("COMMIT");}catch(e){await c.query("ROLLBACK");throw e;}finally{c.release();}
+ let cid=conversationId,eid,createdEscalation=false,existingNotificationStatus="not_configured",resolvedAnswer,reply,flagHuman;
+ const c=await db.connect();
+ try{
+  await c.query("BEGIN");
+  if(!cid){
+   const created=await c.query("INSERT INTO conversations(organization_id,channel,status,guest_token_hash) VALUES($1,'website','open',$2) RETURNING id",[org.id,hash(guestToken)]);
+   cid=created.rows[0].id;
+  }else{
+   const locked=await c.query("SELECT id FROM conversations WHERE id=$1 AND organization_id=$2 AND guest_token_hash=$3 FOR UPDATE",[cid,org.id,hash(guestToken)]);
+   if(!locked.rowCount){await c.query("ROLLBACK");return r.status(404).json({error:"Conversation not found."});}
+  }
+  // Read history only after acquiring the conversation row lock. Concurrent turns
+  // now wait for the previous turn to commit before building their model context.
+  const previous=await c.query("SELECT m.role,m.content FROM messages m JOIN conversations c ON c.id=m.conversation_id WHERE m.conversation_id=$1 AND c.organization_id=$2 AND m.role IN ('guest','assistant') ORDER BY m.sequence_no DESC LIMIT 8",[cid,org.id]);
+  const history=previous.rows.reverse().map(m=>({role:m.role==="guest"?"user":"assistant",content:String(m.content).slice(0,1500)}));
+  if(noRelevantKnowledge){resolvedAnswer=createNoKnowledgeAnswer(msg);}else{
+   try{resolvedAnswer=await generateGuestSupportAnswer({ai,model:MODEL,hotelName:org.name,approvedKnowledge:knowledge,numericEvidence:numericKnowledgeContext,history,message:msg.trim()});}
+   catch(error){console.error("Guest support AI request failed:",error.message);resolvedAnswer=createAiUnavailableAnswer();}
+  }
+  reply=resolvedAnswer.reply;flagHuman=resolvedAnswer.needsHuman;
+  await c.query("INSERT INTO messages(conversation_id,role,content) VALUES($1,'guest',$2),($1,'assistant',$3)",[cid,msg.trim(),reply]);
+  for(const offer of matchedOffers){await c.query("INSERT INTO hotel_offer_attributions(organization_id,offer_id,conversation_id,status) VALUES($1,$2,$3,'enquiry') ON CONFLICT(organization_id,offer_id,conversation_id) DO NOTHING",[org.id,offer.id,cid]);}
+  await c.query("UPDATE conversations SET last_message_at=now(),status=CASE WHEN $2 THEN 'escalated' WHEN status='resolved' THEN 'open' ELSE status END WHERE id=$1 AND organization_id=$3",[cid,flagHuman,org.id]);
+  if(flagHuman){
+   const prior=await c.query("SELECT id,notification_status FROM escalations WHERE conversation_id=$1 AND organization_id=$2 AND status<>'resolved' ORDER BY created_at DESC LIMIT 1",[cid,org.id]);
+   if(prior.rowCount){eid=prior.rows[0].id;existingNotificationStatus=prior.rows[0].notification_status;}
+   else{const e=await c.query("INSERT INTO escalations(organization_id,conversation_id,reason) VALUES($1,$2,$3) RETURNING id",[org.id,cid,String(resolvedAnswer.handoffReason||"Staff review required").slice(0,300)]);eid=e.rows[0].id;createdEscalation=true;}
+  }
+  await c.query("COMMIT");
+ }catch(e){await c.query("ROLLBACK");throw e;}finally{c.release();}
  const notice=createdEscalation?await notify(org,cid,String(resolvedAnswer.handoffReason||"Staff review required").slice(0,300)):{configured:existingNotificationStatus!=="not_configured",delivered:existingNotificationStatus==="delivered",status:flagHuman?existingNotificationStatus:"not_configured"};
  if(createdEscalation)await db.query("UPDATE escalations SET notification_status=$1,notification_attempts=notification_attempts+CASE WHEN $2 THEN 1 ELSE 0 END,notification_last_attempt_at=CASE WHEN $2 THEN now() ELSE notification_last_attempt_at END WHERE id=$3 AND organization_id=$4",[notice.status,notice.configured,eid,org.id]);
  r.json({reply,needsHuman:flagHuman,handoffConfigured:notice.configured,notificationDelivered:notice.delivered,notificationStatus:notice.status,conversationId:cid,conversationToken:guestToken,escalationId:eid||null});

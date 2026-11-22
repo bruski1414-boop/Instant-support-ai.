@@ -8,6 +8,8 @@ import pmsIntegration from "../pms-integration.js";
 const { recordWebhookEvent } = pmsIntegration;
 import addonWriteStoreModule from "../mews-addon-write-store.js";
 const { createPostgresMewsAddonWriteStore } = addonWriteStoreModule;
+import paidAddonLedgerStoreModule from "../paid-addon-ledger-store.js";
+const { createPostgresPaidAddonLedgerStore } = paidAddonLedgerStoreModule;
 const { Pool } = pg;
 
 if (process.env.CI !== "true" || process.env.VEYRA_TENANT_TEST_DATABASE !== "true") {
@@ -464,6 +466,8 @@ try {
 
   const addonWriteStore = createPostgresMewsAddonWriteStore({ db: pool });
   await addonWriteStore.ensureSchema();
+  const paidAddonLedgerStore = createPostgresPaidAddonLedgerStore({ db: pool });
+  await paidAddonLedgerStore.ensureSchema();
   const addonWriteKey = "mews-addon-write-" + tag;
   const addonHashA = "a".repeat(64);
   const addonHashB = "b".repeat(64);
@@ -584,6 +588,104 @@ try {
       externalIdentifier: addonExternalB
     }),
     /duplicate key value|unique constraint/i
+  );
+
+  const makePaidAddonEvent = ({ organizationId, externalReference, externalIdentifier, billId, reservationId, paymentId, grossAmountMinor }) => ({
+    organizationId,
+    provider: "mews",
+    type: "addon_paid",
+    status: "paid_addon_verified",
+    externalReference,
+    sourceReference: billId,
+    reservationId,
+    externalIdentifier,
+    grossAmountMinor,
+    adjustmentAmountMinor: 0,
+    amountMinor: grossAmountMinor,
+    currency: "EUR",
+    occurredAt: new Date(Date.now() - 60_000).toISOString(),
+    adjustments: [],
+    evidence: {
+      billType: "Receipt",
+      billId,
+      chargedPaymentIds: [paymentId],
+      adjustmentReferences: []
+    },
+    guestName: "Synthetic Guest must not persist",
+    notes: "Synthetic private note must not persist"
+  });
+  const sharedLedgerReference = "mews-item-shared-" + tag;
+  const sharedLedgerExternalId = "veyra-addon:shared-" + tag;
+  const ledgerEventA = makePaidAddonEvent({
+    organizationId: orgA,
+    externalReference: sharedLedgerReference,
+    externalIdentifier: sharedLedgerExternalId,
+    billId: "mews-bill-shared-" + tag,
+    reservationId: "mews-reservation-a-" + tag,
+    paymentId: "mews-payment-a-" + tag,
+    grossAmountMinor: 12500
+  });
+  const ledgerEventB = makePaidAddonEvent({
+    organizationId: orgB,
+    externalReference: sharedLedgerReference,
+    externalIdentifier: sharedLedgerExternalId,
+    billId: "mews-bill-shared-" + tag,
+    reservationId: "mews-reservation-b-" + tag,
+    paymentId: "mews-payment-b-" + tag,
+    grossAmountMinor: 9900
+  });
+  const ledgerFirstA = await paidAddonLedgerStore.ingest({ organizationId: orgA, events: [ledgerEventA] });
+  const ledgerReplayA = await paidAddonLedgerStore.ingest({ organizationId: orgA, events: [ledgerEventA] });
+  const ledgerFirstB = await paidAddonLedgerStore.ingest({ organizationId: orgB, events: [ledgerEventB] });
+  assert.deepEqual(ledgerFirstA, { inserted: 1, duplicates: 0 });
+  assert.deepEqual(ledgerReplayA, { inserted: 0, duplicates: 1 }, "identical evidence must be idempotent within a tenant");
+  assert.deepEqual(ledgerFirstB, { inserted: 1, duplicates: 0 }, "the same provider identifiers are independent across tenants");
+  const ledgerRecordA = await paidAddonLedgerStore.get({ organizationId: orgA, externalReference: sharedLedgerReference });
+  const ledgerRecordB = await paidAddonLedgerStore.get({ organizationId: orgB, externalReference: sharedLedgerReference });
+  assert.equal(ledgerRecordA.grossAmountMinor, 12500);
+  assert.equal(ledgerRecordB.grossAmountMinor, 9900);
+  assert.equal(ledgerRecordA.attributionStatus, "hotel_reported_unlinked");
+  assert.equal(JSON.stringify(ledgerRecordA).includes("Synthetic Guest"), false, "guest names must not enter the paid add-on ledger");
+  assert.equal(JSON.stringify(ledgerRecordA).includes("private note"), false, "provider notes must not enter the paid add-on ledger");
+  const ledgerOnlyB = makePaidAddonEvent({
+    organizationId: orgB,
+    externalReference: "mews-item-only-b-" + tag,
+    externalIdentifier: "veyra-addon:only-b-" + tag,
+    billId: "mews-bill-only-b-" + tag,
+    reservationId: "mews-reservation-only-b-" + tag,
+    paymentId: "mews-payment-only-b-" + tag,
+    grossAmountMinor: 7000
+  });
+  await paidAddonLedgerStore.ingest({ organizationId: orgB, events: [ledgerOnlyB] });
+  assert.equal(await paidAddonLedgerStore.get({ organizationId: orgA, externalReference: ledgerOnlyB.externalReference }), null,
+    "tenant A must not read tenant B's paid add-on event");
+  const ledgerCollision = { ...ledgerEventA, grossAmountMinor: 13000, amountMinor: 13000 };
+  const ledgerAtomicNew = makePaidAddonEvent({
+    organizationId: orgA,
+    externalReference: "mews-item-atomic-" + tag,
+    externalIdentifier: "veyra-addon:atomic-" + tag,
+    billId: "mews-bill-atomic-" + tag,
+    reservationId: "mews-reservation-atomic-" + tag,
+    paymentId: "mews-payment-atomic-" + tag,
+    grossAmountMinor: 5000
+  });
+  await assert.rejects(
+    paidAddonLedgerStore.ingest({ organizationId: orgA, events: [ledgerAtomicNew, ledgerCollision] }),
+    /identifier collision/
+  );
+  assert.equal(await paidAddonLedgerStore.get({ organizationId: orgA, externalReference: ledgerAtomicNew.externalReference }), null,
+    "a collision must roll back every event in the batch");
+  const ledgerAuditA = await paidAddonLedgerStore.listAuditEvents({ organizationId: orgA, externalReference: sharedLedgerReference });
+  const ledgerAuditB = await paidAddonLedgerStore.listAuditEvents({ organizationId: orgB, externalReference: sharedLedgerReference });
+  assert.deepEqual(ledgerAuditA.map(event => event.eventType), ["paid_addon_ingested"]);
+  assert.deepEqual(ledgerAuditB.map(event => event.eventType), ["paid_addon_ingested"]);
+  await assert.rejects(
+    pool.query("UPDATE paid_addon_ledger_events SET amount_minor=0 WHERE organization_id=$1 AND external_reference=$2", [orgA, sharedLedgerReference]),
+    /immutable/
+  );
+  await assert.rejects(
+    pool.query("UPDATE paid_addon_ledger_audit SET event_type='tampered' WHERE organization_id=$1 AND external_reference=$2", [orgA, sharedLedgerReference]),
+    /immutable/
   );
 
   const webhookReceivedAt = new Date();

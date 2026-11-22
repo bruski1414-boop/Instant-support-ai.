@@ -281,3 +281,23 @@ test("price and cost paraphrases match verified hotel pricing evidence", () => {
   assert.equal(hasRelevantKnowledgeMatch(pricedBreakfast, "What is the cost of breakfast?"), true);
   assert.match(buildEvidenceKnowledgeContext(pricedBreakfast, "How much is breakfast?"), /Breakfast costs 500 THB/);
 });
+
+
+test("breakfast fee and charge wording matches verified pricing evidence", () => {
+  const pricedBreakfast = [
+    { title: "Breakfast service", category: "dining", content: "Breakfast costs 500 THB per person." },
+  ];
+
+  assert.equal(hasRelevantKnowledgeMatch(pricedBreakfast, "What is the breakfast fee?"), true);
+  assert.equal(hasRelevantKnowledgeMatch(pricedBreakfast, "Is there a breakfast charge?"), true);
+  assert.match(buildEvidenceKnowledgeContext(pricedBreakfast, "What is the breakfast fee?"), /Breakfast costs 500 THB/);
+});
+
+test("price wording also matches documents that explicitly call it a fee", () => {
+  const feeBreakfast = [
+    { title: "Breakfast service", category: "dining", content: "The breakfast fee is 500 THB per person." },
+  ];
+
+  assert.equal(hasRelevantKnowledgeMatch(feeBreakfast, "What is the breakfast price?"), true);
+  assert.equal(hasRelevantKnowledgeMatch(feeBreakfast, "How much is breakfast?"), true);
+});

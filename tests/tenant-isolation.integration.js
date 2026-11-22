@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { createServer } from "node:http";
 import pg from "pg";
 import knowledgeLoader from "../hotel-knowledge.js";
 const { loadApprovedKnowledge } = knowledgeLoader;
@@ -26,6 +27,8 @@ const tenants = [
   { name: `Veyra Tenant B ${tag}`, email: `tenant-b-${tag}@example.test`, password: `B-long-test-password-${tag}`, message: `PRIVATE MESSAGE FOR TENANT B ${tag}` },
 ];
 let child;
+let concurrencyChild;
+let mockAiServer;
 let childOutput = "";
 let serverReady = false;
 
@@ -217,6 +220,32 @@ try {
   const pmsBAfterCrossDisconnectBody = await pmsBAfterCrossDisconnect.json();
   assert.equal(pmsBAfterCrossDisconnectBody.connections.some(x => x.provider === "tenant-b-private-adapter"), true, "tenant B's PMS connection must remain intact after tenant A's disconnect attempt");
   await Promise.all(tenants.map(seedConversation));
+
+  // Verify PostgreSQL serializes two guest turns that target the same conversation.
+  const firstTurn = await pool.connect();
+  const secondTurn = await pool.connect();
+  let secondLockAcquired = false;
+  try {
+    await firstTurn.query("BEGIN");
+    await firstTurn.query("SELECT id FROM conversations WHERE id=$1 FOR UPDATE", [tenants[0].conversationId]);
+    await secondTurn.query("BEGIN");
+    const waitingLock = secondTurn.query(
+      "SELECT id FROM conversations WHERE id=$1 FOR UPDATE",
+      [tenants[0].conversationId],
+    ).then(result => { secondLockAcquired = true; return result; });
+    await new Promise(resolve => setTimeout(resolve, 75));
+    assert.equal(secondLockAcquired, false, "a second turn must wait while the first turn owns the conversation lock");
+    await firstTurn.query("COMMIT");
+    await waitingLock;
+    assert.equal(secondLockAcquired, true, "the waiting turn must proceed after the first turn commits");
+    await secondTurn.query("ROLLBACK");
+  } finally {
+    await firstTurn.query("ROLLBACK").catch(() => {});
+    await secondTurn.query("ROLLBACK").catch(() => {});
+    firstTurn.release();
+    secondTurn.release();
+  }
+
   await Promise.all(tenants.map(seedKnowledge));
   await Promise.all(tenants.map(seedOffer));
   await Promise.all(tenants.map(seedOfferAttribution));
@@ -226,6 +255,171 @@ try {
     seedStorageConnection(tenants[1], "google"),
   ]);
 
+  // Exercise the complete public guest-chat route with a controlled AI provider.
+  // The first concurrent turn is held inside the provider while the second turn
+  // is submitted; the second provider call must not start until the first commits.
+  const concurrencyOrg = (await pool.query("SELECT id FROM organizations WHERE slug=$1", [tenants[0].slug])).rows[0].id;
+  await pool.query(
+    "INSERT INTO organization_integration_checks(organization_id,integration,verified_at) VALUES($1,'ai_provider',now()),($1,'staff_webhook',now()) ON CONFLICT(organization_id,integration) DO UPDATE SET verified_at=EXCLUDED.verified_at",
+    [concurrencyOrg],
+  );
+  await pool.query(
+    "INSERT INTO organization_staff_webhooks(organization_id,encrypted_config,status) VALUES($1,'ci-placeholder-not-a-real-secret','configured') ON CONFLICT(organization_id) DO UPDATE SET encrypted_config=EXCLUDED.encrypted_config,status='configured'",
+    [concurrencyOrg],
+  );
+  await pool.query(
+    "INSERT INTO knowledge_documents(organization_id,title,category,content,approved,reviewed_at) VALUES($1,'Breakfast hours','dining','Breakfast hours are 7:00 AM to 10:00 AM. Breakfast starts at 7:00 AM and ends at 10:00 AM.',true,now())",
+    [concurrencyOrg],
+  );
+
+  const mockAiRequests = [];
+  let releaseHeldAi;
+  let signalHeldAiStarted;
+  const heldAiResponse = new Promise(resolve => { releaseHeldAi = resolve; });
+  const heldAiStarted = new Promise(resolve => { signalHeldAiStarted = resolve; });
+  mockAiServer = createServer(async (request, response) => {
+    if (request.method !== "POST" || !request.url?.endsWith("/chat/completions")) {
+      response.writeHead(404);
+      response.end();
+      return;
+    }
+    let raw = "";
+    for await (const chunk of request) raw += chunk;
+    mockAiRequests.push(JSON.parse(raw));
+    const callNumber = mockAiRequests.length;
+    if (callNumber === 1) {
+      signalHeldAiStarted();
+      await heldAiResponse;
+    }
+    response.writeHead(200, { "content-type": "application/json" });
+    response.end(JSON.stringify({
+      id: "chatcmpl-ci-concurrency",
+      object: "chat.completion",
+      created: Math.floor(Date.now() / 1000),
+      model: "gpt-4.1-mini",
+      choices: [{
+        index: 0,
+        message: {
+          role: "assistant",
+          content: JSON.stringify({
+            reply: "Breakfast starts at 7:00 AM and ends at 10:00 AM.",
+            needsHuman: false,
+          }),
+        },
+        finish_reason: "stop",
+      }],
+      usage: { prompt_tokens: 20, completion_tokens: 15, total_tokens: 35 },
+    }));
+  });
+  await new Promise((resolve, reject) => {
+    mockAiServer.once("error", reject);
+    mockAiServer.listen(0, "127.0.0.1", resolve);
+  });
+  const mockAiPort = mockAiServer.address().port;
+  let concurrencyPort;
+  do {
+    concurrencyPort = 31000 + Math.floor(Math.random() * 20000);
+  } while (concurrencyPort === port || concurrencyPort === mockAiPort);
+  const concurrencyBaseUrl = "http://127.0.0.1:" + concurrencyPort;
+  let concurrencyOutput = "";
+  concurrencyChild = spawn(process.execPath, ["server.js"], {
+    cwd: process.cwd(),
+    env: {
+      ...process.env,
+      PORT: String(concurrencyPort),
+      NODE_ENV: "test",
+      DATABASE_SSL: "false",
+      OPENAI_API_KEY: "ci-fake-key",
+      OPENAI_BASE_URL: "http://127.0.0.1:" + mockAiPort + "/v1",
+      GUEST_DATA_STORAGE_ENABLED: "true",
+      DURABLE_BACKUPS_VERIFIED: "true",
+      TENANT_ISOLATION_TESTS_PASSED: "true",
+      PROVIDER_OAUTH_TESTED: "true",
+      HOTEL_PRIVACY_APPROVED: "true",
+      STAFF_HANDOFF_TESTED: "true",
+      PILOT_RELEASE_APPROVED: "true",
+      STAFF_WEBHOOK_ENCRYPTION_KEY: "ci-only-placeholder-key",
+      STAFF_WEBHOOK_URL: "",
+      STAFF_WEBHOOK_SECRET: "",
+    },
+    stdio: ["ignore", "ignore", "pipe"],
+  });
+  concurrencyChild.stderr.setEncoding("utf8");
+  concurrencyChild.stderr.on("data", chunk => { concurrencyOutput = (concurrencyOutput + chunk).slice(-5000); });
+  let concurrencyReady = false;
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    if (concurrencyChild.exitCode !== null) throw new Error("Concurrency-test Veyra server exited early. " + concurrencyOutput);
+    try {
+      const health = await fetch(concurrencyBaseUrl + "/api/health");
+      if (health.ok && (await health.json()).readyForPilot === true) {
+        concurrencyReady = true;
+        break;
+      }
+    } catch {}
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  assert.equal(concurrencyReady, true, "test-only readiness gates must be satisfied before exercising guest chat: " + concurrencyOutput);
+
+  const guestChatUrl = concurrencyBaseUrl + "/api/public/" + tenants[0].slug + "/chat";
+  const initialTurnResponse = await fetch(guestChatUrl, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ message: "Hello, I have a question." }),
+  });
+  assert.equal(initialTurnResponse.status, 200, "the test hotel should accept an initial guest turn");
+  const initialTurn = await initialTurnResponse.json();
+  assert.ok(initialTurn.conversationId && initialTurn.conversationToken, "the server must issue a conversation reference and guest token");
+
+  const firstConcurrentMessage = "What are the breakfast hours?";
+  const secondConcurrentMessage = "What are the breakfast hours?";
+  const firstConcurrentTurn = fetch(guestChatUrl, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      message: firstConcurrentMessage,
+      conversationId: initialTurn.conversationId,
+      conversationToken: initialTurn.conversationToken,
+    }),
+  });
+  const heldAiTimeout = setTimeout(() => { signalHeldAiStarted(); }, 10000);
+  await heldAiStarted;
+  clearTimeout(heldAiTimeout);
+  assert.equal(mockAiRequests.length, 1, "the first concurrent turn must reach the controlled AI provider");
+  const secondConcurrentTurn = fetch(guestChatUrl, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      message: secondConcurrentMessage,
+      conversationId: initialTurn.conversationId,
+      conversationToken: initialTurn.conversationToken,
+    }),
+  });
+  await new Promise(resolve => setTimeout(resolve, 100));
+  assert.equal(mockAiRequests.length, 1, "the second AI call must wait while the first turn holds the conversation lock");
+  releaseHeldAi();
+
+  const [firstConcurrentResponse, secondConcurrentResponse] = await Promise.all([firstConcurrentTurn, secondConcurrentTurn]);
+  assert.equal(firstConcurrentResponse.status, 200, "the first concurrent guest turn should complete");
+  assert.equal(secondConcurrentResponse.status, 200, "the waiting guest turn should complete");
+  assert.equal(mockAiRequests.length, 2, "each concurrent guest turn should generate exactly one AI request");
+  const secondAiContext = mockAiRequests[1].messages;
+  assert.ok(
+    secondAiContext.some(item => item.role === "user" && item.content === firstConcurrentMessage),
+    "the second AI request must include the first concurrent guest message in its history",
+  );
+  assert.ok(
+    secondAiContext.some(item => item.role === "assistant" && item.content === "Breakfast starts at 7:00 AM and ends at 10:00 AM."),
+    "the second AI request must include the first turn's committed assistant reply",
+  );
+  const concurrentTranscript = await pool.query(
+    "SELECT role,content FROM messages WHERE conversation_id=$1 ORDER BY sequence_no",
+    [initialTurn.conversationId],
+  );
+  assert.deepEqual(
+    concurrentTranscript.rows.map(item => item.role),
+    ["guest", "assistant", "guest", "assistant", "guest", "assistant"],
+    "the transcript must preserve all three complete guest/assistant turns in sequence",
+  );
 
   const offersAResponse = await fetch(baseUrl + "/api/admin/offers", { headers: { cookie: cookieA } });
   assert.equal(offersAResponse.status, 200, "tenant A must read its own offers");
@@ -387,10 +581,14 @@ try {
   assert.equal(webhookRows.rows.every(row => /^[a-f0-9]{64}$/.test(row.payload_sha256)), true);
   const approvedA = await loadApprovedKnowledge(pool, orgA);
   const approvedB = await loadApprovedKnowledge(pool, orgB);
-  assert.equal(approvedA.rows.length, 1, "tenant A guest context must include only its current approved document");
-  assert.equal(approvedB.rows.length, 1, "tenant B guest context must include only its current approved document");
-  assert.equal(approvedA.rows[0].content, tenants[0].approvedKnowledge);
-  assert.equal(approvedB.rows[0].content, tenants[1].approvedKnowledge);
+  assert.ok(
+    approvedA.rows.some(row => row.content === tenants[0].approvedKnowledge),
+    "tenant A guest context must include its current approved document",
+  );
+  assert.ok(
+    approvedB.rows.some(row => row.content === tenants[1].approvedKnowledge),
+    "tenant B guest context must include its current approved document",
+  );
   assert.equal(JSON.stringify(approvedA.rows).includes(tenants[0].privateKnowledge), false, "unapproved tenant A knowledge must never enter guest context");
   assert.equal(JSON.stringify(approvedA.rows).includes("EXPIRED KNOWLEDGE"), false, "expired tenant A knowledge must never enter guest context");
   assert.equal(JSON.stringify(approvedA.rows).includes(tenants[1].approvedKnowledge), false, "tenant A guest context must never include tenant B knowledge");
@@ -405,13 +603,33 @@ try {
   const ownEdit = await fetch(baseUrl + "/api/admin/knowledge/" + tenants[0].approvedKnowledgeId, {
     method: "PATCH",
     headers: { cookie: cookieA, "X-CSRF-Token": tenants[0].csrfToken, "content-type": "application/json" },
-    body: JSON.stringify({ content: "Updated policy content requiring fresh approval" }),
+    body: JSON.stringify({ content: "Updated policy content requiring fresh approval", approved: true }),
   });
   assert.equal(ownEdit.status, 200, "tenant A must be able to update its own knowledge");
   const ownEditBody = await ownEdit.json();
   assert.equal(ownEditBody.document.approved, false, "editing approved content must automatically revoke approval");
   const afterEditA = await loadApprovedKnowledge(pool, orgA);
-  assert.equal(afterEditA.rows.length, 0, "edited content must not return to guest context before reapproval");
+  assert.equal(
+    afterEditA.rows.some(row => row.content === "Updated policy content requiring fresh approval"),
+    false,
+    "edited content must not return to guest context before reapproval",
+  );
+  assert.equal(
+    afterEditA.rows.some(row => row.content === tenants[0].approvedKnowledge),
+    false,
+    "the previously approved version must not remain in guest context after an edit",
+  );
+  assert.equal(
+    afterEditA.rows.some(row => row.content.includes("Breakfast hours are 7:00 AM")),
+    true,
+    "editing one document must preserve other currently approved hotel knowledge",
+  );
+  const editedKnowledgeState = await pool.query(
+    "SELECT approved,content FROM knowledge_documents WHERE id=$1 AND organization_id=$2",
+    [tenants[0].approvedKnowledgeId, orgA],
+  );
+  assert.equal(editedKnowledgeState.rows[0].approved, false, "the edited database record must remain unapproved");
+  assert.equal(editedKnowledgeState.rows[0].content, "Updated policy content requiring fresh approval");
   const afterEditB = await loadApprovedKnowledge(pool, orgB);
   assert.equal(afterEditB.rows.length, 1, "editing tenant A content must not affect tenant B guest context");
 
@@ -438,12 +656,15 @@ try {
       }
     }
   }
-  if (child && child.exitCode === null) {
-    child.kill("SIGTERM");
-    await new Promise(resolve => {
-      const timeout = setTimeout(() => { child.kill("SIGKILL"); resolve(); }, 3000);
-      child.once("exit", () => { clearTimeout(timeout); resolve(); });
-    });
+  for (const processChild of [concurrencyChild, child]) {
+    if (processChild && processChild.exitCode === null) {
+      processChild.kill("SIGTERM");
+      await new Promise(resolve => {
+        const timeout = setTimeout(() => { processChild.kill("SIGKILL"); resolve(); }, 3000);
+        processChild.once("exit", () => { clearTimeout(timeout); resolve(); });
+      });
+    }
   }
+  if (mockAiServer) await new Promise(resolve => mockAiServer.close(resolve));
   await pool.end();
 }

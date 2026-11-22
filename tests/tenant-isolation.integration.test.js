@@ -302,8 +302,10 @@ test("two hotel workspaces remain isolated across live API resources", { skip: !
     assert.equal(result.status, 200, "both hotels should serve concurrent dashboard requests");
     assert.equal(result.body.conversations.length, 1);
     const payload = JSON.stringify(result.body);
+    assert.ok(payload.includes(result.isAlpha ? "Private Alpha assistant reply" : "Private Beta assistant reply"));
     assert.ok(payload.includes(result.isAlpha ? "Private Alpha guest message" : "Private Beta guest message"));
     assert.ok(!payload.includes(result.isAlpha ? "Private Beta guest message" : "Private Alpha guest message"));
+    assert.ok(!payload.includes(result.isAlpha ? "Private Beta assistant reply" : "Private Alpha assistant reply"));
   }
 
   const crossTenantChecks = [
@@ -326,7 +328,10 @@ test("two hotel workspaces remain isolated across live API resources", { skip: !
 
   const alphaTranscript = await request(`/api/admin/conversations/${alphaConversation.rows[0].id}`, {}, alphaSession);
   assert.equal(alphaTranscript.status, 200);
-  assert.match((await alphaTranscript.text()), /Private Alpha guest message/);
+  const alphaTranscriptBody = await alphaTranscript.text();
+  assert.match(alphaTranscriptBody, /Private Alpha guest message/);
+  assert.match(alphaTranscriptBody, /Private Alpha assistant reply/);
+  assert.doesNotMatch(alphaTranscriptBody, /Private Beta (?:guest message|assistant reply)/);
   const betaTranscript = await request(`/api/admin/conversations/${alphaConversation.rows[0].id}`, {}, betaSession);
   assert.equal(betaTranscript.status, 404);
 });

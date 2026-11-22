@@ -9,6 +9,7 @@ function fixture(overrides = {}) {
     organizationId: "tenant-a",
     expectedEnterpriseId: "enterprise-a",
     paginationComplete: true,
+    verifiedAt: "2026-11-21T09:00:00.000Z",
     writeRecord: {
       organizationId: "tenant-a",
       enterpriseId: "enterprise-a",
@@ -30,6 +31,7 @@ function fixture(overrides = {}) {
       ServiceId: "service-a",
       LinkedReservationId: "reservation-a",
       State: "Confirmed",
+      UpdatedUtc: "2026-11-21T08:59:00Z",
       CancelledUtc: null
     }],
     ...overrides
@@ -42,6 +44,10 @@ test("verifies exact external identifier through item and service-order readback
   assert.equal(result.serviceOrderId, "service-order-44");
   assert.notEqual(result.mewsOrderId, result.serviceOrderId);
   assert.equal(result.source, SOURCE);
+  assert.equal(result.serviceOrderState, "Confirmed");
+  assert.equal(result.serviceOrderUpdatedAt, "2026-11-21T08:59:00.000Z");
+  assert.equal(result.serviceOrderCancelledAt, null);
+  assert.equal(result.verifiedAt, "2026-11-21T09:00:00.000Z");
 });
 
 test("requires complete pagination and a completed server-owned tenant write", () => {
@@ -80,6 +86,24 @@ test("requires one matching product service order with the exact service and res
   const canceled = fixture();
   canceled.productServiceOrders[0].State = "Canceled";
   assert.throws(() => resolveMewsAddonOrderReadback(canceled), /does not verify/);
+});
+
+test("requires a canonical readback time and a service-order update no later than that readback", () => {
+  const missingReadbackTime = fixture();
+  delete missingReadbackTime.verifiedAt;
+  assert.throws(() => resolveMewsAddonOrderReadback(missingReadbackTime), /verifiedAt.*canonical UTC/);
+
+  const missingUpdatedAt = fixture();
+  delete missingUpdatedAt.productServiceOrders[0].UpdatedUtc;
+  assert.throws(() => resolveMewsAddonOrderReadback(missingUpdatedAt), /UpdatedUtc.*canonical UTC/);
+
+  const futureUpdate = fixture();
+  futureUpdate.productServiceOrders[0].UpdatedUtc = "2026-11-21T09:01:00Z";
+  assert.throws(() => resolveMewsAddonOrderReadback(futureUpdate), /current state/);
+
+  const canceledTimestamp = fixture();
+  canceledTimestamp.productServiceOrders[0].CancelledUtc = "2026-11-21T08:59:30Z";
+  assert.throws(() => resolveMewsAddonOrderReadback(canceledTimestamp), /current state/);
 });
 
 test("rejects duplicate provider identifiers and never returns guest or account fields", () => {

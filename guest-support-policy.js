@@ -49,6 +49,85 @@ function normalizeGuestSupportAnswer(value) {
   };
 }
 
+function extractNumericClaims(value) {
+  return new Set(
+    (String(value || "").match(/\d+(?:,\d{3})*(?:\.\d+)?/g) || [])
+      .map((claim) => claim.replace(/,/g, "")),
+  );
+}
+
+function extractCurrencyClaims(value) {
+  return new Set(
+    (String(value || "").match(/[$€£¥₹]|\b(?:USD|EUR|GBP|THB|AUD|CAD|SGD|JPY|CNY|CHF|HKD|INR|baht|dollars?|euros?|pounds?|yen)\b/gi) || [])
+      .map((claim) => claim.toLowerCase()),
+  );
+}
+
+function getNumericContextTerms(value) {
+  const ignored = new Set([
+    "the", "and", "for", "from", "with", "that", "this", "when", "what",
+    "where", "your", "you", "our", "their", "there", "are", "was", "were",
+    "has", "have", "had", "can", "could", "would", "should", "will", "may",
+    "might", "not", "but", "please", "hotel", "guest", "guests", "daily",
+    "available", "served", "serves", "service", "costs", "cost", "price",
+    "prices", "fee", "fees", "from", "until", "between", "at", "is", "be",
+    "open", "opens", "opening", "close", "closes", "hours", "hour",
+    // Currency labels are values, never evidence that two claims share a subject.
+    "usd", "eur", "gbp", "thb", "aud", "cad", "sgd", "jpy", "cny",
+    "chf", "hkd", "inr", "baht", "dollar", "dollars", "euro", "euros",
+    "pound", "pounds", "yen",
+  ]);
+  return new Set(
+    (String(value || "").toLowerCase().match(/[a-z]{3,}/g) || [])
+      .filter((term) => !ignored.has(term)),
+  );
+}
+
+function splitNumericEvidenceSentences(value) {
+  return String(value || "")
+    .split(/[.!?;]+|\n{2,}/)
+    .map((sentence) => sentence.replace(/\n/g, " ").trim())
+    .filter(Boolean);
+}
+
+function hasUnsupportedNumericClaims(reply, approvedKnowledge) {
+  const answerNumbers = extractNumericClaims(reply);
+  const knowledgeNumbers = extractNumericClaims(approvedKnowledge);
+  for (const claim of answerNumbers) {
+    if (!knowledgeNumbers.has(claim)) return true;
+  }
+
+  const answerCurrencies = extractCurrencyClaims(reply);
+  const knowledgeCurrencies = extractCurrencyClaims(approvedKnowledge);
+  for (const claim of answerCurrencies) {
+    if (!knowledgeCurrencies.has(claim)) return true;
+  }
+
+  // A number appearing somewhere in the knowledge base is not enough:
+  // it must be grounded in the same sentence and subject context.
+  const evidenceSentences = splitNumericEvidenceSentences(approvedKnowledge);
+  const answerSentences = splitNumericEvidenceSentences(reply);
+  for (const answerSentence of answerSentences) {
+    const sentenceNumbers = extractNumericClaims(answerSentence);
+    const sentenceCurrencies = extractCurrencyClaims(answerSentence);
+    if (sentenceNumbers.size === 0 && sentenceCurrencies.size === 0) continue;
+
+    const answerTerms = getNumericContextTerms(answerSentence);
+    const supported = evidenceSentences.some((evidenceSentence) => {
+      const evidenceNumbers = extractNumericClaims(evidenceSentence);
+      const evidenceCurrencies = extractCurrencyClaims(evidenceSentence);
+      const numbersMatch = [...sentenceNumbers].every((claim) => evidenceNumbers.has(claim));
+      const currenciesMatch = [...sentenceCurrencies].every((claim) => evidenceCurrencies.has(claim));
+      const evidenceTerms = getNumericContextTerms(evidenceSentence);
+      const hasSharedSubject = [...answerTerms].some((term) => evidenceTerms.has(term));
+      return numbersMatch && currenciesMatch && hasSharedSubject;
+    });
+    if (!supported) return true;
+  }
+
+  return false;
+}
+
 function requiresHumanHandoff(message, normalizedAnswer) {
   return requiresStaffEscalation(message) || normalizedAnswer?.needsHuman === true;
 }
@@ -81,4 +160,5 @@ module.exports = {
   resolveGuestSupportAnswer,
   buildGuestSupportSystemPrompt,
   normalizeGuestSupportAnswer,
+  hasUnsupportedNumericClaims,
 };

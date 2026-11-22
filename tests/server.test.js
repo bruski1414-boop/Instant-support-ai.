@@ -122,7 +122,7 @@ test("guest widget reuses its server-issued conversation id", () => {
   assert.match(widget, /conversationId:conversationId/);
   assert.match(widget, /conversationToken:conversationToken/);
   assert.match(server, /guest_token_hash=\$3/);
-  assert.match(server, /hash\(requestedToken\)/);
+  assert.match(server, /hash\(guestToken\)/);
   assert.match(widget, /conversationId=data\.conversationId\|\|conversationId/);
   assert.match(server, /WHERE id=\$1 AND organization_id=\$2/);
   assert.match(server, /LIMIT 8/);
@@ -239,9 +239,16 @@ test("knowledge documents retain tenant-scoped version history", () => {
 
 test("guest conversation writes lock and revalidate the tenant-owned conversation before appending messages", () => {
   const server = fs.readFileSync("server.js", "utf8");
+  assert.match(server, /let cid=requestedConversation\|\|null/);
   assert.match(server, /SELECT id FROM conversations WHERE id=\$1 AND organization_id=\$2 AND guest_token_hash=\$3 FOR UPDATE/);
   assert.match(server, /UPDATE conversations SET last_message_at=now\(\),status=CASE WHEN \$2 THEN 'escalated' WHEN status='resolved' THEN 'open' ELSE status END WHERE id=\$1 AND organization_id=\$3/);
 });
+test("transaction error handlers preserve the original error if rollback also fails", () => {
+  const server = fs.readFileSync("server.js", "utf8");
+  assert.doesNotMatch(server, /catch\(e\)\{await c\.query\("ROLLBACK"\);/);
+  assert.match(server, /catch\(e\)\{await c\.query\("ROLLBACK"\)\.catch\(\(\)=>\{\}\);/);
+});
+
 
 
 test("staff handoff events carry stable tenant identifiers for multi-hotel routing", () => {
@@ -341,8 +348,9 @@ test("guest chat converts AI provider failures into a persisted staff handoff in
   const server = fs.readFileSync("server.js", "utf8");
   assert.match(server, /catch\(error\)\{console\.error\("Guest support AI request failed:"/);
   assert.match(server, /resolvedAnswer=createAiUnavailableAnswer\(\)/);
-  assert.match(server, /const \{generateGuestSupportAnswer,createAiUnavailableAnswer\}=require\("\.\/guest-support-engine"\)/);
-  assert.match(server, /const flagHuman=resolvedAnswer\.needsHuman/);
+  assert.match(server, /const \{generateGuestSupportAnswer,createAiUnavailableAnswer,createNoKnowledgeAnswer\}=require\("\.\/guest-support-engine"\)/);
+  assert.match(server, /if\(noRelevantKnowledge\)\{resolvedAnswer=createNoKnowledgeAnswer\(msg\);\}/);
+  assert.match(server, /flagHuman=resolvedAnswer\.needsHuman/);
 });
 
 
@@ -361,4 +369,56 @@ test("staff webhook configuration is encrypted, tenant-scoped and verified befor
   assert.match(security, /agent:false/);
   assert.match(dashboard, /id="staffWebhookForm"/);
   assert.match(dashboard, /id="staffWebhookSecret"/);
+});
+
+test("guest chat requires question evidence in approved knowledge even when the full context fits", () => {
+  const server = fs.readFileSync("server.js", "utf8");
+  const retrieval = fs.readFileSync("knowledge-retrieval.js", "utf8");
+  assert.match(server, /hasRelevantKnowledgeMatch\(docs\.rows,msg\)/);
+  assert.match(server, /noRelevantKnowledge=!hasRelevantKnowledgeMatch\(docs\.rows,msg\)&&!matchedOffers\.length/);
+  assert.match(retrieval, /function hasRelevantKnowledgeMatch\(documents, query\)/);
+});
+
+
+test("message history and transcript queries use stable per-conversation insertion order", () => {
+  const server = fs.readFileSync("server.js", "utf8");
+  assert.match(server, /sequence_no BIGINT GENERATED ALWAYS AS IDENTITY/);
+  assert.match(server, /CREATE INDEX IF NOT EXISTS messages_conversation_sequence_idx ON messages\(conversation_id,sequence_no\)/);
+  assert.match(server, /ORDER BY m\.sequence_no DESC LIMIT 8/);
+  assert.match(server, /ORDER BY m\.sequence_no DESC LIMIT 200/);
+  assert.match(server, /ORDER BY sequence_no DESC LIMIT 1/);
+});
+
+test("guest turns lock a conversation before reading history or generating the next answer", () => {
+  const server = fs.readFileSync("server.js", "utf8");
+  const routeStart = server.indexOf('app.post("/api/public/:slug/chat"');
+  const routeEnd = server.indexOf('app.', routeStart + 10);
+  const route = server.slice(routeStart, routeEnd > routeStart ? routeEnd : undefined);
+  const lock = route.indexOf('FOR UPDATE');
+  const history = route.indexOf('ORDER BY m.sequence_no DESC LIMIT 8');
+  const generation = route.indexOf('generateGuestSupportAnswer(');
+  const persist = route.indexOf('INSERT INTO messages(conversation_id,role,content)');
+  const knowledgeRefresh = route.indexOf("loadApprovedKnowledge(c,org.id)");
+  const offerRefresh = route.indexOf("FROM hotel_offers WHERE organization_id=$1");
+  assert.ok(lock >= 0 && knowledgeRefresh > lock, "approved knowledge must be refreshed after the conversation lock");
+  assert.ok(offerRefresh > lock, "time-sensitive offers must be refreshed after the conversation lock");
+  assert.ok(history > lock, "conversation must be locked before history is read");
+  assert.ok(generation > history, "the model must receive history read after the lock");
+  assert.ok(persist > generation, "the turn must be persisted before the lock is released");
+  assert.match(route, /await c\.query\("COMMIT"\)/);
+});
+
+test("authentication and admin API responses are explicitly non-cacheable", async () => {
+  for (const route of ["/api/auth/me", "/api/admin/settings"]) {
+    const response = await fetch(`${baseUrl}${route}`);
+    assert.equal(response.status, 503);
+    assert.equal(response.headers.get("cache-control"), "private, no-store");
+    assert.equal(response.headers.get("pragma"), "no-cache");
+    assert.equal(response.headers.get("expires"), "0");
+  }
+  const missingRoute = await fetch(`${baseUrl}/api/admin/not-a-real-route`);
+  assert.equal(missingRoute.status, 404);
+  assert.equal(missingRoute.headers.get("cache-control"), "private, no-store");
+  assert.equal(missingRoute.headers.get("pragma"), "no-cache");
+  assert.equal(missingRoute.headers.get("expires"), "0");
 });

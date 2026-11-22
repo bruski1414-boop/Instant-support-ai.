@@ -38,6 +38,8 @@
       var response=await fetch(api+"/api/public/"+encodeURIComponent(slug)+"/chat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:message,conversationId:conversationId,conversationToken:conversationToken})});
       var data=await response.json();
       if(!response.ok)throw new Error(data.error||"The assistant is temporarily unavailable.");
+      status.textContent="Writing a reply…";
+      await new Promise(function(resolve){setTimeout(resolve,800+Math.floor(Math.random()*401));});
       conversationId=data.conversationId||conversationId;conversationToken=data.conversationToken||conversationToken;
       add(data.reply||"Please contact the hotel team.","assistant");
       if(data.needsHuman){

@@ -156,9 +156,23 @@ test("two hotel workspaces remain isolated across live API resources", { skip: !
     [betaId]
   );
   await pool.query(
-    "INSERT INTO messages(conversation_id,role,content) VALUES($1,'guest','Private Alpha guest message'),($2,'guest','Private Beta guest message')",
+    "INSERT INTO messages(conversation_id,role,content) VALUES($1,'guest','Private Alpha guest message'),($1,'assistant','Private Alpha assistant reply'),($2,'guest','Private Beta guest message'),($2,'assistant','Private Beta assistant reply')",
     [alphaConversation.rows[0].id, betaConversation.rows[0].id]
   );
+  const orderedMessages = await pool.query(
+    "SELECT conversation_id,role,content,sequence_no FROM messages WHERE conversation_id=ANY($1::uuid[]) ORDER BY sequence_no",
+    [[alphaConversation.rows[0].id, betaConversation.rows[0].id]]
+  );
+  assert.equal(orderedMessages.rowCount, 4, "each seeded conversation should retain its guest message and assistant reply");
+  assert.equal(new Set(orderedMessages.rows.map((row) => row.sequence_no)).size, 4, "message insertion order should be globally unique");
+  for (const conversationId of [alphaConversation.rows[0].id, betaConversation.rows[0].id]) {
+    const conversationMessages = orderedMessages.rows.filter((row) => row.conversation_id === conversationId);
+    assert.deepEqual(
+      conversationMessages.map((row) => row.role),
+      ["guest", "assistant"],
+      "messages written in one transaction should retain guest-then-assistant order"
+    );
+  }
   const alphaEscalation = await pool.query(
     "INSERT INTO escalations(organization_id,conversation_id,reason) VALUES($1,$2,'Alpha private escalation') RETURNING id",
     [alphaId, alphaConversation.rows[0].id]
@@ -288,7 +302,8 @@ test("two hotel workspaces remain isolated across live API resources", { skip: !
     assert.equal(result.status, 200, "both hotels should serve concurrent dashboard requests");
     assert.equal(result.body.conversations.length, 1);
     const payload = JSON.stringify(result.body);
-    assert.ok(payload.includes(result.isAlpha ? "Private Alpha guest message" : "Private Beta guest message"));
+    assert.ok(payload.includes(result.isAlpha ? "Private Alpha assistant reply" : "Private Beta assistant reply"));
+    assert.ok(!payload.includes(result.isAlpha ? "Private Beta assistant reply" : "Private Alpha assistant reply"));
     assert.ok(!payload.includes(result.isAlpha ? "Private Beta guest message" : "Private Alpha guest message"));
   }
 
@@ -312,7 +327,10 @@ test("two hotel workspaces remain isolated across live API resources", { skip: !
 
   const alphaTranscript = await request(`/api/admin/conversations/${alphaConversation.rows[0].id}`, {}, alphaSession);
   assert.equal(alphaTranscript.status, 200);
-  assert.match((await alphaTranscript.text()), /Private Alpha guest message/);
+  const alphaTranscriptBody = await alphaTranscript.text();
+  assert.match(alphaTranscriptBody, /Private Alpha guest message/);
+  assert.match(alphaTranscriptBody, /Private Alpha assistant reply/);
+  assert.doesNotMatch(alphaTranscriptBody, /Private Beta (?:guest message|assistant reply)/);
   const betaTranscript = await request(`/api/admin/conversations/${alphaConversation.rows[0].id}`, {}, betaSession);
   assert.equal(betaTranscript.status, 404);
 });

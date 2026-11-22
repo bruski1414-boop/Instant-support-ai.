@@ -44,7 +44,13 @@ function hasRestrictiveQualification(value) {
 
 function hasUnverifiedCompletionClaims(reply) {
   // The prototype has no action-confirmation channel for these operations.
-  return /\b(?:i(?:'ve| have)\s+(?:booked|reserved|cancelled|canceled|refunded|processed|notified|alerted)|we(?:'ve| have)\s+(?:booked|reserved|cancelled|canceled|refunded|processed|notified|alerted)|(?:your|the)\s+(?:booking|reservation)\s+(?:is|has been)\s+(?:confirmed|booked|cancelled|canceled)|(?:staff|the hotel team)\s+(?:has|have)\s+been\s+(?:notified|alerted)|refund\s+(?:has|have)\s+been\s+processed)\b/i.test(String(reply || ""));
+  // A sentence explicitly saying it cannot verify completion is not a claim
+  // that the action occurred.
+  const completionClaim = /\b(?:i(?:'ve| have)\s+(?:booked|reserved|cancelled|canceled|refunded|processed|notified|alerted)|we(?:'ve| have)\s+(?:booked|reserved|cancelled|canceled|refunded|processed|notified|alerted)|(?:your|the)\s+(?:booking|reservation)\s+(?:is|has been)\s+(?:confirmed|booked|cancelled|canceled)|(?:staff|the hotel team)\s+(?:has|have)\s+been\s+(?:notified|alerted)|refund\s+(?:has|have)\s+been\s+processed)\b/i;
+  return String(reply || "").split(/[.!?;]+|\n+/).some((sentence) =>
+    completionClaim.test(sentence) &&
+    !/\b(?:cannot|can't|unable to)\s+(?:confirm|verify)\b/i.test(sentence)
+  );
 }
 
 function hasUnsupportedContentTerms(reply, approvedKnowledge) {

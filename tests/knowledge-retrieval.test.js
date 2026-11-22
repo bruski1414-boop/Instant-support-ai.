@@ -273,7 +273,7 @@ test("generic internet is not treated as Wi-Fi evidence, but wireless internet i
 
 test("price and cost paraphrases match verified hotel pricing evidence", () => {
   const pricedBreakfast = [
-    { title: "Breakfast price", category: "dining", content: "Breakfast costs 500 THB per person." },
+    { title: "Breakfast service", category: "dining", content: "Breakfast costs 500 THB per person." },
   ];
 
   assert.equal(hasRelevantKnowledgeMatch(pricedBreakfast, "How much is breakfast?"), true);

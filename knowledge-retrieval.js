@@ -64,7 +64,7 @@ const SYNONYMS = {
   pricing: ["price", "cost", "fee", "charge"],
   fee: ["price", "cost", "costs", "pricing", "charge"],
   fees: ["fee", "price", "cost", "charges"],
-  charge: ["price", "cost", "fee", "fees"],
+  charge: ["price", "cost", "costs", "fee", "fees", "charges"],
   charges: ["charge", "price", "cost", "fees"],
 };
 
@@ -167,8 +167,8 @@ function buildEvidenceKnowledgeContext(documents, query) {
       doc.content.trim() &&
       scoreDocument(doc, queryTokens) > 0
     )
-    .map((doc) => "[" + String(doc.category || "general") + "] " + doc.title.trim() + "\\n" + doc.content.trim())
-    .join("\\n\\n");
+    .map((doc) => "[" + String(doc.category || "general") + "] " + doc.title.trim() + "\n" + doc.content.trim())
+    .join("\n\n");
 }
 
 function buildRelevantKnowledgeContext(
@@ -192,10 +192,10 @@ function buildRelevantKnowledgeContext(
     .map((doc, index) => ({
       index,
       source: doc,
-      text: "[" + String(doc.category || "general") + "] " + doc.title.trim() + "\\n" + doc.content.trim(),
+      text: "[" + String(doc.category || "general") + "] " + doc.title.trim() + "\n" + doc.content.trim(),
     }));
 
-  const fullContext = normalized.map((doc) => doc.text).join("\\n\\n");
+  const fullContext = normalized.map((doc) => doc.text).join("\n\n");
   if (fullContext.length <= maxChars) return fullContext;
 
   const queryTokens = expandQueryTokens(getMeaningfulQueryTokens(query), query);
@@ -221,7 +221,7 @@ function buildRelevantKnowledgeContext(
   return selected
     .sort((a, b) => a.index - b.index)
     .map((doc) => doc.text)
-    .join("\\n\\n");
+    .join("\n\n");
 }
 
 module.exports = {

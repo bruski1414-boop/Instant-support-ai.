@@ -622,6 +622,7 @@ try {
   assert.equal(preservedB.rowCount, 1, "tenant A deletion must not affect tenant B's document");
   console.log("PASS: tenant-scoped transcripts, knowledge, storage connections, revenue offers and sale attribution verified for two hotel workspaces.");
 } finally {
+  if (releaseHeldAi) releaseHeldAi();
   if (serverReady) {
     for (const tenant of tenants) {
       if (tenant.slug) {

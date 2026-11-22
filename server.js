@@ -136,7 +136,7 @@ app.post("/api/setup/organization",requireDb,async(q,r,n)=>{
    const u=await c.query("INSERT INTO users(organization_id,email,password_hash,role) VALUES($1,lower($2),$3,'owner') RETURNING email",[o.rows[0].id,b.email,await pwHash(b.password)]);
    await c.query("INSERT INTO audit_logs(organization_id,action,target_type) VALUES($1,'organization.created','organization')",[o.rows[0].id]);await c.query("COMMIT");
    r.status(201).json({organization:{name:o.rows[0].name,slug:o.rows[0].slug},owner:{email:u.rows[0].email},message:"Owner created. Remove BOOTSTRAP_TOKEN and sign in."});
-  }catch(e){await c.query("ROLLBACK");throw e;}finally{c.release();}
+  }catch(e){await c.query("ROLLBACK").catch(()=>{});throw e;}finally{c.release();}
  }catch(e){n(e);}
 });
 app.post("/api/platform/organizations",requireDb,async(q,r,n)=>{
@@ -302,8 +302,8 @@ app.post("/api/public/:slug/chat",async(q,r,n)=>{
  const verifiedForHotel=new Set(hotelIntegrations.rows.map(x=>x.integration));
  if(!verifiedForHotel.has("ai_provider")||!verifiedForHotel.has("staff_webhook"))return r.status(503).json({error:"This hotel's AI and staff notification integrations must be verified in its setup dashboard before guest chat is enabled."});
  if(!hotelStorage.rowCount)return r.status(503).json({error:"This hotel must connect and authorize its own storage provider before guest chat is enabled."});
- const docs=await loadApprovedKnowledge(db,org.id);if(!docs.rowCount)return r.status(503).json({error:"No hotel information has been approved. Please contact the hotel team."});if(process.env.GUEST_DATA_STORAGE_ENABLED!=="true")return r.status(503).json({error:"Guest data storage is disabled until the hotel has approved its privacy notice, retention period and data-processing terms."});if(!ai)return r.status(503).json({error:"Live AI is not configured. Please contact the hotel team."});
- const currentOffers=await db.query("SELECT id,name,description,category,amount_minor,currency,status,availability_status,availability_verified_at,expires_at FROM hotel_offers WHERE organization_id=$1 AND status='active' AND availability_status='available' AND availability_verified_at>now()-interval '15 minutes' AND expires_at>now() ORDER BY updated_at DESC LIMIT 30",[org.id]);const matchedOffers=selectRelevantOffers({message:msg,offers:currentOffers.rows.map(o=>({id:o.id,name:o.name,description:o.description,category:o.category,amountMinor:Number(o.amount_minor),currency:o.currency,status:o.status,availabilityStatus:o.availability_status,availabilityVerifiedAt:o.availability_verified_at?.toISOString?.()||String(o.availability_verified_at),expiresAt:o.expires_at?.toISOString?.()||String(o.expires_at)}))});const knowledgeContext=buildRelevantKnowledgeContext(docs.rows,msg);const offerContext=buildOfferContext(matchedOffers);const numericKnowledgeContext=buildEvidenceKnowledgeContext(docs.rows,msg)+"\n\n[VERIFIED HOTEL OFFERS]\n"+offerContext;const noRelevantKnowledge=!hasRelevantKnowledgeMatch(docs.rows,msg)&&!matchedOffers.length;const knowledge=knowledgeContext+"\n\n[VERIFIED HOTEL OFFERS]\n"+offerContext;const flag=escalate(msg);
+  if(process.env.GUEST_DATA_STORAGE_ENABLED!=="true")return r.status(503).json({error:"Guest data storage is disabled until the hotel has approved its privacy notice, retention period and data-processing terms."});if(!ai)return r.status(503).json({error:"Live AI is not configured. Please contact the hotel team."});
+  let docs,matchedOffers=[],numericKnowledgeContext="",noRelevantKnowledge=false,knowledge="";const flag=escalate(msg);
  const requestedConversation=q.body?.conversationId,requestedToken=q.body?.conversationToken;
  if(requestedConversation!==undefined&&requestedConversation!==null&&requestedConversation!==""&&(typeof requestedConversation!=="string"||!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(requestedConversation)))return r.status(400).json({error:"Invalid conversation reference."});
  if(requestedConversation&&(typeof requestedToken!=="string"||!/^[A-Za-z0-9_-]{40,64}$/.test(requestedToken)))return r.status(400).json({error:"Conversation access token required."});
@@ -319,6 +319,17 @@ app.post("/api/public/:slug/chat",async(q,r,n)=>{
    const locked=await c.query("SELECT id FROM conversations WHERE id=$1 AND organization_id=$2 AND guest_token_hash=$3 FOR UPDATE",[cid,org.id,hash(guestToken)]);
    if(!locked.rowCount){await c.query("ROLLBACK");return r.status(404).json({error:"Conversation not found."});}
   }
+   // Refresh approved knowledge and time-sensitive offers after the lock. A turn
+   // that waited must not answer using facts or offers that staff changed meanwhile.
+   docs=await loadApprovedKnowledge(c,org.id);
+   if(!docs.rowCount){await c.query("ROLLBACK");return r.status(503).json({error:"No hotel information has been approved. Please contact the hotel team."});}
+   const currentOffers=await c.query("SELECT id,name,description,category,amount_minor,currency,status,availability_status,availability_verified_at,expires_at FROM hotel_offers WHERE organization_id=$1 AND status='active' AND availability_status='available' AND availability_verified_at>now()-interval '15 minutes' AND expires_at>now() ORDER BY updated_at DESC LIMIT 30",[org.id]);
+   matchedOffers=selectRelevantOffers({message:msg,offers:currentOffers.rows.map(o=>({id:o.id,name:o.name,description:o.description,category:o.category,amountMinor:Number(o.amount_minor),currency:o.currency,status:o.status,availabilityStatus:o.availability_status,availabilityVerifiedAt:o.availability_verified_at?.toISOString?.()||String(o.availability_verified_at),expiresAt:o.expires_at?.toISOString?.()||String(o.expires_at)}))});
+   const knowledgeContext=buildRelevantKnowledgeContext(docs.rows,msg);
+   const offerContext=buildOfferContext(matchedOffers);
+   numericKnowledgeContext=buildEvidenceKnowledgeContext(docs.rows,msg)+"\\n\\n[VERIFIED HOTEL OFFERS]\\n"+offerContext;
+   noRelevantKnowledge=!hasRelevantKnowledgeMatch(docs.rows,msg)&&!matchedOffers.length;
+   knowledge=knowledgeContext+"\\n\\n[VERIFIED HOTEL OFFERS]\\n"+offerContext;
   // Read history only after acquiring the conversation row lock. Concurrent turns
   // now wait for the previous turn to commit before building their model context.
   const previous=await c.query("SELECT m.role,m.content FROM messages m JOIN conversations c ON c.id=m.conversation_id WHERE m.conversation_id=$1 AND c.organization_id=$2 AND m.role IN ('guest','assistant') ORDER BY m.sequence_no DESC LIMIT 8",[cid,org.id]);

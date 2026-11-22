@@ -287,6 +287,32 @@ test("applies calendar-month editable-history durations without month-end rollov
   assert.equal(parseIsoDuration("P0M7DT0H0M0S").days, 7);
 });
 
+test("withholds paid add-ons when service-order readback is stale, canceled or unverified", () => {
+  const stale = createValidMewsAccountingFixture();
+  stale.verifiedOrderItemWrites[0].verifiedAt = "2026-11-20T08:54:59.000Z";
+  const staleResult = mapMewsPaidAddonEvidence(stale);
+  assert.equal(staleResult.events.length, 0);
+  assert.equal(staleResult.withheld[0].reason, "service_order_readback_stale_or_unverified");
+
+  const canceled = createValidMewsAccountingFixture();
+  canceled.verifiedOrderItemWrites[0].serviceOrderCancelledAt = "2026-11-20T08:59:30.000Z";
+  const canceledResult = mapMewsPaidAddonEvidence(canceled);
+  assert.equal(canceledResult.events.length, 0);
+  assert.equal(canceledResult.withheld[0].reason, "service_order_readback_stale_or_unverified");
+
+  const changedAfterReadback = createValidMewsAccountingFixture();
+  changedAfterReadback.verifiedOrderItemWrites[0].serviceOrderUpdatedAt = "2026-11-20T09:03:00.000Z";
+  const changedResult = mapMewsPaidAddonEvidence(changedAfterReadback);
+  assert.equal(changedResult.events.length, 0);
+  assert.equal(changedResult.withheld[0].reason, "service_order_readback_stale_or_unverified");
+
+  const unsupportedState = createValidMewsAccountingFixture();
+  unsupportedState.verifiedOrderItemWrites[0].serviceOrderState = "Canceled";
+  const unsupportedResult = mapMewsPaidAddonEvidence(unsupportedState);
+  assert.equal(unsupportedResult.events.length, 0);
+  assert.equal(unsupportedResult.withheld[0].reason, "service_order_readback_stale_or_unverified");
+});
+
 test("keeps multiple Veyra add-ons on one fully paid bill as separate evidence records", () => {
   const input = createValidMewsAccountingFixture();
   input.orderItems.push({
@@ -302,6 +328,10 @@ test("keeps multiple Veyra add-ons on one fully paid bill as separate evidence r
     serviceOrderId: "service-order-44",
     reservationId: "reservation-22",
     externalIdentifier: "veyra-addon:spa-103",
+    serviceOrderState: "Confirmed",
+    serviceOrderUpdatedAt: "2026-11-20T08:59:00.000Z",
+    serviceOrderCancelledAt: null,
+    verifiedAt: "2026-11-20T09:00:00.000Z",
     source: "mews.orders.add+orderItems.getAll+productServiceOrders.getAll"
   });
   const result = mapMewsPaidAddonEvidence(input);

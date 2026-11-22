@@ -268,7 +268,7 @@ try {
     [concurrencyOrg],
   );
   await pool.query(
-    "INSERT INTO knowledge_documents(organization_id,title,category,content,approved,reviewed_at) VALUES($1,'Breakfast hours','dining','Breakfast starts at 7:00 AM and ends at 10:00 AM.',true,now())",
+    "INSERT INTO knowledge_documents(organization_id,title,category,content,approved,reviewed_at) VALUES($1,'Breakfast hours','dining','Breakfast hours are 7:00 AM to 10:00 AM. Breakfast starts at 7:00 AM and ends at 10:00 AM.',true,now())",
     [concurrencyOrg],
   );
 
@@ -361,7 +361,7 @@ try {
   const initialTurnResponse = await fetch(guestChatUrl, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ message: "What time does breakfast start?" }),
+    body: JSON.stringify({ message: "What are the breakfast hours?" }),
   });
   assert.equal(initialTurnResponse.status, 200, "the test hotel should accept an initial guest turn");
   const initialTurn = await initialTurnResponse.json();
@@ -378,7 +378,10 @@ try {
       conversationToken: initialTurn.conversationToken,
     }),
   });
+  const heldAiTimeout = setTimeout(() => { signalHeldAiStarted(); }, 10000);
   await heldAiStarted;
+  clearTimeout(heldAiTimeout);
+  assert.equal(mockAiRequests.length, 2, "the first concurrent turn must reach the controlled AI provider");
   const secondConcurrentTurn = fetch(guestChatUrl, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -402,7 +405,7 @@ try {
     "the second AI request must include the first concurrent guest message in its history",
   );
   assert.ok(
-    secondAiContext.some(item => item.role === "assistant" && item.content === "Breakfast starts at 7:00 AM and ends at 10:00 AM."),
+    secondAiContext.some(item => item.role === "assistant" && item.content === "Breakfast hours are 7:00 AM to 10:00 AM. Breakfast starts at 7:00 AM and ends at 10:00 AM."),
     "the second AI request must include the first turn's committed assistant reply",
   );
   const concurrentTranscript = await pool.query(

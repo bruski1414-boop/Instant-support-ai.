@@ -609,7 +609,27 @@ try {
   const ownEditBody = await ownEdit.json();
   assert.equal(ownEditBody.document.approved, false, "editing approved content must automatically revoke approval");
   const afterEditA = await loadApprovedKnowledge(pool, orgA);
-  assert.equal(afterEditA.rows.length, 0, "edited content must not return to guest context before reapproval");
+  assert.equal(
+    afterEditA.rows.some(row => row.content === "Updated policy content requiring fresh approval"),
+    false,
+    "edited content must not return to guest context before reapproval",
+  );
+  assert.equal(
+    afterEditA.rows.some(row => row.content === tenants[0].approvedKnowledge),
+    false,
+    "the previously approved version must not remain in guest context after an edit",
+  );
+  assert.equal(
+    afterEditA.rows.some(row => row.content.includes("Breakfast hours are 7:00 AM")),
+    true,
+    "editing one document must preserve other currently approved hotel knowledge",
+  );
+  const editedKnowledgeState = await pool.query(
+    "SELECT approved,content FROM knowledge_documents WHERE id=$1 AND organization_id=$2",
+    [tenants[0].approvedKnowledgeId, orgA],
+  );
+  assert.equal(editedKnowledgeState.rows[0].approved, false, "the edited database record must remain unapproved");
+  assert.equal(editedKnowledgeState.rows[0].content, "Updated policy content requiring fresh approval");
   const afterEditB = await loadApprovedKnowledge(pool, orgB);
   assert.equal(afterEditB.rows.length, 1, "editing tenant A content must not affect tenant B guest context");
 

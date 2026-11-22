@@ -391,7 +391,11 @@ test("guest turns lock a conversation before reading history or generating the n
   const history = route.indexOf('ORDER BY m.sequence_no DESC LIMIT 8');
   const generation = route.indexOf('generateGuestSupportAnswer(');
   const persist = route.indexOf('INSERT INTO messages(conversation_id,role,content)');
-  assert.ok(lock >= 0 && history > lock, "conversation must be locked before history is read");
+  const knowledgeRefresh = route.indexOf("loadApprovedKnowledge(c,org.id)");
+  const offerRefresh = route.indexOf("FROM hotel_offers WHERE organization_id=$1");
+  assert.ok(lock >= 0 && knowledgeRefresh > lock, "approved knowledge must be refreshed after the conversation lock");
+  assert.ok(offerRefresh > lock, "time-sensitive offers must be refreshed after the conversation lock");
+  assert.ok(history > lock, "conversation must be locked before history is read");
   assert.ok(generation > history, "the model must receive history read after the lock");
   assert.ok(persist > generation, "the turn must be persisted before the lock is released");
   assert.match(route, /await c\.query\("COMMIT"\)/);

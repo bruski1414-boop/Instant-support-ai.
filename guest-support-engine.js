@@ -192,4 +192,4 @@ function createAiUnavailableAnswer() {
   };
 }
 
-module.exports = { generateGuestSupportAnswer, createAiUnavailableAnswer, createNoKnowledgeAnswer, hasUnsupportedContentTerms };
+module.exports = { generateGuestSupportAnswer, createAiUnavailableAnswer, createNoKnowledgeAnswer, hasUnsupportedContentTerms, hasUnverifiedCompletionClaims };

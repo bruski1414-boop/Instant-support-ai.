@@ -243,6 +243,11 @@ test("guest conversation writes lock and revalidate the tenant-owned conversatio
   assert.match(server, /SELECT id FROM conversations WHERE id=\$1 AND organization_id=\$2 AND guest_token_hash=\$3 FOR UPDATE/);
   assert.match(server, /UPDATE conversations SET last_message_at=now\(\),status=CASE WHEN \$2 THEN 'escalated' WHEN status='resolved' THEN 'open' ELSE status END WHERE id=\$1 AND organization_id=\$3/);
 });
+test("transaction error handlers preserve the original error if rollback also fails", () => {
+  assert.doesNotMatch(server, /catch\(e\)\{await c\.query\("ROLLBACK"\);/);
+  assert.match(server, /catch\(e\)\{await c\.query\("ROLLBACK"\)\.catch\(\(\)=>\{\}\);/);
+});
+
 
 
 test("staff handoff events carry stable tenant identifiers for multi-hotel routing", () => {

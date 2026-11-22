@@ -81,8 +81,8 @@ function getNumericContextTerms(value) {
 
 function splitNumericEvidenceSentences(value) {
   return String(value || "")
-    .split(/[.!?;]+|\\n{2,}/)
-    .map((sentence) => sentence.replace(/\\n/g, " ").trim())
+    .split(/[.!?;]+|\n{2,}/)
+    .map((sentence) => sentence.replace(/\n/g, " ").trim())
     .filter(Boolean);
 }
 

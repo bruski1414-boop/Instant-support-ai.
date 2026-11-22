@@ -42,6 +42,11 @@ function hasRestrictiveQualification(value) {
   return /\b(?:only|except|unless|excluding|excluded|subject\s+to|provided\s+that|as\s+long\s+as)\b/i.test(String(value || ""));
 }
 
+function hasUnverifiedCompletionClaims(reply) {
+  // The prototype has no action-confirmation channel for these operations.
+  return /\b(?:i(?:'ve| have)\s+(?:booked|reserved|cancelled|canceled|refunded|processed|notified|alerted)|we(?:'ve| have)\s+(?:booked|reserved|cancelled|canceled|refunded|processed|notified|alerted)|(?:your|the)\s+(?:booking|reservation)\s+(?:is|has been)\s+(?:confirmed|booked|cancelled|canceled)|(?:staff|the hotel team)\s+(?:has|have)\s+been\s+(?:notified|alerted)|refund\s+(?:has|have)\s+been\s+processed)\b/i.test(String(reply || ""));
+}
+
 function hasUnsupportedContentTerms(reply, approvedKnowledge) {
   const evidence = String(approvedKnowledge || "");
   const evidenceTerms = new Set(getDescriptiveTerms(evidence));
@@ -128,6 +133,17 @@ async function generateGuestSupportAnswer({
   }
 
   const normalizedAnswer = normalizeGuestSupportAnswer(parsedAnswer);
+  if (
+    !normalizedAnswer.needsHuman &&
+    hasUnverifiedCompletionClaims(normalizedAnswer.reply)
+  ) {
+    return resolveGuestSupportAnswer(message, {
+      reply: "I cannot confirm that this action has been completed. Please contact the front desk so the team can verify and assist.",
+      needsHuman: true,
+      handoffReason: "The AI response claimed a booking, cancellation, refund, or staff notification without a confirmed action result.",
+    });
+  }
+
   if (
     !normalizedAnswer.needsHuman &&
     hasUnsupportedNumericClaims(normalizedAnswer.reply, numericEvidence)

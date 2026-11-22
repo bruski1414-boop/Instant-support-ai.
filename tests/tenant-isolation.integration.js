@@ -217,6 +217,32 @@ try {
   const pmsBAfterCrossDisconnectBody = await pmsBAfterCrossDisconnect.json();
   assert.equal(pmsBAfterCrossDisconnectBody.connections.some(x => x.provider === "tenant-b-private-adapter"), true, "tenant B's PMS connection must remain intact after tenant A's disconnect attempt");
   await Promise.all(tenants.map(seedConversation));
+
+  // Verify PostgreSQL serializes two guest turns that target the same conversation.
+  const firstTurn = await pool.connect();
+  const secondTurn = await pool.connect();
+  let secondLockAcquired = false;
+  try {
+    await firstTurn.query("BEGIN");
+    await firstTurn.query("SELECT id FROM conversations WHERE id=$1 FOR UPDATE", [tenants[0].conversationId]);
+    await secondTurn.query("BEGIN");
+    const waitingLock = secondTurn.query(
+      "SELECT id FROM conversations WHERE id=$1 FOR UPDATE",
+      [tenants[0].conversationId],
+    ).then(result => { secondLockAcquired = true; return result; });
+    await new Promise(resolve => setTimeout(resolve, 75));
+    assert.equal(secondLockAcquired, false, "a second turn must wait while the first turn owns the conversation lock");
+    await firstTurn.query("COMMIT");
+    await waitingLock;
+    assert.equal(secondLockAcquired, true, "the waiting turn must proceed after the first turn commits");
+    await secondTurn.query("ROLLBACK");
+  } finally {
+    await firstTurn.query("ROLLBACK").catch(() => {});
+    await secondTurn.query("ROLLBACK").catch(() => {});
+    firstTurn.release();
+    secondTurn.release();
+  }
+
   await Promise.all(tenants.map(seedKnowledge));
   await Promise.all(tenants.map(seedOffer));
   await Promise.all(tenants.map(seedOfferAttribution));

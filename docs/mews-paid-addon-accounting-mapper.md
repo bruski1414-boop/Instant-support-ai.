@@ -24,7 +24,7 @@ The mapper requires all of the following:
 6. The currently confirmed reservation IDs, derived from a tenant-scoped Mews reservation read.
 7. A server-owned write record created only after a successful Mews `orders/add` request, containing the returned `OrderId`, submitted `LinkedReservationId`, tenant/Enterprise, and exact item-level `ExternalIdentifier`. The returned `OrderId` is retained as the Mews order reference; it is **not assumed to equal** an order item's `ServiceOrderId`.
 
-The write record carries the organization ID, Enterprise ID, returned Mews `OrderId`, submitted reservation ID, service ID and exact Veyra external identifier. Mews documents `orders/add` as returning `OrderId`, while `orderItems/getAll` returns `ServiceOrderId` and `productServiceOrders/getAll` returns the product service order `Id` plus `LinkedReservationId`. Veyra therefore performs a separate readback: it finds exactly one order item by the exact external identifier, resolves that item's `ServiceOrderId` to one product service order, and verifies that service order's `LinkedReservationId` and service match the server-owned write record. It does not assume `OrderId === ServiceOrderId`. The mapper accepts only the resulting server-owned proof with source label `mews.orders.add+orderItems.getAll+productServiceOrders.getAll` and rejects guest-supplied, spoofed, duplicate or cross-tenant links.
+The write record carries the organization ID, Enterprise ID, returned Mews `OrderId`, submitted reservation ID, service ID and exact Veyra external identifier. Mews documents `orders/add` as returning `OrderId`, while `orderItems/getAll` returns `ServiceOrderId` and `productServiceOrders/getAll` returns the product service order `Id` plus `LinkedReservationId`. Veyra therefore performs a separate readback: it finds exactly one order item by the exact external identifier, resolves that item's `ServiceOrderId` to one product service order, and verifies that service order's `LinkedReservationId` and service match the server-owned write record. It does not assume `OrderId === ServiceOrderId`. The mapper accepts only the resulting server-owned proof with source label `mews.orders.add+orderItems.getAll+productServiceOrders.getAll`. The proof includes the readback timestamp, current service-order state, provider update timestamp and explicit non-cancelled status. The mapper withholds a record if the readback is older than five minutes, is more than two minutes ahead of Mews' `NowUtc`, the service order is not in an accepted active state, or its provider update timestamp is later than the readback (with a two-minute clock-skew allowance). This prevents a previously valid but stale/cancelled service-order link from being reused as current paid-add-on evidence. Guest-supplied, spoofed, duplicate or cross-tenant links are rejected.
 
 ## Evidence accepted
 
@@ -32,7 +32,7 @@ A Mews order item is eligible only if:
 
 - Its `ExternalIdentifier` is in Veyra's `veyra-addon:` namespace, is unique in the batch, and exactly matches a server-owned item-write record from the successful Mews order request.
 - Its Mews Enterprise matches the tenant's verified Enterprise.
-- Its service-order ID has a server-owned link to a reservation that is currently confirmed.
+- Its service-order ID has a server-owned link to a reservation that is currently confirmed. The readback must also be no older than five minutes, show an accepted non-cancelled service-order state, and include an update timestamp no later than the readback time (allowing two minutes for provider clock skew).
 - Its accounting state is `Closed`, it has a valid `ClosedUtc`, and it is not cancelled.
 - Its current gross amount is positive and converts exactly to integer minor units using the ISO 4217 currency precision. The mapper does not round unsupported fractional precision.
 - It belongs to a closed bill whose type is `Receipt`, correction state is `Bill`, and `Options.Rebated` is explicitly false.
@@ -84,7 +84,8 @@ The mapper is not a substitute for tenant-scoped database uniqueness, authentica
 
 - Valid paid add-on mapping.
 - Cross-enterprise and cross-tenant rejection.
-- Server-owned reservation links and current reservation confirmation.
+- Server-owned reservation links, current reservation confirmation and fresh active service-order readback.
+- Stale readback, future service-order updates, canceled service orders and unsupported service-order states.
 - Receipt versus Invoice and open bills.
 - Corrective bills, bill rebates and chained item rebates.
 - Editable-history windows and ISO-8601 duration handling.

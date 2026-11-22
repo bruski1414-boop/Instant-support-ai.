@@ -11,6 +11,9 @@ const VEYRA_EXTERNAL_ID = /^veyra-addon:[A-Za-z0-9._:-]{1,120}$/;
 const SAFE_ID = /^[A-Za-z0-9._:-]{1,200}$/;
 const ADJUSTMENT_KINDS = new Set(["Refund", "Chargeback", "ChargebackReversal"]);
 const WRITE_READBACK_SOURCE = "mews.orders.add+orderItems.getAll+productServiceOrders.getAll";
+const MAX_ORDER_READBACK_AGE_MS = 5 * 60 * 1000;
+const MAX_PROVIDER_CLOCK_SKEW_MS = 2 * 60 * 1000;
+const VERIFIED_SERVICE_ORDER_STATES = new Set(["Confirmed", "Started", "Processed"]);
 
 function requiredId(value, field) {
   if (typeof value !== "string" || !SAFE_ID.test(value.trim())) {
@@ -191,12 +194,25 @@ function mapMewsPaidAddonEvidence(input = {}) {
     if (verifiedOrderItemWrites.has(externalIdentifier)) {
       throw new Error("A Veyra external identifier cannot have multiple Mews write records.");
     }
+    const verifiedAtMs = utcMillis(link.verifiedAt, "verified write verifiedAt");
+    const serviceOrderUpdatedAtMs = utcMillis(link.serviceOrderUpdatedAt, "verified write serviceOrderUpdatedAt");
+    const readbackValid =
+      link.serviceOrderCancelledAt === null &&
+      VERIFIED_SERVICE_ORDER_STATES.has(link.serviceOrderState) &&
+      verifiedAtMs <= nowMs + MAX_PROVIDER_CLOCK_SKEW_MS &&
+      nowMs - verifiedAtMs <= MAX_ORDER_READBACK_AGE_MS &&
+      serviceOrderUpdatedAtMs <= verifiedAtMs + MAX_PROVIDER_CLOCK_SKEW_MS;
     const priorReservation = reservationByServiceOrder.get(serviceOrderId);
     if (priorReservation && priorReservation !== reservationId) {
       throw new Error("A Mews service order cannot have conflicting reservation links.");
     }
     reservationByServiceOrder.set(serviceOrderId, reservationId);
-    verifiedOrderItemWrites.set(externalIdentifier, { mewsOrderId, serviceOrderId, reservationId });
+    verifiedOrderItemWrites.set(externalIdentifier, {
+      mewsOrderId,
+      serviceOrderId,
+      reservationId,
+      readbackValid
+    });
   }
 
   const billById = new Map(bills.map(bill => [bill.Id, bill]));
@@ -264,6 +280,10 @@ function mapMewsPaidAddonEvidence(input = {}) {
     if (!writeEvidence || writeEvidence.serviceOrderId !== serviceOrderId ||
         !reservationId || !confirmedReservations.has(reservationId)) {
       hold(item, "reservation_link_not_verified_or_not_confirmed");
+      continue;
+    }
+    if (!writeEvidence.readbackValid) {
+      hold(item, "service_order_readback_stale_or_unverified");
       continue;
     }
     if (item.AccountingState !== "Closed" ||

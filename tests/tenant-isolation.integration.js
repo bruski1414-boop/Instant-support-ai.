@@ -603,7 +603,7 @@ try {
   const ownEdit = await fetch(baseUrl + "/api/admin/knowledge/" + tenants[0].approvedKnowledgeId, {
     method: "PATCH",
     headers: { cookie: cookieA, "X-CSRF-Token": tenants[0].csrfToken, "content-type": "application/json" },
-    body: JSON.stringify({ content: "Updated policy content requiring fresh approval" }),
+    body: JSON.stringify({ content: "Updated policy content requiring fresh approval", approved: true }),
   });
   assert.equal(ownEdit.status, 200, "tenant A must be able to update its own knowledge");
   const ownEditBody = await ownEdit.json();

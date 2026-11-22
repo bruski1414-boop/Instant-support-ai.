@@ -244,6 +244,7 @@ test("guest conversation writes lock and revalidate the tenant-owned conversatio
   assert.match(server, /UPDATE conversations SET last_message_at=now\(\),status=CASE WHEN \$2 THEN 'escalated' WHEN status='resolved' THEN 'open' ELSE status END WHERE id=\$1 AND organization_id=\$3/);
 });
 test("transaction error handlers preserve the original error if rollback also fails", () => {
+  const server = fs.readFileSync("server.js", "utf8");
   assert.doesNotMatch(server, /catch\(e\)\{await c\.query\("ROLLBACK"\);/);
   assert.match(server, /catch\(e\)\{await c\.query\("ROLLBACK"\)\.catch\(\(\)=>\{\}\);/);
 });

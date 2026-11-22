@@ -10,14 +10,15 @@ function required(value, field) {
 }
 
 function canonicalUtc(value, field) {
-  if (typeof value !== "string" || !/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$/.test(value)) {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(value)) {
     throw new Error(field + " must be a canonical UTC timestamp.");
   }
   const parsed = Date.parse(value);
-  if (!Number.isFinite(parsed) || new Date(parsed).toISOString() !== value) {
+  const normalized = value.includes(".") ? value : value.replace(/Z$/, ".000Z");
+  if (!Number.isFinite(parsed) || new Date(parsed).toISOString() !== normalized) {
     throw new Error(field + " must be a canonical UTC timestamp.");
   }
-  return value;
+  return normalized;
 }
 
 function uniqueRows(rows, field, expectedEnterpriseId, enterpriseOptional = false) {

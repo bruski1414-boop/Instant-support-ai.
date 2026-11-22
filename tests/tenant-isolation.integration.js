@@ -405,7 +405,7 @@ try {
     "the second AI request must include the first concurrent guest message in its history",
   );
   assert.ok(
-    secondAiContext.some(item => item.role === "assistant" && item.content === "Breakfast hours are 7:00 AM to 10:00 AM. Breakfast starts at 7:00 AM and ends at 10:00 AM."),
+    secondAiContext.some(item => item.role === "assistant" && item.content === "Breakfast starts at 7:00 AM and ends at 10:00 AM."),
     "the second AI request must include the first turn's committed assistant reply",
   );
   const concurrentTranscript = await pool.query(

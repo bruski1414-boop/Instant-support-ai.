@@ -381,3 +381,18 @@ test("message history and transcript queries use stable per-conversation inserti
   assert.match(server, /ORDER BY m\.sequence_no DESC LIMIT 200/);
   assert.match(server, /ORDER BY sequence_no DESC LIMIT 1/);
 });
+
+test("guest turns lock a conversation before reading history or generating the next answer", () => {
+  const server = fs.readFileSync("server.js", "utf8");
+  const routeStart = server.indexOf('app.post("/api/public/:slug/chat"');
+  const routeEnd = server.indexOf('app.', routeStart + 10);
+  const route = server.slice(routeStart, routeEnd > routeStart ? routeEnd : undefined);
+  const lock = route.indexOf('FOR UPDATE');
+  const history = route.indexOf('ORDER BY m.sequence_no DESC LIMIT 8');
+  const generation = route.indexOf('generateGuestSupportAnswer(');
+  const persist = route.indexOf('INSERT INTO messages(conversation_id,role,content)');
+  assert.ok(lock >= 0 && history > lock, "conversation must be locked before history is read");
+  assert.ok(generation > history, "the model must receive history read after the lock");
+  assert.ok(persist > generation, "the turn must be persisted before the lock is released");
+  assert.match(route, /await c\.query\("COMMIT"\)/);
+});

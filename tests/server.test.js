@@ -371,3 +371,13 @@ test("guest chat requires question evidence in approved knowledge even when the 
   assert.match(server, /const noRelevantKnowledge=!hasRelevantKnowledgeMatch\(docs\.rows,msg\)&&!matchedOffers\.length/);
   assert.match(retrieval, /function hasRelevantKnowledgeMatch\(documents, query\)/);
 });
+
+
+test("message history and transcript queries use stable per-conversation insertion order", () => {
+  const server = fs.readFileSync("server.js", "utf8");
+  assert.match(server, /sequence_no BIGINT GENERATED ALWAYS AS IDENTITY/);
+  assert.match(server, /CREATE INDEX IF NOT EXISTS messages_conversation_sequence_idx ON messages\(conversation_id,sequence_no\)/);
+  assert.match(server, /ORDER BY m\.sequence_no DESC LIMIT 8/);
+  assert.match(server, /ORDER BY m\.sequence_no DESC LIMIT 200/);
+  assert.match(server, /ORDER BY sequence_no DESC LIMIT 1/);
+});

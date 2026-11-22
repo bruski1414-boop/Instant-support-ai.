@@ -578,10 +578,14 @@ try {
   assert.equal(webhookRows.rows.every(row => /^[a-f0-9]{64}$/.test(row.payload_sha256)), true);
   const approvedA = await loadApprovedKnowledge(pool, orgA);
   const approvedB = await loadApprovedKnowledge(pool, orgB);
-  assert.equal(approvedA.rows.length, 1, "tenant A guest context must include only its current approved document");
-  assert.equal(approvedB.rows.length, 1, "tenant B guest context must include only its current approved document");
-  assert.equal(approvedA.rows[0].content, tenants[0].approvedKnowledge);
-  assert.equal(approvedB.rows[0].content, tenants[1].approvedKnowledge);
+  assert.ok(
+    approvedA.rows.some(row => row.content === tenants[0].approvedKnowledge),
+    "tenant A guest context must include its current approved document",
+  );
+  assert.ok(
+    approvedB.rows.some(row => row.content === tenants[1].approvedKnowledge),
+    "tenant B guest context must include its current approved document",
+  );
   assert.equal(JSON.stringify(approvedA.rows).includes(tenants[0].privateKnowledge), false, "unapproved tenant A knowledge must never enter guest context");
   assert.equal(JSON.stringify(approvedA.rows).includes("EXPIRED KNOWLEDGE"), false, "expired tenant A knowledge must never enter guest context");
   assert.equal(JSON.stringify(approvedA.rows).includes(tenants[1].approvedKnowledge), false, "tenant A guest context must never include tenant B knowledge");

@@ -63,6 +63,29 @@ function extractCurrencyClaims(value) {
   );
 }
 
+function getNumericContextTerms(value) {
+  const ignored = new Set([
+    "the", "and", "for", "from", "with", "that", "this", "when", "what",
+    "where", "your", "you", "our", "their", "there", "are", "was", "were",
+    "has", "have", "had", "can", "could", "would", "should", "will", "may",
+    "might", "not", "but", "please", "hotel", "guest", "guests", "daily",
+    "available", "served", "serves", "service", "costs", "cost", "price",
+    "prices", "fee", "fees", "from", "until", "between", "at", "is", "be",
+    "open", "opens", "opening", "close", "closes", "hours", "hour",
+  ]);
+  return new Set(
+    (String(value || "").toLowerCase().match(/[a-z]{3,}/g) || [])
+      .filter((term) => !ignored.has(term)),
+  );
+}
+
+function splitNumericEvidenceSentences(value) {
+  return String(value || "")
+    .split(/[.!?;]+|\\n{2,}/)
+    .map((sentence) => sentence.replace(/\\n/g, " ").trim())
+    .filter(Boolean);
+}
+
 function hasUnsupportedNumericClaims(reply, approvedKnowledge) {
   const answerNumbers = extractNumericClaims(reply);
   const knowledgeNumbers = extractNumericClaims(approvedKnowledge);
@@ -74,6 +97,28 @@ function hasUnsupportedNumericClaims(reply, approvedKnowledge) {
   const knowledgeCurrencies = extractCurrencyClaims(approvedKnowledge);
   for (const claim of answerCurrencies) {
     if (!knowledgeCurrencies.has(claim)) return true;
+  }
+
+  // A number appearing somewhere in the knowledge base is not enough:
+  // it must be grounded in the same sentence and subject context.
+  const evidenceSentences = splitNumericEvidenceSentences(approvedKnowledge);
+  const answerSentences = splitNumericEvidenceSentences(reply);
+  for (const answerSentence of answerSentences) {
+    const sentenceNumbers = extractNumericClaims(answerSentence);
+    const sentenceCurrencies = extractCurrencyClaims(answerSentence);
+    if (sentenceNumbers.size === 0 && sentenceCurrencies.size === 0) continue;
+
+    const answerTerms = getNumericContextTerms(answerSentence);
+    const supported = evidenceSentences.some((evidenceSentence) => {
+      const evidenceNumbers = extractNumericClaims(evidenceSentence);
+      const evidenceCurrencies = extractCurrencyClaims(evidenceSentence);
+      const numbersMatch = [...sentenceNumbers].every((claim) => evidenceNumbers.has(claim));
+      const currenciesMatch = [...sentenceCurrencies].every((claim) => evidenceCurrencies.has(claim));
+      const evidenceTerms = getNumericContextTerms(evidenceSentence);
+      const hasSharedSubject = [...answerTerms].some((term) => evidenceTerms.has(term));
+      return numbersMatch && currenciesMatch && hasSharedSubject;
+    });
+    if (!supported) return true;
   }
 
   return false;

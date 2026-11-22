@@ -57,8 +57,11 @@ const SYNONYMS = {
   aged: ["age", "ages"],
   treatment: ["treatments"],
   treatments: ["treatment"],
-  price: ["cost"],
-  cost: ["price"],
+  price: ["cost", "costs", "pricing"],
+  prices: ["price", "cost", "costs"],
+  cost: ["price", "costs", "pricing"],
+  costs: ["cost", "price", "pricing"],
+  pricing: ["price", "cost"],
 };
 
 function tokenize(value) {

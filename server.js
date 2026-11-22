@@ -35,7 +35,7 @@ app.use((_q,r,n)=>{r.setHeader("X-Content-Type-Options","nosniff");r.setHeader("
 app.use(cors((req,cb)=>{const o=req.get("Origin");const common={credentials:true,allowedHeaders:["Content-Type","X-CSRF-Token","X-Bootstrap-Token","X-Platform-Provisioning-Token"],methods:["GET","POST","PATCH","DELETE","OPTIONS"]};if(!o||origins.includes(o))return cb(null,{...common,origin:true});const segments=req.path.split("/");if(segments.length!==5||segments[1]!=="api"||segments[2]!=="public"||segments[4]!=="chat"||!db)return cb(null,{...common,origin:false});let hotelSlug;try{hotelSlug=decodeURIComponent(segments[3]);}catch{return cb(null,{...common,origin:false});}db.query("SELECT 1 FROM organizations o JOIN organization_settings s ON s.organization_id=o.id WHERE o.slug=$1 AND s.website_url=$2 LIMIT 1",[hotelSlug,o]).then(x=>cb(null,{...common,origin:x.rowCount>0})).catch(()=>cb(null,{...common,origin:false}));}));
 app.use(express.json({limit:"20kb",verify:(req,res,buf)=>{req.rawBody=Buffer.from(buf);}}));
 app.use("/api/",rateLimit({windowMs:60000,limit:60,standardHeaders:"draft-7",legacyHeaders:false}));
-app.use("/api/auth/",rateLimit({windowMs:900000,limit:10,standardHeaders:"draft-7",legacyHeaders:false}));
+const loginLimiter=rateLimit({windowMs:900000,limit:5,standardHeaders:"draft-7",legacyHeaders:false});
 const setupLimiter=rateLimit({windowMs:3600000,limit:5,standardHeaders:"draft-7",legacyHeaders:false});
 const platformProvisionLimiter=rateLimit({windowMs:3600000,limit:10,standardHeaders:"draft-7",legacyHeaders:false});
 const integrationTestLimiter=rateLimit({windowMs:3600000,limit:5,standardHeaders:"draft-7",legacyHeaders:false});
@@ -163,7 +163,7 @@ app.post("/api/platform/organizations",requireDb,async(q,r,n)=>{
   }catch(e){await c.query("ROLLBACK").catch(()=>{});if(e.code==="23505")return r.status(409).json({error:"That hotel workspace or owner email already exists."});throw e;}finally{c.release();}
  }catch(e){n(e);}
 });
-app.post("/api/auth/login",requireDb,async(q,r,n)=>{
+app.post("/api/auth/login",loginLimiter,requireDb,async(q,r,n)=>{
  try{const b=q.body||{};if(typeof b.email!=="string"||typeof b.password!=="string"||typeof b.organizationSlug!=="string"||b.email.length>254||b.password.length>200||!/^[a-z0-9-]{1,48}$/.test(b.organizationSlug))return r.status(400).json({error:"Enter workspace slug, email and password."});
   const x=await db.query("SELECT u.id,u.email,u.password_hash,u.role FROM users u JOIN organizations o ON o.id=u.organization_id WHERE u.email=lower($1) AND o.slug=$2 AND u.active=true AND o.status<>'suspended' LIMIT 2",[b.email,b.organizationSlug]);
   if(x.rowCount!==1||!(await pwCheck(b.password,x.rows[0].password_hash)))return r.status(401).json({error:"Email or password is incorrect."});

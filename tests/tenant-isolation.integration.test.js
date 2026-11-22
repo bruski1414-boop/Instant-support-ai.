@@ -303,9 +303,8 @@ test("two hotel workspaces remain isolated across live API resources", { skip: !
     assert.equal(result.body.conversations.length, 1);
     const payload = JSON.stringify(result.body);
     assert.ok(payload.includes(result.isAlpha ? "Private Alpha assistant reply" : "Private Beta assistant reply"));
-    assert.ok(payload.includes(result.isAlpha ? "Private Alpha guest message" : "Private Beta guest message"));
-    assert.ok(!payload.includes(result.isAlpha ? "Private Beta guest message" : "Private Alpha guest message"));
     assert.ok(!payload.includes(result.isAlpha ? "Private Beta assistant reply" : "Private Alpha assistant reply"));
+    assert.ok(!payload.includes(result.isAlpha ? "Private Beta guest message" : "Private Alpha guest message"));
   }
 
   const crossTenantChecks = [

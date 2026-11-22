@@ -257,3 +257,16 @@ test("implicit how-much phrasing is treated as a price request, not a breakfast-
   assert.equal(hasRelevantKnowledgeMatch(breakfastOnly, "How much is breakfast?"), false);
   assert.equal(hasRelevantKnowledgeMatch(breakfastOnly, "How much time for breakfast?"), true);
 });
+
+
+test("generic internet is not treated as Wi-Fi evidence, but wireless internet is", () => {
+  const genericInternet = [
+    { title: "Internet access", category: "connectivity", content: "Internet access is available throughout the hotel." },
+  ];
+  const wirelessInternet = [
+    { title: "Internet access", category: "connectivity", content: "Wireless internet is available throughout the hotel." },
+  ];
+  assert.equal(hasRelevantKnowledgeMatch(genericInternet, "Is Wi-Fi available?"), false);
+  assert.equal(hasRelevantKnowledgeMatch(wirelessInternet, "Is Wi-Fi available?"), true);
+  assert.equal(hasRelevantKnowledgeMatch(wirelessInternet, "Is generic internet available?"), false);
+});

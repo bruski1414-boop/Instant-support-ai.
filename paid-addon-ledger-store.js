@@ -72,6 +72,9 @@ function normalizePaidAddonLedgerEvent(event, organizationId) {
   const externalIdentifier = typeof event.externalIdentifier === "string" ? event.externalIdentifier.trim() : "";
   if (!EXTERNAL_ID.test(externalIdentifier)) throw new Error("A Veyra-issued external identifier is required.");
 
+  if (!Array.isArray(event.adjustments) || event.adjustments.length !== 0) {
+    throw new Error("V1 ledger ingestion accepts only unadjusted paid add-ons; refunds and chargebacks need item-allocation proof.");
+  }
   const grossAmountMinor = positiveMinor(event.grossAmountMinor, "grossAmountMinor");
   const adjustmentAmountMinor = event.adjustmentAmountMinor;
   const amountMinor = event.amountMinor;

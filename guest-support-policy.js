@@ -72,6 +72,10 @@ function getNumericContextTerms(value) {
     "available", "served", "serves", "service", "costs", "cost", "price",
     "prices", "fee", "fees", "from", "until", "between", "at", "is", "be",
     "open", "opens", "opening", "close", "closes", "hours", "hour",
+    // Currency labels are values, never evidence that two claims share a subject.
+    "usd", "eur", "gbp", "thb", "aud", "cad", "sgd", "jpy", "cny",
+    "chf", "hkd", "inr", "baht", "dollar", "dollars", "euro", "euros",
+    "pound", "pounds", "yen",
   ]);
   return new Set(
     (String(value || "").toLowerCase().match(/[a-z]{3,}/g) || [])

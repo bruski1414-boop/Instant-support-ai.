@@ -279,4 +279,5 @@ test("price and cost paraphrases match verified hotel pricing evidence", () => {
   assert.equal(hasRelevantKnowledgeMatch(pricedBreakfast, "How much is breakfast?"), true);
   assert.equal(hasRelevantKnowledgeMatch(pricedBreakfast, "What is the breakfast price?"), true);
   assert.equal(hasRelevantKnowledgeMatch(pricedBreakfast, "What is the cost of breakfast?"), true);
+  assert.match(buildEvidenceKnowledgeContext(pricedBreakfast, "How much is breakfast?"), /Breakfast costs 500 THB/);
 });

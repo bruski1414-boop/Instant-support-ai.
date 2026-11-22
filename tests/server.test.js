@@ -417,3 +417,18 @@ test("authentication and admin API responses are explicitly non-cacheable", asyn
     assert.equal(response.headers.get("expires"), "0");
   }
 });
+
+test("login attempts have a dedicated rate limit without throttling authenticated session reads", async () => {
+  const responses = [];
+  for (let i = 0; i < 6; i += 1) {
+    responses.push(await fetch(`${baseUrl}/api/auth/login`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ organizationSlug: "sample-hotel", email: "owner@example.com", password: "incorrect-password" })
+    }));
+  }
+  assert.deepEqual(responses.slice(0, 5).map(response => response.status), [503, 503, 503, 503, 503]);
+  assert.equal(responses[5].status, 429);
+  const sessionRead = await fetch(`${baseUrl}/api/auth/me`);
+  assert.equal(sessionRead.status, 503);
+});

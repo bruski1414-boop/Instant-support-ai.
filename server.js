@@ -308,7 +308,7 @@ app.post("/api/public/:slug/chat",async(q,r,n)=>{
  if(requestedConversation!==undefined&&requestedConversation!==null&&requestedConversation!==""&&(typeof requestedConversation!=="string"||!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(requestedConversation)))return r.status(400).json({error:"Invalid conversation reference."});
  if(requestedConversation&&(typeof requestedToken!=="string"||!/^[A-Za-z0-9_-]{40,64}$/.test(requestedToken)))return r.status(400).json({error:"Conversation access token required."});
  const guestToken=requestedConversation?requestedToken:crypto.randomBytes(32).toString("base64url");
- let cid=conversationId,eid,createdEscalation=false,existingNotificationStatus="not_configured",resolvedAnswer,reply,flagHuman;
+ let cid=requestedConversation||null,eid,createdEscalation=false,existingNotificationStatus="not_configured",resolvedAnswer,reply,flagHuman;
  const c=await db.connect();
  try{
   await c.query("BEGIN");

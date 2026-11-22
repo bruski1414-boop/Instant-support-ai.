@@ -1,6 +1,7 @@
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const { generateGuestSupportAnswer, createNoKnowledgeAnswer, hasUnverifiedCompletionClaims } = require("../guest-support-engine");
+const { hasUnsupportedNumericClaims } = require("../guest-support-policy");
 
 function fakeAi(content, inspect) {
   return {
@@ -479,5 +480,30 @@ test("completion-claim detector distinguishes uncertainty from a confirmed actio
   assert.equal(
     hasUnverifiedCompletionClaims("Your reservation has been booked."),
     true,
+  );
+});
+
+
+test("numeric grounding requires numbers and their subject to match the same evidence sentence", () => {
+  const evidence = "Breakfast is served from 7:00 to 10:00. The pool is open from 6:00 to 11:00.";
+  assert.equal(
+    hasUnsupportedNumericClaims("Breakfast runs from 7:00 to 10:00.", evidence),
+    false,
+  );
+  assert.equal(
+    hasUnsupportedNumericClaims("The pool is open from 7:00 to 10:00.", evidence),
+    true,
+  );
+});
+
+test("numeric grounding does not borrow a currency from an unrelated service", () => {
+  const evidence = "Airport transfer costs 1,500 USD. Massage costs 1,500 THB.";
+  assert.equal(
+    hasUnsupportedNumericClaims("Airport transfer costs 1,500 THB.", evidence),
+    true,
+  );
+  assert.equal(
+    hasUnsupportedNumericClaims("Massage costs 1,500 THB.", evidence),
+    false,
   );
 });

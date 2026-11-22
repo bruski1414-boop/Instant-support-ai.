@@ -270,3 +270,13 @@ test("generic internet is not treated as Wi-Fi evidence, but wireless internet i
   assert.equal(hasRelevantKnowledgeMatch(wirelessInternet, "Is Wi-Fi available?"), true);
   assert.equal(hasRelevantKnowledgeMatch(wirelessInternet, "Is generic internet available?"), false);
 });
+
+test("price and cost paraphrases match verified hotel pricing evidence", () => {
+  const pricedBreakfast = [
+    { title: "Breakfast price", category: "dining", content: "Breakfast costs 500 THB per person." },
+  ];
+
+  assert.equal(hasRelevantKnowledgeMatch(pricedBreakfast, "How much is breakfast?"), true);
+  assert.equal(hasRelevantKnowledgeMatch(pricedBreakfast, "What is the breakfast price?"), true);
+  assert.equal(hasRelevantKnowledgeMatch(pricedBreakfast, "What is the cost of breakfast?"), true);
+});

@@ -327,9 +327,9 @@ app.post("/api/public/:slug/chat",async(q,r,n)=>{
    matchedOffers=selectRelevantOffers({message:msg,offers:currentOffers.rows.map(o=>({id:o.id,name:o.name,description:o.description,category:o.category,amountMinor:Number(o.amount_minor),currency:o.currency,status:o.status,availabilityStatus:o.availability_status,availabilityVerifiedAt:o.availability_verified_at?.toISOString?.()||String(o.availability_verified_at),expiresAt:o.expires_at?.toISOString?.()||String(o.expires_at)}))});
    const knowledgeContext=buildRelevantKnowledgeContext(docs.rows,msg);
    const offerContext=buildOfferContext(matchedOffers);
-   numericKnowledgeContext=buildEvidenceKnowledgeContext(docs.rows,msg)+"\\n\\n[VERIFIED HOTEL OFFERS]\\n"+offerContext;
+   numericKnowledgeContext=buildEvidenceKnowledgeContext(docs.rows,msg)+"\n\n[VERIFIED HOTEL OFFERS]\n"+offerContext;
    noRelevantKnowledge=!hasRelevantKnowledgeMatch(docs.rows,msg)&&!matchedOffers.length;
-   knowledge=knowledgeContext+"\\n\\n[VERIFIED HOTEL OFFERS]\\n"+offerContext;
+   knowledge=knowledgeContext+"\n\n[VERIFIED HOTEL OFFERS]\n"+offerContext;
   // Read history only after acquiring the conversation row lock. Concurrent turns
   // now wait for the previous turn to commit before building their model context.
   const previous=await c.query("SELECT m.role,m.content FROM messages m JOIN conversations c ON c.id=m.conversation_id WHERE m.conversation_id=$1 AND c.organization_id=$2 AND m.role IN ('guest','assistant') ORDER BY m.sequence_no DESC LIMIT 8",[cid,org.id]);

@@ -138,6 +138,9 @@ main{padding:28px clamp(16px,4vw,48px);max-width:1450px;width:100%;margin:auto}.
   </div>
   <div class="sectionrow"><h2>Most common guest topics</h2><span class="muted">Unique conversations per topic</span></div>
   <div class="card tablewrap"><table class="table"><thead><tr><th>TOPIC</th><th>CONVERSATIONS</th></tr></thead><tbody id="insightTopics"></tbody></table></div>
+  <div class="sectionrow"><h2>Knowledge coverage check</h2><span class="muted">Topic estimates compared with approved hotel documents</span></div>
+  <p class="muted" style="font-size:12px">This is a category-level check, not an AI judgement of document quality. A document count does not prove that it answers every guest question. Managers should review the source and content before approving updates.</p>
+  <div class="card tablewrap"><table class="table"><thead><tr><th>GUEST TOPIC</th><th>GUEST CONVERSATIONS</th><th>CURRENT APPROVED DOCS</th><th>DOCS TO REVIEW</th></tr></thead><tbody id="insightKnowledgeCoverage"></tbody></table></div>
   <div class="sectionrow"><h2>Reasons associated with staff handoffs</h2><span class="muted">Grouped categories, not raw guest text</span></div>
   <div class="card tablewrap"><table class="table"><thead><tr><th>HANDOFF CATEGORY</th><th>COUNT</th></tr></thead><tbody id="insightHandoffs"></tbody></table></div>
   <div class="sectionrow"><h2>Suggested manager checks</h2><span class="muted">Practical ideas based on handoff patterns</span></div>
@@ -305,6 +308,7 @@ async function loadConversationInsights(){
  $("insightResolved").textContent=String(m.resolved_30d||0);
  const render=(rows,label,count)=>rows.length?rows.map(x=>'<tr><td>'+safe(x[label])+'</td><td>'+safe(x[count])+'</td></tr>').join(""):'<tr><td colspan="2" class="empty">No data in this period yet.</td></tr>';
  $("insightTopics").innerHTML=render(d.topics||[],"topic","conversations");
+ $("insightKnowledgeCoverage").innerHTML=(d.knowledgeCoverage||[]).map(x=>'<tr><td>'+safe(x.topic)+'</td><td>'+safe(x.guest_conversations)+'</td><td>'+safe(x.approved_documents)+'</td><td>'+safe(x.documents_needing_review)+'</td></tr>').join("")||'<tr><td colspan="4" class="empty">No guest topic data yet.</td></tr>';
  $("insightHandoffs").innerHTML=render(d.handoffTopics||[],"topic","count");
  const advice={
   "Availability unclear":"Ask the relevant department to review how current availability is confirmed, and make the escalation route clear.",

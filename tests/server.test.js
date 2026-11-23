@@ -489,5 +489,12 @@ test("staff handoff replies are tenant-scoped, audited and record first response
  assert.match(server,/first_staff_response_at=COALESCE\(first_staff_response_at,now\(\)\)/);
  assert.match(server,/escalation\.staff_reply_sent/);
  assert.match(server,/staffResponseLatency:staffResponseLatency\.rows\[0\]/);
+ const dashboard=fs.readFileSync("dashboard.html","utf8");
+ assert.match(dashboard,/id="performanceStaffCount"/);
+ assert.match(dashboard,/id="performanceStaffMedian"/);
+ assert.match(dashboard,/id="performanceStaffP95"/);
+ assert.match(dashboard,/data-action="send-staff-reply"/);
+ assert.match(dashboard,/api\("\/api\/admin\/escalations\/".*\/reply/);
+
  assert.match(server,/percentile_cont\(0\.95\) WITHIN GROUP\(ORDER BY EXTRACT\(EPOCH FROM \(first_staff_response_at-created_at\)\)\*1000\)/);
 });

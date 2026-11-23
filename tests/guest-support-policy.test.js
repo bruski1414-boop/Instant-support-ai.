@@ -314,15 +314,20 @@ test("evidence from an unrelated fact cannot support different concrete details 
   }, breakfastEvidence), true);
 });
 
-test("unsupported prices, dates, percentages and contact details fail the evidence guard", () => {
-  const source = "[offers] The package costs EUR 250 and is available until 2026-12-31.";
+test("unsupported prices, currencies, dates, percentages and contact details fail the evidence guard", () => {
+  const quote = "[offers] The package costs EUR 250, discount is 10%, and is available until 2026-12-31.";
+  const source = quote;
   for (const reply of [
     "The package costs EUR 500.",
+    "The package costs USD 250.",
     "The offer ends on 2027-01-31.",
     "The discount is 25%.",
+    "The discount is 10.",
     "Call us at +66 123 456 789.",
     "Email support@example.com.",
   ]) {
-    assert.equal(hasSupportedEvidence({ reply, evidence: ["[offers] The package costs EUR 250"] }, source), false, reply);
+    assert.equal(hasSupportedEvidence({ reply, evidence: [quote] }, source), false, reply);
   }
+  assert.equal(hasSupportedEvidence({ reply: "The package costs EUR 250.", evidence: [quote] }, source), true);
+  assert.equal(hasSupportedEvidence({ reply: "The discount is 10%.", evidence: [quote] }, source), true);
 });

@@ -55,9 +55,20 @@ function hasSupportedEvidence(answer, approvedKnowledge) {
   if (!answer || typeof answer !== "object" || !Array.isArray(answer.evidence)) return false;
   if (answer.evidence.length < 1 || answer.evidence.length > 5) return false;
   const source = String(approvedKnowledge || "");
-  return answer.evidence.every((quote) =>
+  const quotations = answer.evidence;
+  if (!quotations.every((quote) =>
     typeof quote === "string" && quote.trim().length >= 8 && source.includes(quote.trim())
-  );
+  )) return false;
+
+  // Exact citations alone are insufficient: reject concrete numbers, times,
+  // dates, percentages, currencies, phone numbers and email addresses in the
+  // reply unless those exact tokens occur in at least one cited quotation.
+  // This is a conservative guard, not a semantic proof of answer correctness.
+  const citedText = quotations.join(" ");
+  const concreteTokens = String(answer.reply || "").match(
+    /(?:\\b\\d{1,2}:\\d{2}\\b|\\b\\d{1,4}(?:[.,]\\d+)?%?\\b|\\b(?:USD|EUR|GBP|THB|AED|€|£|\\$)\\s?\\d+(?:[.,]\\d+)?|\\b\\d{1,4}[/-]\\d{1,2}(?:[/-]\\d{2,4})?\\b|[\\w.+-]+@[\\w.-]+\\.[A-Za-z]{2,})/g
+  ) || [];
+  return concreteTokens.every((token) => citedText.includes(token));
 }
 
 function requiresHumanHandoff(message, normalizedAnswer) {

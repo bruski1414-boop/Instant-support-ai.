@@ -76,7 +76,7 @@ Add a visible note: "Guest feedback is self-reported and does not independently 
 ## Remaining implementation work
 
 - Add automated unit/integration coverage for token validation, cross-tenant isolation, duplicate submissions, escalation creation/reuse, notification outcomes, and retention deletion.
-- Add tenant-scoped dashboard counts and clearly labelled unclassified outcomes.
+- Review the tenant-scoped dashboard counts against seeded test data and confirm the labels render correctly.
 - Add a feedback-prompt impression event before calculating any feedback rate.
 - Run the full test suite and integration suite against the exact feature commit; test notification delivery with a controlled endpoint.
 

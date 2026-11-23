@@ -384,3 +384,14 @@ test("conversation insights endpoint uses organization-scoped aggregate data wit
   assert.match(server, /daily:daily\.rows/);
   assert.doesNotMatch(server.slice(server.indexOf('app.get("/api/admin/insights"'), server.indexOf('app.get("/api/admin/offers"')), /SELECT[^\n]*m\.content[^\n]*AS\s+(message|guest_message)/i);
 });
+
+test("conversation insights dashboard offers cautious manager actions from handoff categories", () => {
+  const dashboard = fs.readFileSync("dashboard.html", "utf8");
+  assert.match(dashboard, /id="insightRecommendations"/);
+  assert.match(dashboard, /Suggested manager checks/);
+  assert.match(dashboard, /not proof that hotel information is missing/);
+  assert.match(dashboard, /Availability unclear/);
+  assert.match(dashboard, /Policy or payment review/);
+  assert.match(dashboard, /Complaint or sensitive request/);
+  assert.match(dashboard, /Other staff handoffs/);
+});

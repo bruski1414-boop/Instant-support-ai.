@@ -445,6 +445,7 @@ test("manager notification centre aggregates staff handoffs, knowledge reviews a
   assert.match(dashboard, /api\("\/api\/admin\/knowledge"\)/);
   assert.match(dashboard, /api\("\/api\/admin\/offers"\)/);
   assert.match(dashboard, /notification_status/);
+  assert.match(dashboard, /status!=="delivered"&& \(status==="failed"\|\|status==="not_configured"/);
   assert.match(dashboard, /daysUntil\(x\.expires_at\)<=7/);
   assert.match(dashboard, /data-panel=/);
   assert.match(dashboard, /No manager action items detected/);

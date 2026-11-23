@@ -1,6 +1,6 @@
 # AI resolution evidence — implementation specification
 
-Status: proposed design; not implemented or verified.
+Status: partially implemented on `feature/ai-resolution-evidence`; automated tests, dashboard integration, and production verification are still outstanding.
 
 ## Why this is needed
 
@@ -19,7 +19,9 @@ The feedback endpoint must require the server-issued conversation ID and guest t
 
 ## Evidence model
 
-Add an append-only `conversation_resolution_feedback` table:
+The current feature branch adds an append-only `conversation_resolution_feedback` table and a public endpoint. The endpoint validates the hotel slug, guest token hash, conversation ownership, and assistant-message role. It rejects duplicate feedback. `needs_help` creates or reuses an escalation and attempts the existing notification flow. The chat response now returns the assistant message ID, and the widget renders the two optional buttons for non-handoff assistant replies. These changes have not yet been validated by an automated test run.
+
+The table records:
 
 - `id` UUID primary key
 - `organization_id` UUID, foreign key to organizations
@@ -70,6 +72,13 @@ Add a visible note: "Guest feedback is self-reported and does not independently 
 - Conversation deletion removes feedback through cascading deletion.
 - No-feedback conversations remain unclassified and are never counted as AI-resolved.
 - Dashboard labels and denominators match the definitions above.
+
+## Remaining implementation work
+
+- Add automated unit/integration coverage for token validation, cross-tenant isolation, duplicate submissions, escalation creation/reuse, notification outcomes, and retention deletion.
+- Add tenant-scoped dashboard counts and clearly labelled unclassified outcomes.
+- Add a feedback-prompt impression event before calculating any feedback rate.
+- Run the full test suite and integration suite against the exact feature commit; test notification delivery with a controlled endpoint.
 
 ## Release gates
 

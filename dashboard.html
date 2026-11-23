@@ -146,7 +146,14 @@ main{padding:28px clamp(16px,4vw,48px);max-width:1450px;width:100%;margin:auto}.
     <div class="card"><div class="metriclabel">MEDIAN GENERATION TIME</div><div class="metric" id="performanceLatencyMedian">—</div></div>
     <div class="card"><div class="metriclabel">95TH-PERCENTILE TIME</div><div class="metric" id="performanceLatencyP95">—</div></div>
    </div>
-   <div class="sectionrow"><h2>Daily conversation volume</h2><span class="muted">Unique conversations per day</span></div>
+       <div class="sectionrow"><h2>Staff first-response time</h2><span class="muted">Time from handoff creation to first staff reply · last 30 days</span></div>
+    <p class="muted" style="font-size:12px">Only handoffs with a reply recorded through Veyra are measured. Replies through other channels are not included.</p>
+    <div class="grid">
+     <div class="card"><div class="metriclabel">MEASURED HANDOFFS</div><div class="metric" id="performanceStaffCount">—</div></div>
+     <div class="card"><div class="metriclabel">MEDIAN STAFF RESPONSE</div><div class="metric" id="performanceStaffMedian">—</div></div>
+     <div class="card"><div class="metriclabel">95TH-PERCENTILE RESPONSE</div><div class="metric" id="performanceStaffP95">—</div></div>
+    </div>
+    <div class="sectionrow"><h2>Daily conversation volume</h2><span class="muted">Unique conversations per day</span></div>
    <div class="card" id="performanceDaily" style="display:grid;gap:10px"><div class="empty">Loading report…</div></div>
    <div class="sectionrow"><h2>Offer enquiry outcomes</h2><span class="muted">All-time recorded attributions</span></div>
    <div class="grid">

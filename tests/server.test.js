@@ -498,16 +498,15 @@ test("staff handoff replies are tenant-scoped, audited and record first response
  assert.match(server,/AS currently_open/);
  assert.match(server,/AS resolved_30d/);
  const dashboardHtml=fs.readFileSync("dashboard.html","utf8");
- assert.match(dashboard,/id="performanceStaffWorkload"/);
- assert.match(dashboard,/Handoffs · 30d/);
- assert.match(dashboard,/Unassigned handoffs are shown separately/);
- assert.match(dashboard,/id="handoffSearch"/);
- assert.match(dashboard,/id="handoffFilter"/);
- assert.match(dashboard,/RECENT CONVERSATION/);
- assert.match(dashboard,/recent_messages/);
+ assert.match(dashboardHtml,/id="performanceStaffWorkload"/);
+ assert.match(dashboardHtml,/Handoffs · 30d/);
+ assert.match(dashboardHtml,/Unassigned handoffs are shown separately/);
+ assert.match(dashboardHtml,/id="handoffSearch"/);
+ assert.match(dashboardHtml,/id="handoffFilter"/);
+ assert.match(dashboardHtml,/RECENT CONVERSATION/);
+ assert.match(dashboardHtml,/recent_messages/);
 
 
- const dashboard=fs.readFileSync("dashboard.html","utf8");
  assert.match(dashboardHtml,/id="performanceStaffCount"/);
  assert.match(dashboardHtml,/id="performanceStaffMedian"/);
  assert.match(dashboardHtml,/id="performanceStaffP95"/);

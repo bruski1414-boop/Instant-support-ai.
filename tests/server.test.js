@@ -458,8 +458,8 @@ test("performance report separates rolling conversation metrics from all-time st
   assert.match(dashboard, /async function loadPerformanceReport\(\)/);
   assert.match(dashboard, /api\("\/api\/admin\/insights"\)/);
   assert.match(dashboard, /api\("\/api\/admin\/offer-attributions"\)/);
-  assert.match(dashboard, /All-time staff-confirmed offer attributions/);
-  assert.match(dashboard, /not claim that Veyra caused incremental revenue/);
+  assert.match(dashboard, /All-time recorded attributions/);
+  assert.match(dashboard, /does not claim that Veyra caused incremental revenue/);
   assert.match(dashboard, /id="performanceRate"/);
   assert.match(dashboard, /id="performanceRevenue"/);
 });

@@ -1,6 +1,7 @@
 const {
   buildGuestSupportSystemPrompt,
   normalizeGuestSupportAnswer,
+  hasSupportedEvidence,
   resolveGuestSupportAnswer,
 } = require("./guest-support-policy");
 
@@ -55,10 +56,16 @@ async function generateGuestSupportAnswer({
     parsedAnswer = null;
   }
 
-  return resolveGuestSupportAnswer(
-    message,
-    normalizeGuestSupportAnswer(parsedAnswer),
-  );
+  const normalizedAnswer = normalizeGuestSupportAnswer(parsedAnswer);
+  if (!normalizedAnswer.needsHuman && !hasSupportedEvidence(parsedAnswer, approvedKnowledge)) {
+    return {
+      reply: "I cannot verify that answer from the hotel’s approved information. Please contact the front desk directly.",
+      needsHuman: true,
+      handoffReason: "Automatic answer rejected because exact approved-knowledge evidence was missing or invalid.",
+    };
+  }
+
+  return resolveGuestSupportAnswer(message, normalizedAnswer);
 }
 
 function createAiUnavailableAnswer() {

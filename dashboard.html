@@ -140,6 +140,9 @@ main{padding:28px clamp(16px,4vw,48px);max-width:1450px;width:100%;margin:auto}.
   <div class="card tablewrap"><table class="table"><thead><tr><th>TOPIC</th><th>CONVERSATIONS</th></tr></thead><tbody id="insightTopics"></tbody></table></div>
   <div class="sectionrow"><h2>Reasons associated with staff handoffs</h2><span class="muted">Grouped categories, not raw guest text</span></div>
   <div class="card tablewrap"><table class="table"><thead><tr><th>HANDOFF CATEGORY</th><th>COUNT</th></tr></thead><tbody id="insightHandoffs"></tbody></table></div>
+  <div class="sectionrow"><h2>Suggested manager checks</h2><span class="muted">Practical ideas based on handoff patterns</span></div>
+  <p class="muted" style="font-size:12px">These are prompts for staff review, not proof that hotel information is missing or that the assistant caused a problem.</p>
+  <div id="insightRecommendations" style="display:grid;gap:10px"></div>
   <div class="sectionrow"><h2>Daily conversation volume</h2><span class="muted">Last 30 days</span></div>
   <div class="card tablewrap"><table class="table"><thead><tr><th>DATE</th><th>CONVERSATIONS</th></tr></thead><tbody id="insightDaily"></tbody></table></div>
  </section>
@@ -303,6 +306,15 @@ async function loadConversationInsights(){
  const render=(rows,label,count)=>rows.length?rows.map(x=>'<tr><td>'+safe(x[label])+'</td><td>'+safe(x[count])+'</td></tr>').join(""):'<tr><td colspan="2" class="empty">No data in this period yet.</td></tr>';
  $("insightTopics").innerHTML=render(d.topics||[],"topic","conversations");
  $("insightHandoffs").innerHTML=render(d.handoffTopics||[],"topic","count");
+ const advice={
+  "Availability unclear":"Ask the relevant department to review how current availability is confirmed, and make the escalation route clear.",
+  "Policy or payment review":"Check that cancellation, refund, deposit and payment policies are current, approved and easy to find.",
+  "Booking assistance":"Review the approved booking, modification and check-in guidance, including which changes require staff.",
+  "Complaint or sensitive request":"Review the staff response process and make sure sensitive complaints are handed to a person promptly.",
+  "Other staff handoffs":"Review a sample of these handoffs internally and decide whether a new approved knowledge article or clearer staff process would help."
+ };
+ const recommendations=(d.handoffTopics||[]).filter(x=>Number(x.count)>0).map(x=>'<article class="card"><strong>'+safe(x.topic)+'</strong><div class="muted" style="font-size:12px;margin:4px 0">'+safe(x.count)+' handoff'+(Number(x.count)===1?'':'s')+' in the last 30 days</div><div>'+safe(advice[x.topic]||advice["Other staff handoffs"])+'</div></article>');
+ $("insightRecommendations").innerHTML=recommendations.join("")||'<div class="card empty">No staff handoffs recorded in this period. Keep approved hotel information up to date and review this report regularly.</div>';
  $("insightDaily").innerHTML=render(d.daily||[],"day","conversations");
 }
 async function loadEscalations(){

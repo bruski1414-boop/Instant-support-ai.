@@ -50,7 +50,7 @@ async function main() {
   const apiKey = required("OPENAI_API_KEY");
   const model = required("VEYRA_AI_MODEL");
   const limitText = required("VEYRA_LIVE_EVAL_LIMIT");
-  if (!/^\\d+$/.test(limitText)) {
+  if (!/^\d+$/.test(limitText)) {
     throw new Error("VEYRA_LIVE_EVAL_LIMIT must be an explicit integer from 1 to " + cases.length + ".");
   }
   const limit = Number(limitText);
@@ -130,13 +130,13 @@ async function main() {
     ],
   };
 
-  process.stdout.write(JSON.stringify(summary, null, 2) + "\\n");
+  process.stdout.write(JSON.stringify(summary, null, 2) + "\n");
   if (summary.failed > 0) process.exitCode = 1;
 }
 
 if (require.main === module) {
   main().catch((err) => {
-    process.stderr.write("Live evaluation did not run: " + (err.message || "unknown error") + "\\n");
+    process.stderr.write("Live evaluation did not run: " + (err.message || "unknown error") + "\n");
     process.exitCode = 1;
   });
 }

@@ -1,6 +1,6 @@
 # AI resolution evidence — implementation specification
 
-Status: partially implemented on `feature/ai-resolution-evidence`; automated tests, dashboard integration, and production verification are still outstanding.
+Status: implemented on `feature/ai-resolution-evidence`; automated unit and tenant-isolation tests passed on the earlier feedback implementation. The latest AI evidence-guard changes require a fresh CI run. Production verification remains outstanding.
 
 ## Why this is needed
 
@@ -19,7 +19,7 @@ The feedback endpoint must require the server-issued conversation ID and guest t
 
 ## Evidence model
 
-The current feature branch adds an append-only `conversation_resolution_feedback` table and a public endpoint. The endpoint validates the hotel slug, guest token hash, conversation ownership, and assistant-message role. It rejects duplicate feedback. `needs_help` creates or reuses an escalation and attempts the existing notification flow. The chat response now returns the assistant message ID, and the widget renders the two optional buttons for non-handoff assistant replies. These changes have not yet been validated by an automated test run.
+The current feature branch adds an append-only `conversation_resolution_feedback` table and a public endpoint. The endpoint validates the hotel slug, guest token hash, conversation ownership, and assistant-message role. It rejects duplicate feedback. `needs_help` creates or reuses an escalation and attempts the existing notification flow. The chat response now returns the assistant message ID, and the widget renders the two optional buttons for non-handoff assistant replies. The feedback implementation passed the earlier unit and PostgreSQL tenant-isolation CI run. The later AI evidence-guard changes are awaiting their own fresh CI result.
 
 The table records:
 
@@ -77,6 +77,7 @@ Add a visible note: "Guest feedback is self-reported and does not independently 
 
 - Add automated unit/integration coverage for token validation, cross-tenant isolation, duplicate submissions, escalation creation/reuse, notification outcomes, and retention deletion.
 - Review the tenant-scoped dashboard counts against seeded test data and confirm the labels render correctly.
+- Treat the concrete-token evidence guard as a conservative heuristic only; it cannot prove semantic entailment for every natural-language claim. Use an approved human-reviewed evaluation set before a hotel pilot.
 - Add a feedback-prompt impression event before calculating any feedback rate.
 - Run the full test suite and integration suite against the exact feature commit; test notification delivery with a controlled endpoint.
 

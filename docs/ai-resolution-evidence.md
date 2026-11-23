@@ -124,5 +124,5 @@ The runner is deliberately blocked unless all of the following are supplied expl
 
 Run it with `npm run evaluate:live`. Start with a very small limit, review provider pricing and usage limits first, and never put API keys in source code, browser code, commits, chat messages, or screenshots. A parent/guardian or the adult who owns the API account should approve and supervise any paid API use.
 
-The runner uses synthetic hotel information only. Its automated score measures handoff classification and emergency wording; it does not prove that a free-form answer is semantically correct. Human review of every automatic answer against the approved source remains mandatory. Do not run this against a real hotel's private knowledge or guest records.
+The runner uses synthetic hotel information only. Small request limits select cases round-robin across supported facts, unsupported facts, and sensitive requests, rather than testing only the first category. It stops at the first provider error to avoid wasting the remaining request budget on repeated failures. Its automated score measures handoff classification and emergency wording; it does not prove that a free-form answer is semantically correct. Human review of every automatic answer against the approved source remains mandatory. Do not run this against a real hotel's private knowledge or guest records.
 

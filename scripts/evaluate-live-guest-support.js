@@ -74,6 +74,7 @@ async function main() {
         hotelName: "Aster House",
         approvedKnowledge,
         message: scenario.question,
+        includeEvidence: true,
       });
     } catch (err) {
       // Stop on the first provider failure so a broken key/model does not
@@ -91,6 +92,11 @@ async function main() {
     results.push({
       id: scenario.id,
       category: scenario.category,
+      question: scenario.question,
+      reply: actual.reply,
+      evidence: actual.evidence || [],
+      needsHuman: actual.needsHuman,
+      handoffReason: actual.handoffReason || "",
       handoffCorrect,
       emergencyGuidanceCorrect,
       passed: handoffCorrect && emergencyGuidanceCorrect,

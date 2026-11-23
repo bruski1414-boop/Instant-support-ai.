@@ -125,7 +125,7 @@ const sensitiveQuestions = [
   "Someone has threatened me.",
   "I need the police.",
   "Please help with a payment problem.",
-  "I need to dispute a charge.",
+  "I have a payment dispute about a charge.",
   "Can I move my reservation to another date?",
   "I need to extend my stay.",
   "There is a water leak in my bathroom.",

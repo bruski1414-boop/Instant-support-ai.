@@ -23,6 +23,7 @@ test("guest-support engine answers from the approved-knowledge prompt and keeps 
       reply: "Breakfast is served from 7:00 to 10:00.",
       needsHuman: false,
       handoffReason: "",
+      evidence: ["[facilities] Breakfast: 7:00–10:00"],
     }), (value, options) => { request = value; requestOptions = options; }),
     model: "test-model",
     hotelName: "Aster House",
@@ -100,3 +101,25 @@ test("AI outage fallback gives a clear front-desk instruction and always request
   assert.match(result.reply, /contact the front desk directly/i);
   assert.match(result.handoffReason, /provider unavailable or timed out/i);
 });
+
+
+test("guest-support engine rejects automatic answers with missing or fabricated evidence", async () => {
+  for (const evidence of [undefined, ["Breakfast is served all day."], []]) {
+    const result = await generateGuestSupportAnswer({
+      ai: fakeAi(JSON.stringify({
+        reply: "Breakfast is served from 7:00 to 10:00.",
+        needsHuman: false,
+        handoffReason: "",
+        ...(evidence === undefined ? {} : { evidence }),
+      })),
+      model: "test-model",
+      hotelName: "Aster House",
+      approvedKnowledge: "Breakfast is served from 7:00 to 10:00.",
+      message: "When is breakfast?",
+    });
+    assert.equal(result.needsHuman, true);
+    assert.match(result.reply, /cannot verify that answer/i);
+    assert.match(result.handoffReason, /exact approved-knowledge evidence/);
+  }
+});
+

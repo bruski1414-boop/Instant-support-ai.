@@ -362,3 +362,13 @@ test("staff webhook configuration is encrypted, tenant-scoped and verified befor
   assert.match(dashboard, /id="staffWebhookForm"/);
   assert.match(dashboard, /id="staffWebhookSecret"/);
 });
+
+test("revenue dashboard counts every attributed enquiry and calculates conversion rate", () => {
+  const dashboard = fs.readFileSync("dashboard.html", "utf8");
+  assert.match(dashboard, /Total guest enquiries/);
+  assert.match(dashboard, /id="revenueConversionRate"/);
+  assert.match(dashboard, /const enquiries=totals\.reduce\(/);
+  assert.match(dashboard, /const conversions=totals\.filter\(x=>x\.status==="converted"\)/);
+  assert.match(dashboard, /\(conversions\/enquiries\)\*100/);
+  assert.match(dashboard, /enquiries\?\(/);
+});

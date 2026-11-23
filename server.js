@@ -30,7 +30,7 @@ const prod=process.env.NODE_ENV==="production";
 const cookie=prod?"__Host-veyra_session":"veyra_session";
 app.disable("x-powered-by");
 app.use((_q,r,n)=>{r.setHeader("X-Content-Type-Options","nosniff");r.setHeader("X-Frame-Options","DENY");r.setHeader("Referrer-Policy","strict-origin-when-cross-origin");r.setHeader("Permissions-Policy","camera=(),microphone=(),geolocation=()");n();});
-app.use(cors((req,cb)=>{const o=req.get("Origin");const common={credentials:true,allowedHeaders:["Content-Type","X-CSRF-Token","X-Bootstrap-Token","X-Platform-Provisioning-Token"],methods:["GET","POST","PATCH","DELETE","OPTIONS"]};if(!o||origins.includes(o))return cb(null,{...common,origin:true});const segments=req.path.split("/");if(segments.length!==5||segments[1]!=="api"||segments[2]!=="public"||segments[4]!=="chat"||!db)return cb(null,{...common,origin:false});let hotelSlug;try{hotelSlug=decodeURIComponent(segments[3]);}catch{return cb(null,{...common,origin:false});}db.query("SELECT 1 FROM organizations o JOIN organization_settings s ON s.organization_id=o.id WHERE o.slug=$1 AND s.website_url=$2 LIMIT 1",[hotelSlug,o]).then(x=>cb(null,{...common,origin:x.rowCount>0})).catch(()=>cb(null,{...common,origin:false}));}));
+app.use(cors((req,cb)=>{const o=req.get("Origin");const common={credentials:true,allowedHeaders:["Content-Type","X-CSRF-Token","X-Bootstrap-Token","X-Platform-Provisioning-Token"],methods:["GET","POST","PATCH","DELETE","OPTIONS"]};if(!o||origins.includes(o))return cb(null,{...common,origin:true});const segments=req.path.split("/");if(segments.length!==5||segments[1]!=="api"||segments[2]!=="public"||!["chat","feedback"].includes(segments[4])||!db)return cb(null,{...common,origin:false});let hotelSlug;try{hotelSlug=decodeURIComponent(segments[3]);}catch{return cb(null,{...common,origin:false});}db.query("SELECT 1 FROM organizations o JOIN organization_settings s ON s.organization_id=o.id WHERE o.slug=$1 AND s.website_url=$2 LIMIT 1",[hotelSlug,o]).then(x=>cb(null,{...common,origin:x.rowCount>0})).catch(()=>cb(null,{...common,origin:false}));}));
 app.use(express.json({limit:"20kb",verify:(req,res,buf)=>{req.rawBody=Buffer.from(buf);}}));
 app.use("/api/",rateLimit({windowMs:60000,limit:60,standardHeaders:"draft-7",legacyHeaders:false}));
 app.use("/api/auth/",rateLimit({windowMs:900000,limit:10,standardHeaders:"draft-7",legacyHeaders:false}));
@@ -62,6 +62,8 @@ const schema=[
 "CREATE TABLE IF NOT EXISTS conversations(id UUID PRIMARY KEY DEFAULT gen_random_uuid(),organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,channel TEXT NOT NULL DEFAULT 'website',status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open','resolved','escalated')),started_at TIMESTAMPTZ NOT NULL DEFAULT now(),last_message_at TIMESTAMPTZ NOT NULL DEFAULT now(),guest_token_hash TEXT)",
 "ALTER TABLE conversations ADD COLUMN IF NOT EXISTS guest_token_hash TEXT",
 "CREATE INDEX IF NOT EXISTS conversations_org_time_idx ON conversations(organization_id,started_at DESC)",
+"CREATE TABLE IF NOT EXISTS conversation_resolution_feedback(id UUID PRIMARY KEY DEFAULT gen_random_uuid(),organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,conversation_id UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,assistant_message_id UUID NOT NULL UNIQUE REFERENCES messages(id) ON DELETE CASCADE,feedback TEXT NOT NULL CHECK(feedback IN ('helpful','needs_help')),created_at TIMESTAMPTZ NOT NULL DEFAULT now())",
+"CREATE INDEX IF NOT EXISTS resolution_feedback_org_time_idx ON conversation_resolution_feedback(organization_id,created_at DESC)",
 "CREATE TABLE IF NOT EXISTS messages(id UUID PRIMARY KEY DEFAULT gen_random_uuid(),conversation_id UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,role TEXT NOT NULL CHECK(role IN ('guest','assistant','staff')),content TEXT NOT NULL,created_at TIMESTAMPTZ NOT NULL DEFAULT now())",
 "ALTER TABLE messages ADD COLUMN IF NOT EXISTS response_time_ms INTEGER",
 "CREATE TABLE IF NOT EXISTS escalations(id UUID PRIMARY KEY DEFAULT gen_random_uuid(),organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,conversation_id UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,reason TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open','claimed','resolved')),assigned_to UUID REFERENCES users(id) ON DELETE SET NULL,created_at TIMESTAMPTZ NOT NULL DEFAULT now(),resolved_at TIMESTAMPTZ,notification_status TEXT NOT NULL DEFAULT 'not_configured',notification_attempts INTEGER NOT NULL DEFAULT 0,notification_last_attempt_at TIMESTAMPTZ)",
@@ -331,12 +333,44 @@ app.post("/api/public/:slug/chat",async(q,r,n)=>{
  const aiStartedAt=process.hrtime.bigint();let resolvedAnswer;try{resolvedAnswer=await generateGuestSupportAnswer({ai,model:MODEL,hotelName:org.name,approvedKnowledge:knowledge,history,message:msg.trim()});}catch(error){console.error("Guest support AI request failed:",error.message);resolvedAnswer=createAiUnavailableAnswer();}const aiResponseTimeMs=Math.max(0,Math.min(2147483647,Number((process.hrtime.bigint()-aiStartedAt)/1000000n)));
  const reply=resolvedAnswer.reply;const flagHuman=resolvedAnswer.needsHuman;
  const c=await db.connect();let cid=conversationId,eid,createdEscalation=false,existingNotificationStatus="not_configured";try{await c.query("BEGIN");if(!cid){const x=await c.query("INSERT INTO conversations(organization_id,channel,status,guest_token_hash) VALUES($1,'website',$2,$3) RETURNING id",[org.id,flagHuman?"escalated":"open",hash(guestToken)]);cid=x.rows[0].id;}else{const locked=await c.query("SELECT id FROM conversations WHERE id=$1 AND organization_id=$2 AND guest_token_hash=$3 FOR UPDATE",[cid,org.id,hash(guestToken)]);if(!locked.rowCount){await c.query("ROLLBACK");return r.status(404).json({error:"Conversation not found."});}}
- await c.query("INSERT INTO messages(conversation_id,role,content,response_time_ms) VALUES($1,'guest',$2,NULL),($1,'assistant',$3,$4)",[cid,msg.trim(),reply,aiResponseTimeMs]);for(const offer of matchedOffers){await c.query("INSERT INTO hotel_offer_attributions(organization_id,offer_id,conversation_id,status) VALUES($1,$2,$3,'enquiry') ON CONFLICT(organization_id,offer_id,conversation_id) DO NOTHING",[org.id,offer.id,cid]);}await c.query("UPDATE conversations SET last_message_at=now(),status=CASE WHEN $2 THEN 'escalated' WHEN status='resolved' THEN 'open' ELSE status END WHERE id=$1 AND organization_id=$3",[cid,flagHuman,org.id]);
+ await c.query("INSERT INTO messages(conversation_id,role,content,response_time_ms) VALUES($1,'guest',$2,NULL)",[cid,msg.trim()]);const assistantMessage=await c.query("INSERT INTO messages(conversation_id,role,content,response_time_ms) VALUES($1,'assistant',$2,$3) RETURNING id",[cid,reply,aiResponseTimeMs]);const assistantMessageId=assistantMessage.rows[0].id;for(const offer of matchedOffers){await c.query("INSERT INTO hotel_offer_attributions(organization_id,offer_id,conversation_id,status) VALUES($1,$2,$3,'enquiry') ON CONFLICT(organization_id,offer_id,conversation_id) DO NOTHING",[org.id,offer.id,cid]);}await c.query("UPDATE conversations SET last_message_at=now(),status=CASE WHEN $2 THEN 'escalated' WHEN status='resolved' THEN 'open' ELSE status END WHERE id=$1 AND organization_id=$3",[cid,flagHuman,org.id]);
  if(flagHuman){const prior=await c.query("SELECT id,notification_status FROM escalations WHERE conversation_id=$1 AND organization_id=$2 AND status<>'resolved' ORDER BY created_at DESC LIMIT 1",[cid,org.id]);if(prior.rowCount){eid=prior.rows[0].id;existingNotificationStatus=prior.rows[0].notification_status;}else{const e=await c.query("INSERT INTO escalations(organization_id,conversation_id,reason) VALUES($1,$2,$3) RETURNING id",[org.id,cid,String(resolvedAnswer.handoffReason||"Staff review required").slice(0,300)]);eid=e.rows[0].id;createdEscalation=true;}}
  await c.query("COMMIT");}catch(e){await c.query("ROLLBACK");throw e;}finally{c.release();}
  const notice=createdEscalation?await notify(org,cid,String(resolvedAnswer.handoffReason||"Staff review required").slice(0,300)):{configured:existingNotificationStatus!=="not_configured",delivered:existingNotificationStatus==="delivered",status:flagHuman?existingNotificationStatus:"not_configured"};
  if(createdEscalation)await db.query("UPDATE escalations SET notification_status=$1,notification_attempts=notification_attempts+CASE WHEN $2 THEN 1 ELSE 0 END,notification_last_attempt_at=CASE WHEN $2 THEN now() ELSE notification_last_attempt_at END WHERE id=$3 AND organization_id=$4",[notice.status,notice.configured,eid,org.id]);
- r.json({reply,needsHuman:flagHuman,handoffConfigured:notice.configured,notificationDelivered:notice.delivered,notificationStatus:notice.status,conversationId:cid,conversationToken:guestToken,escalationId:eid||null});
+ r.json({reply,needsHuman:flagHuman,handoffConfigured:notice.configured,notificationDelivered:notice.delivered,notificationStatus:notice.status,conversationId:cid,conversationToken:guestToken,assistantMessageId,escalationId:eid||null});
+ }catch(e){n(e);}
+});
+app.post("/api/public/:slug/feedback",async(q,r,n)=>{
+ try{
+  if(!db)return r.status(503).json({error:"Hotel platform is not configured."});
+  const {conversationId,conversationToken,assistantMessageId,feedback}=q.body||{};
+  const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  if(!uuid.test(String(conversationId||""))||!uuid.test(String(assistantMessageId||""))||typeof conversationToken!=="string"||!/^[A-Za-z0-9_-]{40,64}$/.test(conversationToken)||!["helpful","needs_help"].includes(feedback))return r.status(400).json({error:"Invalid feedback request."});
+  const orgR=await db.query("SELECT id,name,slug,status FROM organizations WHERE slug=$1 AND status<>'suspended'",[q.params.slug]);
+  if(!orgR.rowCount)return r.status(404).json({error:"Assistant unavailable."});
+  const org=orgR.rows[0];
+  const c=await db.connect();let escalationId=null,createdEscalation=false;
+  try{
+   await c.query("BEGIN");
+   const valid=await c.query("SELECT c.id FROM conversations c JOIN messages m ON m.conversation_id=c.id WHERE c.id=$1 AND c.organization_id=$2 AND c.guest_token_hash=$3 AND m.id=$4 AND m.role='assistant' FOR UPDATE OF c",[conversationId,org.id,hash(conversationToken),assistantMessageId]);
+   if(!valid.rowCount){await c.query("ROLLBACK");return r.status(404).json({error:"Conversation or assistant response not found."});}
+   const inserted=await c.query("INSERT INTO conversation_resolution_feedback(organization_id,conversation_id,assistant_message_id,feedback) VALUES($1,$2,$3,$4) ON CONFLICT(assistant_message_id) DO NOTHING RETURNING id",[org.id,conversationId,assistantMessageId,feedback]);
+   if(!inserted.rowCount){await c.query("ROLLBACK");return r.status(409).json({error:"Feedback has already been recorded for this response."});}
+   if(feedback==="needs_help"){
+    const prior=await c.query("SELECT id FROM escalations WHERE organization_id=$1 AND conversation_id=$2 AND status<>'resolved' ORDER BY created_at DESC LIMIT 1 FOR UPDATE",[org.id,conversationId]);
+    if(prior.rowCount)escalationId=prior.rows[0].id;
+    else{const e=await c.query("INSERT INTO escalations(organization_id,conversation_id,reason) VALUES($1,$2,$3) RETURNING id",[org.id,conversationId,"Guest requested additional help after an assistant response"]);escalationId=e.rows[0].id;createdEscalation=true;}
+    await c.query("UPDATE conversations SET status='escalated',last_message_at=now() WHERE id=$1 AND organization_id=$2",[conversationId,org.id]);
+   }
+   await c.query("COMMIT");
+  }catch(e){await c.query("ROLLBACK").catch(()=>{});throw e;}finally{c.release();}
+  let notification={configured:false,delivered:false,status:"not_configured"};
+  if(feedback==="needs_help"){
+   if(createdEscalation){notification=await notify(org,conversationId,"Guest requested additional help after an assistant response");await db.query("UPDATE escalations SET notification_status=$1,notification_attempts=notification_attempts+CASE WHEN $2 THEN 1 ELSE 0 END,notification_last_attempt_at=CASE WHEN $2 THEN now() ELSE notification_last_attempt_at END WHERE id=$3 AND organization_id=$4",[notification.status,notification.configured,escalationId,org.id]);}
+   else{const prior=await db.query("SELECT notification_status FROM escalations WHERE id=$1 AND organization_id=$2",[escalationId,org.id]);const state=prior.rows[0]?.notification_status||"not_configured";notification={configured:state!=="not_configured",delivered:state==="delivered",status:state};}
+  }
+  r.json({recorded:true,feedback,escalationId,notificationDelivered:notification.delivered,notificationStatus:notification.status});
  }catch(e){n(e);}
 });
 // Legacy prototype route is disabled when multi-tenant DB is active.

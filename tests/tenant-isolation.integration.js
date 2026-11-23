@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { randomUUID, createHash } from "node:crypto";
 import pg from "pg";
 import knowledgeLoader from "../hotel-knowledge.js";
 const { loadApprovedKnowledge } = knowledgeLoader;
@@ -217,6 +217,35 @@ try {
   const pmsBAfterCrossDisconnectBody = await pmsBAfterCrossDisconnect.json();
   assert.equal(pmsBAfterCrossDisconnectBody.connections.some(x => x.provider === "tenant-b-private-adapter"), true, "tenant B's PMS connection must remain intact after tenant A's disconnect attempt");
   await Promise.all(tenants.map(seedConversation));
+
+  // Resolution feedback must be bound to a valid guest token, tenant and assistant message.
+  const feedbackTokenA = "feedback-token-" + randomUUID() + "-long-enough-for-validation";
+  const feedbackTokenB = "feedback-token-" + randomUUID() + "-long-enough-for-validation";
+  const feedbackHash = value => createHash("sha256").update(value).digest("hex");
+  await pool.query("UPDATE conversations SET guest_token_hash=$1 WHERE id=$2", [feedbackHash(feedbackTokenA), tenants[0].conversationId]);
+  await pool.query("UPDATE conversations SET guest_token_hash=$1 WHERE id=$2", [feedbackHash(feedbackTokenB), tenants[1].conversationId]);
+  const assistantA = await pool.query("INSERT INTO messages(conversation_id,role,content) VALUES($1,'assistant','Synthetic answer for tenant A') RETURNING id", [tenants[0].conversationId]);
+  const assistantB = await pool.query("INSERT INTO messages(conversation_id,role,content) VALUES($1,'assistant','Synthetic answer for tenant B') RETURNING id", [tenants[1].conversationId]);
+  const feedbackPayloadA = { conversationId: tenants[0].conversationId, conversationToken: feedbackTokenA, assistantMessageId: assistantA.rows[0].id, feedback: "helpful" };
+  const feedbackA = await fetch(baseUrl + "/api/public/" + encodeURIComponent(tenants[0].slug) + "/feedback", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(feedbackPayloadA) });
+  assert.equal(feedbackA.status, 200, "guest can submit feedback for its own assistant response");
+  assert.equal((await feedbackA.json()).recorded, true);
+  const duplicateFeedback = await fetch(baseUrl + "/api/public/" + encodeURIComponent(tenants[0].slug) + "/feedback", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(feedbackPayloadA) });
+  assert.equal(duplicateFeedback.status, 409, "same assistant response cannot be counted twice");
+  const crossTenantFeedback = await fetch(baseUrl + "/api/public/" + encodeURIComponent(tenants[1].slug) + "/feedback", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...feedbackPayloadA, assistantMessageId: assistantB.rows[0].id }) });
+  assert.equal(crossTenantFeedback.status, 404, "tenant A token cannot submit feedback in tenant B workspace");
+  const guestRoleFeedback = await fetch(baseUrl + "/api/public/" + encodeURIComponent(tenants[0].slug) + "/feedback", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...feedbackPayloadA, assistantMessageId: (await pool.query("INSERT INTO messages(conversation_id,role,content) VALUES($1,'guest','Guest follow-up') RETURNING id", [tenants[0].conversationId])).rows[0].id }) });
+  assert.equal(guestRoleFeedback.status, 404, "feedback cannot be attached to a guest message");
+  const assistantNeedsHelp = await pool.query("INSERT INTO messages(conversation_id,role,content) VALUES($1,'assistant','Synthetic answer requiring staff follow-up') RETURNING id", [tenants[0].conversationId]);
+  const needsHelp = await fetch(baseUrl + "/api/public/" + encodeURIComponent(tenants[0].slug) + "/feedback", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...feedbackPayloadA, assistantMessageId: assistantNeedsHelp.rows[0].id, feedback: "needs_help" }) });
+  assert.equal(needsHelp.status, 200, "guest request for more help is recorded");
+  const needsHelpBody = await needsHelp.json();
+  assert.ok(needsHelpBody.escalationId, "request for more help creates a staff escalation");
+  assert.equal(needsHelpBody.notificationStatus, "not_configured", "guest is not told that staff were notified when no notification endpoint is configured");
+  const feedbackCounts = await pool.query("SELECT organization_id,count(*)::int AS total FROM conversation_resolution_feedback WHERE organization_id IN ((SELECT id FROM organizations WHERE slug=$1),(SELECT id FROM organizations WHERE slug=$2)) GROUP BY organization_id", [tenants[0].slug, tenants[1].slug]);
+  assert.equal(feedbackCounts.rows.find(x => x.organization_id === (await pool.query("SELECT id FROM organizations WHERE slug=$1", [tenants[0].slug])).rows[0].id)?.total, 2, "tenant A has only its two explicit feedback records");
+  assert.equal(feedbackCounts.rows.length, 1, "tenant B cannot inherit tenant A feedback records");
+
   await Promise.all(tenants.map(seedKnowledge));
   await Promise.all(tenants.map(seedOffer));
   await Promise.all(tenants.map(seedOfferAttribution));

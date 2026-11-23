@@ -192,8 +192,9 @@ main{padding:28px clamp(16px,4vw,48px);max-width:1450px;width:100%;margin:auto}.
  <section id="panel-revenue" class="panel">
   <div class="sectionrow"><h2>Revenue attribution</h2><span class="muted">Only staff-confirmed sales count as generated revenue</span></div>
   <div class="grid">
-   <div class="card"><div class="metriclabel">Guest offer enquiries</div><div class="metric" id="revenueEnquiries">—</div></div>
+   <div class="card"><div class="metriclabel">Total guest enquiries</div><div class="metric" id="revenueEnquiries">—</div></div>
    <div class="card"><div class="metriclabel">Confirmed sales</div><div class="metric" id="revenueConversions">—</div></div>
+   <div class="card"><div class="metriclabel">Conversion rate</div><div class="metric" id="revenueConversionRate">—</div></div>
    <div class="card"><div class="metriclabel">Confirmed revenue</div><div class="metric" id="revenueTotal">—</div></div>
   </div>
   <p class="muted" style="font-size:12px">Revenue is grouped by currency. Enquiries are recorded when a guest asks about an offer category and a matching verified offer exists. Staff must confirm the actual sale amount; recommendations and enquiries are not counted as revenue.</p>
@@ -266,10 +267,11 @@ async function loadRevenueAttributions(){
  const d=await api("/api/admin/offer-attributions");
  const rows=d.attributions||[];
  const totals=d.totals||[];
- const enquiries=totals.filter(x=>x.status==="enquiry").reduce((sum,x)=>sum+Number(x.count||0),0);
+ const enquiries=totals.reduce((sum,x)=>sum+Number(x.count||0),0);
  const conversions=totals.filter(x=>x.status==="converted").reduce((sum,x)=>sum+Number(x.count||0),0);
  $("revenueEnquiries").textContent=String(enquiries);
  $("revenueConversions").textContent=String(conversions);
+ $("revenueConversionRate").textContent=enquiries?((conversions/enquiries)*100).toFixed(1)+"%":"—";
  const currencyGroups={};
  for(const x of totals.filter(x=>x.status==="converted")){const c=x.currency||"UNKNOWN";currencyGroups[c]=(currencyGroups[c]||0)+Number(x.amount_minor||0);}
  $("revenueTotal").textContent=Object.keys(currencyGroups).length===1?moneyMinor(Object.values(currencyGroups)[0],Object.keys(currencyGroups)[0]):"See currencies below";

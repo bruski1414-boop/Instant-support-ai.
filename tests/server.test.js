@@ -395,3 +395,17 @@ test("conversation insights dashboard offers cautious manager actions from hando
   assert.match(dashboard, /Complaint or sensitive request/);
   assert.match(dashboard, /Other staff handoffs/);
 });
+
+test("conversation insights compare guest topics with tenant-scoped approved knowledge document counts", () => {
+  const server = fs.readFileSync("server.js", "utf8");
+  const route = server.slice(server.indexOf('app.get("/api/admin/insights"'), server.indexOf('app.get("/api/admin/offers"'));
+  assert.match(route, /FROM knowledge_documents WHERE organization_id=\$1 GROUP BY category/);
+  assert.match(route, /approved=true AND \(review_due_at IS NULL OR review_due_at>=CURRENT_DATE\)/);
+  assert.match(route, /documents_needing_review/);
+  assert.match(route, /knowledgeCoverage/);
+  assert.match(route, /approved_documents/);
+  const dashboard = fs.readFileSync("dashboard.html", "utf8");
+  assert.match(dashboard, /Knowledge coverage check/);
+  assert.match(dashboard, /id="insightKnowledgeCoverage"/);
+  assert.match(dashboard, /does not prove that it answers every guest question/);
+});

@@ -372,3 +372,15 @@ test("revenue dashboard counts every attributed enquiry and calculates conversio
   assert.match(dashboard, /\(conversions\/enquiries\)\*100/);
   assert.match(dashboard, /enquiries\?\(/);
 });
+
+test("conversation insights endpoint uses organization-scoped aggregate data without returning message text", () => {
+  const server = fs.readFileSync("server.js", "utf8");
+  assert.match(server, /app\.get\("\/api\/admin\/insights",requireDb,auth/);
+  assert.match(server, /c\.organization_id=\$1/);
+  assert.match(server, /m\.role='guest'/);
+  assert.match(server, /count\(DISTINCT m\.conversation_id\)/);
+  assert.match(server, /interval '30 days'/);
+  assert.match(server, /handoffTopics:handoffs\.rows/);
+  assert.match(server, /daily:daily\.rows/);
+  assert.doesNotMatch(server.slice(server.indexOf('app.get("/api/admin/insights"'), server.indexOf('app.get("/api/admin/offers"')), /SELECT[^\n]*m\.content[^\n]*AS\s+(message|guest_message)/i);
+});

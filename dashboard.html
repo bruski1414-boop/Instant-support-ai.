@@ -181,6 +181,15 @@ main{padding:28px clamp(16px,4vw,48px);max-width:1450px;width:100%;margin:auto}.
    <div class="card"><div class="metriclabel">Currently escalated</div><div class="metric" id="insightEscalated">—</div></div>
    <div class="card"><div class="metriclabel">Resolved · 30 days</div><div class="metric" id="insightResolved">—</div></div>
   </div>
+  <div class="sectionrow"><h2>Resolution evidence</h2><span class="muted">Guest-reported and staff-recorded outcomes · 30 days</span></div>
+  <div class="grid">
+   <div class="card"><div class="metriclabel">Guest-confirmed helpful</div><div class="metric" id="resolutionHelpful">—</div></div>
+   <div class="card"><div class="metriclabel">Guest requested more help</div><div class="metric" id="resolutionNeedsHelp">—</div></div>
+   <div class="card"><div class="metriclabel">Staff handoffs</div><div class="metric" id="resolutionHandoffs">—</div></div>
+   <div class="card"><div class="metriclabel">Staff-resolved handoffs</div><div class="metric" id="resolutionStaffResolved">—</div></div>
+   <div class="card"><div class="metriclabel">Outcome not confirmed</div><div class="metric" id="resolutionUnconfirmed">—</div></div>
+  </div>
+  <p class="muted" id="resolutionEvidenceNote" style="font-size:12px">Guest feedback is self-reported and does not independently verify answer accuracy. Conversations without feedback or a staff resolution are unclassified, not successful. Feedback rate denominator unavailable until prompt impressions are measured.</p>
   <div class="sectionrow"><h2>Most common guest topics</h2><span class="muted">Unique conversations per topic</span></div>
   <div class="card tablewrap"><table class="table"><thead><tr><th>TOPIC</th><th>CONVERSATIONS</th></tr></thead><tbody id="insightTopics"></tbody></table></div>
   <div class="sectionrow"><h2>Knowledge coverage check</h2><span class="muted">Topic estimates compared with approved hotel documents</span></div>
@@ -433,6 +442,14 @@ async function loadConversationInsights(){
  $("insightConversations").textContent=String(m.conversations_30d||0);
  $("insightEscalated").textContent=String(m.currently_escalated||0);
  $("insightResolved").textContent=String(m.resolved_30d||0);
+ const evidence=d.resolutionEvidence||{};
+ $("resolutionHelpful").textContent=String(evidence.guest_confirmed_helpful||0);
+ $("resolutionNeedsHelp").textContent=String(evidence.guest_requested_more_help||0);
+ $("resolutionHandoffs").textContent=String(evidence.staff_handoffs||0);
+ $("resolutionStaffResolved").textContent=String(evidence.staff_resolved||0);
+ $("resolutionUnconfirmed").textContent=String(evidence.outcome_not_confirmed||0);
+ $("resolutionEvidenceNote").textContent=d.resolutionEvidenceNote||"Guest feedback is self-reported and does not independently verify answer accuracy. Conversations without feedback are unclassified, not successful.";
+
  const render=(rows,label,count)=>rows.length?rows.map(x=>'<tr><td>'+safe(x[label])+'</td><td>'+safe(x[count])+'</td></tr>').join(""):'<tr><td colspan="2" class="empty">No data in this period yet.</td></tr>';
  $("insightTopics").innerHTML=render(d.topics||[],"topic","conversations");
  $("insightKnowledgeCoverage").innerHTML=(d.knowledgeCoverage||[]).map(x=>'<tr><td>'+safe(x.topic)+'</td><td>'+safe(x.guest_conversations)+'</td><td>'+safe(x.approved_documents)+'</td><td>'+safe(x.documents_needing_review)+'</td></tr>').join("")||'<tr><td colspan="4" class="empty">No guest topic data yet.</td></tr>';

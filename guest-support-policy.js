@@ -66,7 +66,7 @@ function hasSupportedEvidence(answer, approvedKnowledge) {
   // This is a conservative guard, not a semantic proof of answer correctness.
   const citedText = quotations.join(" ");
   const concreteTokens = String(answer.reply || "").match(
-    /(?:\b\d{1,2}:\d{2}\b|\b\d{1,4}(?:[.,]\d+)?%?\b|\b(?:USD|EUR|GBP|THB|AED|€|£|\\$)\\s?\d+(?:[.,]\d+)?|\b\d{1,4}[/-]\d{1,2}(?:[/-]\d{2,4})?\b|[\w.+-]+@[\w.-]+\\.[A-Za-z]{2,})/g
+    /(?:\b\d{1,2}:\d{2}\b|\b\d{1,4}(?:[.,]\d+)?%?\b|\b(?:USD|EUR|GBP|THB|AED|€|£|\$)\s?\d+(?:[.,]\d+)?|\b\d{1,4}[/-]\d{1,2}(?:[/-]\d{2,4})?\b|[\w.+-]+@[\w.-]+\.[A-Za-z]{2,})/g
   ) || [];
   return concreteTokens.every((token) => citedText.includes(token));
 }

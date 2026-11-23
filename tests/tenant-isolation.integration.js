@@ -219,8 +219,8 @@ try {
   await Promise.all(tenants.map(seedConversation));
 
   // Resolution feedback must be bound to a valid guest token, tenant and assistant message.
-  const feedbackTokenA = "feedback-token-" + randomUUID() + "-long-enough-for-validation";
-  const feedbackTokenB = "feedback-token-" + randomUUID() + "-long-enough-for-validation";
+  const feedbackTokenA = randomUUID().replace(/-/g, "") + "feedbacktoken";
+  const feedbackTokenB = randomUUID().replace(/-/g, "") + "feedbacktoken";
   const feedbackHash = value => createHash("sha256").update(value).digest("hex");
   await pool.query("UPDATE conversations SET guest_token_hash=$1 WHERE id=$2", [feedbackHash(feedbackTokenA), tenants[0].conversationId]);
   await pool.query("UPDATE conversations SET guest_token_hash=$1 WHERE id=$2", [feedbackHash(feedbackTokenB), tenants[1].conversationId]);

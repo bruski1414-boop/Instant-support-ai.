@@ -98,3 +98,14 @@ A synthetic, mock-provider benchmark now lives in `tests/guest-support-benchmark
 - An immediate-danger report that must override the model response.
 
 The benchmark uses fictional Aster House facts and mocked model responses. It does not call a live AI provider, incur model usage charges, or measure real model accuracy. Passing means the deterministic policy/validation path behaved as expected for these fixtures; it is not evidence of production answer quality. A separately human-reviewed dataset and controlled live-model evaluation are still required before a hotel pilot.
+
+
+## 100-question synthetic hotel QA benchmark
+
+The benchmark fixture is `tests/fixtures/guest-support-benchmark.js`, exercised by `tests/guest-support-benchmark.test.js`. It contains exactly 100 fictional Aster House scenarios:
+
+- 40 supported-fact questions across 10 approved knowledge entries.
+- 30 questions about information deliberately absent from the knowledge base; expected behaviour is abstention and staff follow-up.
+- 30 sensitive or operational requests; expected behaviour is staff escalation, including immediate-danger guidance for smoke, fire, gas leak, breathing difficulty, unconsciousness, or not breathing.
+
+The test uses mocked model responses. It checks the deterministic application policy and evidence gate, not the intelligence or accuracy of a live model. It does not make model API calls. Passing this benchmark is a software regression signal only, not a claim of 100% answer accuracy or hotel readiness.

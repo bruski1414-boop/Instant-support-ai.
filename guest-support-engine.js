@@ -57,7 +57,8 @@ async function generateGuestSupportAnswer({
   }
 
   const normalizedAnswer = normalizeGuestSupportAnswer(parsedAnswer);
-  if (!normalizedAnswer.needsHuman && !hasSupportedEvidence(parsedAnswer, approvedKnowledge)) {
+  const resolvedAnswer = resolveGuestSupportAnswer(message, normalizedAnswer);
+  if (!resolvedAnswer.needsHuman && !hasSupportedEvidence(parsedAnswer, approvedKnowledge)) {
     return {
       reply: "I cannot verify that answer from the hotel’s approved information. Please contact the front desk directly.",
       needsHuman: true,
@@ -65,7 +66,7 @@ async function generateGuestSupportAnswer({
     };
   }
 
-  return resolveGuestSupportAnswer(message, normalizedAnswer);
+  return resolvedAnswer;
 }
 
 function createAiUnavailableAnswer() {

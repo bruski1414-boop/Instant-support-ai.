@@ -463,3 +463,19 @@ test("performance report separates rolling conversation metrics from all-time st
   assert.match(dashboard, /id="performanceRate"/);
   assert.match(dashboard, /id="performanceRevenue"/);
 });
+
+test("AI response latency is measured at generation and aggregated per tenant", () => {
+ const server=fs.readFileSync("server.js","utf8");
+ const dashboard=fs.readFileSync("dashboard.html","utf8");
+ assert.match(server,/ALTER TABLE messages ADD COLUMN IF NOT EXISTS response_time_ms INTEGER/);
+ assert.match(server,/process\.hrtime\.bigint\(\)/);
+ assert.match(server,/response_time_ms\) VALUES\(\$1,'guest',\$2,NULL\),\(\$1,'assistant',\$3,\$4\)/);
+ assert.match(server,/percentile_cont\(0\.5\) WITHIN GROUP\(ORDER BY response_time_ms\)/);
+ assert.match(server,/percentile_cont\(0\.95\) WITHIN GROUP\(ORDER BY response_time_ms\)/);
+ assert.match(server,/c\.organization_id=\$1 AND m\.role='assistant'/);
+ assert.match(server,/responseLatency:responseLatency\.rows\[0\]/);
+ assert.match(dashboard,/id="performanceLatencyCount"/);
+ assert.match(dashboard,/id="performanceLatencyMedian"/);
+ assert.match(dashboard,/id="performanceLatencyP95"/);
+ assert.match(dashboard,/does not measure knowledge retrieval, database writes, delivery to the guest, or staff response time/);
+});

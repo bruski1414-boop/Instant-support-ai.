@@ -299,3 +299,28 @@ test("exact evidence quotations must exist in approved hotel knowledge", () => {
   assert.equal(hasSupportedEvidence({ evidence: ["[pool] Pool hours: 8:00–20:00", "fabricated"] }, knowledge), false);
   assert.equal(hasSupportedEvidence({ evidence: ["[facilities] Breakfast: 7:00–10:00"] }, ""), false);
 });
+
+test("evidence from an unrelated fact cannot support different concrete details in the reply", () => {
+  const breakfastEvidence = "[facilities] Breakfast: 7:00–10:00";
+  assert.equal(hasSupportedEvidence({
+    reply: "The swimming pool is open from 8:00 to 20:00.",
+    evidence: [breakfastEvidence],
+  }, breakfastEvidence), false);
+  assert.equal(hasSupportedEvidence({
+    reply: "Breakfast is served from 7:00 to 10:00.",
+    evidence: [breakfastEvidence],
+  }, breakfastEvidence), true);
+});
+
+test("unsupported prices, dates, percentages and contact details fail the evidence guard", () => {
+  const source = "[offers] The package costs EUR 250 and is available until 2026-12-31.";
+  for (const reply of [
+    "The package costs EUR 500.",
+    "The offer ends on 2027-01-31.",
+    "The discount is 25%.",
+    "Call us at +66 123 456 789.",
+    "Email support@example.com.",
+  ]) {
+    assert.equal(hasSupportedEvidence({ reply, evidence: ["[offers] The package costs EUR 250"] }, source), false, reply);
+  }
+});

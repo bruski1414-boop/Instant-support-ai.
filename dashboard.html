@@ -131,7 +131,27 @@ main{padding:28px clamp(16px,4vw,48px);max-width:1450px;width:100%;margin:auto}.
   <div class="sectionrow"><h2>Recent conversations</h2><span class="muted">Latest 20</span></div>
   <div class="card tablewrap"><table class="table"><thead><tr><th>CONVERSATION</th><th>LAST GUEST / ASSISTANT MESSAGE</th><th>STATUS</th><th>STARTED</th></tr></thead><tbody id="recentRows"></tbody></table></div>
  </section>
- <section id="panel-conversations" class="panel">
+ <section id="panel-performance" class="panel">
+   <div class="sectionrow"><h2>Operational performance · last 30 days</h2><span class="muted">Rolling period · refreshed on demand</span></div>
+   <p class="muted" style="font-size:12px">Conversation and handoff figures cover the rolling 30-day period. Sales figures are all-time staff-confirmed offer attributions and are shown separately. This report does not claim that Veyra caused incremental revenue.</p>
+   <div class="grid">
+    <div class="card"><div class="metriclabel">CONVERSATIONS · 30 DAYS</div><div class="metric" id="performanceConversations">—</div></div>
+    <div class="card"><div class="metriclabel">CURRENTLY ESCALATED</div><div class="metric" id="performanceEscalated">—</div></div>
+    <div class="card"><div class="metriclabel">RESOLVED · STARTED IN PERIOD</div><div class="metric" id="performanceResolved">—</div></div>
+   </div>
+   <div class="sectionrow"><h2>Daily conversation volume</h2><span class="muted">Unique conversations per day</span></div>
+   <div class="card" id="performanceDaily" style="display:grid;gap:10px"><div class="empty">Loading report…</div></div>
+   <div class="sectionrow"><h2>Offer enquiry outcomes</h2><span class="muted">All-time recorded attributions</span></div>
+   <div class="grid">
+    <div class="card"><div class="metriclabel">GUEST ENQUIRIES</div><div class="metric" id="performanceEnquiries">—</div></div>
+    <div class="card"><div class="metriclabel">STAFF-CONFIRMED SALES</div><div class="metric" id="performanceConversions">—</div></div>
+    <div class="card"><div class="metriclabel">CONVERSION RATE</div><div class="metric" id="performanceRate">—</div></div>
+   </div>
+   <div class="sectionrow"><h2>Confirmed sales by currency</h2><span class="muted">Staff-entered completed sale amounts</span></div>
+   <div class="card" id="performanceRevenue"><div class="empty">Loading recorded sales…</div></div>
+   <p class="muted" style="font-size:12px">Confirmed sales are recorded by hotel staff. They are not independently audited and should not be presented as proven incremental profit or revenue caused by Veyra.</p>
+  </section>
+  <section id="panel-conversations" class="panel">
   <div class="sectionrow"><h2>Recent conversations</h2><span class="muted">Latest 20 · message previews</span></div>
   <div class="card tablewrap"><table class="table"><thead><tr><th>ID</th><th>LAST MESSAGE</th><th>STATUS</th><th>CHANNEL</th><th>STARTED</th><th>ACTION</th></tr></thead><tbody id="conversationRows"></tbody></table></div>
   <div id="conversationDetail" class="card hidden" style="margin-top:14px"></div>

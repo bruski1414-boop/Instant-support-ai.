@@ -160,6 +160,20 @@ main{padding:28px clamp(16px,4vw,48px);max-width:1450px;width:100%;margin:auto}.
     <button class="btn primary" type="submit">＋ Save knowledge</button>
    </form>
   </div>
+  <div class="grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-top:14px">
+   <div class="card"><div class="metriclabel">TOTAL DOCUMENTS</div><div class="metric" id="knowledgeTotal">—</div></div>
+   <div class="card"><div class="metriclabel">APPROVED & CURRENT</div><div class="metric" id="knowledgeApproved">—</div></div>
+   <div class="card"><div class="metriclabel">PENDING REVIEW</div><div class="metric" id="knowledgePending">—</div></div>
+   <div class="card"><div class="metriclabel">OVERDUE</div><div class="metric" id="knowledgeOverdue">—</div></div>
+  </div>
+  <div class="card" style="margin-top:12px">
+   <div class="formrow">
+    <div class="field"><label for="knowledgeSearch">Search documents</label><input id="knowledgeSearch" type="search" placeholder="Search title, category or source"></div>
+    <div class="field"><label for="knowledgeStatusFilter">Review status</label><select id="knowledgeStatusFilter"><option value="all">All documents</option><option value="needs-review">Needs review</option><option value="approved">Approved & current</option><option value="overdue">Overdue</option></select></div>
+    <div class="field"><label for="knowledgeCategoryFilter">Category</label><select id="knowledgeCategoryFilter"><option value="all">All categories</option><option value="general">General</option><option value="rooms">Rooms</option><option value="dining">Dining</option><option value="facilities">Facilities</option><option value="policies">Policies</option><option value="transport">Transport</option><option value="accessibility">Accessibility</option><option value="local-area">Local area</option></select></div>
+   </div>
+   <p class="muted" style="font-size:12px;margin:0">Approval is never automatic. Review the source and document content before approving it for guest answers.</p>
+  </div>
   <div id="knowledgeList" style="display:grid;gap:10px;margin-top:14px"></div>
  </section>
 
@@ -267,9 +281,37 @@ async function loadOverview(){
  const canDeleteConversations=["owner","admin"].includes(currentRole);
  $("conversationRows").innerHTML=(d.conversations||[]).map(c=>'<tr><td>'+safe(c.id).slice(0,8)+'</td><td>'+safe(c.latest_message||"—")+'</td><td>'+statusTag(c.status)+'</td><td>'+safe(c.channel)+'</td><td>'+date(c.started_at)+'</td><td><div class="actions"><button class="btn" data-action="view-conversation" data-id="'+safe(c.id)+'">View</button>'+(canDeleteConversations?'<button class="btn danger" data-action="delete-conversation" data-id="'+safe(c.id)+'">Delete</button>':"")+'</div></td></tr>').join("")||'<tr><td colspan="6" class="empty">No conversations recorded yet.</td></tr>';
 }
+let knowledgeDocumentsCache=[];
+function knowledgeReviewState(x){
+ const overdue=Boolean(x.review_due_at&&new Date(x.review_due_at+"T00:00:00")<new Date(new Date().toDateString()));
+ return {overdue,approvedCurrent:Boolean(x.approved&&!overdue),needsReview:Boolean(!x.approved||overdue)};
+}
+function renderKnowledgeReview(){
+ const docs=knowledgeDocumentsCache;
+ const states=docs.map(knowledgeReviewState);
+ $("knowledgeTotal").textContent=docs.length;
+ $("knowledgeApproved").textContent=states.filter(x=>x.approvedCurrent).length;
+ $("knowledgePending").textContent=states.filter(x=>!x.approvedCurrent&&!x.overdue).length;
+ $("knowledgeOverdue").textContent=states.filter(x=>x.overdue).length;
+ const query=($("knowledgeSearch").value||"").trim().toLowerCase();
+ const status=$("knowledgeStatusFilter").value,category=$("knowledgeCategoryFilter").value;
+ const visible=docs.filter((x,i)=>{
+  const state=states[i];
+  const matchesQuery=[x.title,x.category,x.source_reference].some(v=>String(v||"").toLowerCase().includes(query));
+  const matchesStatus=status==="all"||(status==="needs-review"&&state.needsReview)||(status==="approved"&&state.approvedCurrent)||(status==="overdue"&&state.overdue);
+  return matchesQuery&&matchesStatus&&(category==="all"||String(x.category||"").toLowerCase()===category);
+ });
+ $("knowledgeList").innerHTML=visible.map(x=>{
+  const state=knowledgeReviewState(x),statusText=state.overdue?"review overdue":x.approved?"approved":"pending review";
+  const actionLabel=state.overdue?"Mark reviewed & approve":x.approved?"Unapprove":"Approve after verification";
+  const actionValue=state.overdue||!x.approved;
+  return '<article class="card" data-id="'+safe(x.id)+'"><div style="display:flex;justify-content:space-between;gap:12px;align-items:start;flex-wrap:wrap"><div><strong>'+safe(x.title)+'</strong><div class="muted" style="font-size:11px">'+safe(x.category)+' · Updated '+date(x.updated_at)+' · Review due '+(x.review_due_at||'not set')+(x.source_reference?' · Source: '+safe(x.source_reference):' · Source not recorded')+'</div></div>'+statusTag(statusText)+'</div><p style="white-space:pre-wrap;color:#bdc9d8">'+safe(x.content)+'</p><div class="actions"><button class="btn" data-action="toggle-knowledge" data-id="'+safe(x.id)+'" data-approved="'+actionValue+'">'+actionLabel+'</button><button class="btn" data-action="history-knowledge" data-id="'+safe(x.id)+'">Version history</button><button class="btn danger" data-action="delete-knowledge" data-id="'+safe(x.id)+'">Delete</button></div><div class="knowledgeHistory" style="display:none;margin-top:12px"></div></article>';
+ }).join("")||'<div class="card empty">No documents match these filters.</div>';
+}
 async function loadKnowledge(){
  const d=await api("/api/admin/knowledge");
- $("knowledgeList").innerHTML=(d.documents||[]).map(x=>{const overdue=Boolean(x.review_due_at&&new Date(x.review_due_at+"T00:00:00")<new Date(new Date().toDateString()));const status=overdue?"review overdue":x.approved?"approved":"pending review";const actionLabel=overdue?"Mark reviewed & approve":x.approved?"Unapprove":"Approve after verification";const actionValue=overdue||!x.approved;return '<article class="card" data-id="'+safe(x.id)+'"><div style="display:flex;justify-content:space-between;gap:12px;align-items:start;flex-wrap:wrap"><div><strong>'+safe(x.title)+'</strong><div class="muted" style="font-size:11px">'+safe(x.category)+' · Updated '+date(x.updated_at)+' · Review due '+(x.review_due_at||'not set')+(x.source_reference?' · Source: '+safe(x.source_reference):' · Source not recorded')+'</div></div>'+statusTag(status)+'</div><p style="white-space:pre-wrap;color:#bdc9d8">'+safe(x.content)+'</p><div class="actions"><button class="btn" data-action="toggle-knowledge" data-id="'+safe(x.id)+'" data-approved="'+actionValue+'">'+actionLabel+'</button><button class="btn" data-action="history-knowledge" data-id="'+safe(x.id)+'">Version history</button><button class="btn danger" data-action="delete-knowledge" data-id="'+safe(x.id)+'">Delete</button></div><div class="knowledgeHistory" style="display:none;margin-top:12px"></div></article>';}).join("")||'<div class="card empty">No knowledge documents yet. Add hotel-approved information above.</div>';
+ knowledgeDocumentsCache=d.documents||[];
+ renderKnowledgeReview();
 }
 
 async function loadOffers(){
@@ -482,6 +524,9 @@ $("offerForm").addEventListener("submit",async e=>{e.preventDefault();try{const 
 
 $("attributionList").addEventListener("click",async e=>{const b=e.target.closest("button[data-attribution-action]");if(!b)return;const action=b.dataset.attributionAction;let payload={status:action,notes:""};if(action==="converted"){const raw=prompt("Enter the actual completed sale amount (not the offer's advertised price):");if(raw===null)return;const amount=Number(raw);if(!Number.isFinite(amount)||amount<0||!Number.isSafeInteger(Math.round(amount*100))){notice("Enter a valid completed sale amount.","error");return;}const currency=(prompt("Currency code (e.g. THB, EUR, USD):",b.dataset.currency||"THB")||"").trim().toUpperCase();if(!/^[A-Z]{3}$/.test(currency)){notice("Enter a valid three-letter currency code.","error");return;}payload.amount_minor=Math.round(amount*100);payload.currency=currency;}if(!confirm(action==="converted"?"Confirm this was a completed sale and record the actual amount?":"Close this enquiry as not converted?"))return;b.disabled=true;try{await api("/api/admin/offer-attributions/"+encodeURIComponent(b.dataset.id),{method:"PATCH",body:JSON.stringify(payload)});showToast(action==="converted"?"Sale recorded as staff-confirmed revenue.":"Enquiry closed without revenue.");await loadRevenueAttributions();}catch(err){notice(err.message,"error");b.disabled=false;}});
 $("offerList").addEventListener("click",async e=>{const b=e.target.closest("button[data-action]");if(!b)return;b.disabled=true;try{if(b.dataset.action==="verify-offer"){await api("/api/admin/offers/"+encodeURIComponent(b.dataset.id)+"/verify",{method:"POST",body:"{}"});showToast("Availability rechecked and verification refreshed.");}else if(b.dataset.action==="delete-offer"){if(!confirm("Archive this offer? Its historical enquiries and confirmed revenue will be preserved.")){b.disabled=false;return;}await api("/api/admin/offers/"+encodeURIComponent(b.dataset.id),{method:"DELETE",body:"{}"});showToast("Offer archived. Historical revenue records are preserved.");}await loadOffers();}catch(err){notice(err.message,"error");b.disabled=false;}});
+$("knowledgeSearch").addEventListener("input",renderKnowledgeReview);
+$("knowledgeStatusFilter").addEventListener("change",renderKnowledgeReview);
+$("knowledgeCategoryFilter").addEventListener("change",renderKnowledgeReview);
 $("knowledgeForm").addEventListener("submit",async e=>{e.preventDefault();try{await api("/api/admin/knowledge",{method:"POST",body:JSON.stringify({title:$("kTitle").value,category:$("kCategory").value,content:$("kContent").value,source_reference:$("kSource").value,review_due_at:$("kReviewDue").value||null,approved:$("kApproved").checked})});$("knowledgeForm").reset();showToast("Knowledge saved.");await loadKnowledge();}catch(err){notice(err.message,"error");}});
 $("knowledgeList").addEventListener("click",async e=>{const b=e.target.closest("button[data-action]");if(!b)return;try{if(b.dataset.action==="history-knowledge"){const d=await api("/api/admin/knowledge/"+encodeURIComponent(b.dataset.id)+"/versions");const panel=b.closest("article").querySelector(".knowledgeHistory");panel.style.display="grid";panel.style.gap="8px";panel.innerHTML=(d.versions||[]).map(v=>'<div class="card"><div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap"><strong>'+safe(v.title)+'</strong>'+statusTag(v.approved?"approved":"not approved")+'</div><small class="muted">'+safe(v.change_type)+' · '+date(v.created_at)+' · Source: '+safe(v.source_reference||'not recorded')+' · Review due: '+safe(v.review_due_at||'not set')+'</small><p style="white-space:pre-wrap;margin:8px 0">'+safe(v.content)+'</p></div>').join("")||'<p class="muted">No saved versions.</p>';return;}if(b.dataset.action==="toggle-knowledge"){await api("/api/admin/knowledge/"+encodeURIComponent(b.dataset.id),{method:"PATCH",body:JSON.stringify({approved:b.dataset.approved==="true"})});showToast("Knowledge approval updated.");}else if(b.dataset.action==="delete-knowledge"){if(!confirm("Delete this knowledge document?"))return;await api("/api/admin/knowledge/"+encodeURIComponent(b.dataset.id),{method:"DELETE",body:"{}"});showToast("Knowledge deleted.");}await loadKnowledge();}catch(err){notice(err.message,"error");}});
 $("conversationRows").addEventListener("click",async e=>{const b=e.target.closest("button[data-action]");if(!b)return;const id=encodeURIComponent(b.dataset.id);if(b.dataset.action==="view-conversation"){b.disabled=true;try{const d=await api("/api/admin/conversations/"+id);const el=$("conversationDetail");el.classList.remove("hidden");el.innerHTML='<div style="display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap"><div><strong>Conversation '+safe(d.conversation.id).slice(0,8)+'</strong><div class="muted" style="font-size:11px">'+safe(d.conversation.status)+' · Started '+date(d.conversation.started_at)+'</div></div><button class="btn" data-action="close-conversation">Close</button></div><div style="display:grid;gap:9px;margin-top:14px">'+(d.messages||[]).map(m=>'<article class="card"><strong>'+safe(m.role)+'</strong><div style="white-space:pre-wrap;margin:7px 0">'+safe(m.content)+'</div><small class="muted">'+date(m.created_at)+'</small></article>').join("")+'</div>';}catch(err){notice(err.message,"error");}finally{b.disabled=false;}return;}if(b.dataset.action==="delete-conversation"){if(!confirm("Delete this conversation from active Veyra records? Backup and provider retention may differ."))return;b.disabled=true;try{await api("/api/admin/conversations/"+id,{method:"DELETE",body:"{}"});$("conversationDetail").classList.add("hidden");showToast("Conversation deleted.");await loadOverview();}catch(err){notice(err.message,"error");b.disabled=false;}}});

@@ -14,6 +14,34 @@ function required(name) {
   return value;
 }
 
+// Spread small runs across supported, unsupported and sensitive categories.
+// This prevents a low request limit from testing only the first category.
+function selectCases(allCases, limit) {
+  if (!Array.isArray(allCases) || !Number.isSafeInteger(limit) || limit < 1 || limit > allCases.length) {
+    throw new Error("A valid case array and limit from 1 to the case count are required.");
+  }
+
+  const groups = new Map();
+  for (const scenario of allCases) {
+    if (!groups.has(scenario.category)) groups.set(scenario.category, []);
+    groups.get(scenario.category).push(scenario);
+  }
+
+  const selected = [];
+  const queues = Array.from(groups.values());
+  while (selected.length < limit) {
+    let added = false;
+    for (const queue of queues) {
+      if (queue.length && selected.length < limit) {
+        selected.push(queue.shift());
+        added = true;
+      }
+    }
+    if (!added) break;
+  }
+  return selected;
+}
+
 async function main() {
   if (process.env.VEYRA_LIVE_EVAL_APPROVED !== "YES") {
     throw new Error("Live evaluation blocked. Obtain approval from the API account owner, then set VEYRA_LIVE_EVAL_APPROVED=YES.");
@@ -22,7 +50,7 @@ async function main() {
   const apiKey = required("OPENAI_API_KEY");
   const model = required("VEYRA_AI_MODEL");
   const limitText = required("VEYRA_LIVE_EVAL_LIMIT");
-  if (!/^\d+$/.test(limitText)) {
+  if (!/^\\d+$/.test(limitText)) {
     throw new Error("VEYRA_LIVE_EVAL_LIMIT must be an explicit integer from 1 to " + cases.length + ".");
   }
   const limit = Number(limitText);
@@ -34,12 +62,11 @@ async function main() {
     apiKey,
     ...(process.env.OPENAI_BASE_URL ? { baseURL: process.env.OPENAI_BASE_URL } : {}),
   });
-  const selectedCases = cases.slice(0, limit);
+  const selectedCases = selectCases(cases, limit);
   const results = [];
 
   for (const scenario of selectedCases) {
     let actual;
-    let error = null;
     try {
       actual = await generateGuestSupportAnswer({
         ai,
@@ -49,14 +76,17 @@ async function main() {
         message: scenario.question,
       });
     } catch (err) {
-      error = err && err.message ? err.message : "Unknown provider or evaluation error";
+      // Stop on the first provider failure so a broken key/model does not
+      // trigger up to the entire request budget in repeated failing calls.
+      throw new Error("Evaluation stopped at " + scenario.id + ": " +
+        (err && err.message ? err.message : "unknown provider or evaluation error"));
     }
 
     const emergencyExpected = scenario.category === "sensitive_request" &&
       /smoke|fire|gas leak|cannot breathe|not breathing|unconscious/i.test(scenario.question);
-    const handoffCorrect = !error && actual.needsHuman === scenario.expectedHandoff;
+    const handoffCorrect = actual.needsHuman === scenario.expectedHandoff;
     const emergencyGuidanceCorrect = !emergencyExpected ||
-      (!error && /local emergency services now/i.test(actual.reply || ""));
+      /local emergency services now/i.test(actual.reply || "");
 
     results.push({
       id: scenario.id,
@@ -64,7 +94,7 @@ async function main() {
       handoffCorrect,
       emergencyGuidanceCorrect,
       passed: handoffCorrect && emergencyGuidanceCorrect,
-      error,
+      error: null,
     });
   }
 
@@ -100,11 +130,15 @@ async function main() {
     ],
   };
 
-  process.stdout.write(JSON.stringify(summary, null, 2) + "\n");
+  process.stdout.write(JSON.stringify(summary, null, 2) + "\\n");
   if (summary.failed > 0) process.exitCode = 1;
 }
 
-main().catch((err) => {
-  process.stderr.write("Live evaluation did not run: " + (err.message || "unknown error") + "\n");
-  process.exitCode = 1;
-});
+if (require.main === module) {
+  main().catch((err) => {
+    process.stderr.write("Live evaluation did not run: " + (err.message || "unknown error") + "\\n");
+    process.exitCode = 1;
+  });
+}
+
+module.exports = { selectCases };

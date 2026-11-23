@@ -15,6 +15,7 @@ const {selectRelevantOffers,buildOfferContext}=require("./hotel-offers");
 const {buildPilotReadiness}=require("./pilot-readiness");
 const {PmsIntegrationError,createPmsRegistry,createSandboxAdapter}=require("./pms-integration");
 const {createPmsCredentialVault}=require("./pms-credential-vault");
+const {createPostgresPaidAddonLedgerStore}=require("./paid-addon-ledger-store");
 const {deliverStaffEscalation}=require("./staff-notifications");
 const {encryptWebhookConfig,decryptWebhookConfig,resolvePublicWebhook,postSignedWebhook}=require("./staff-webhook-security");
 const app=express();
@@ -25,6 +26,7 @@ const ai=process.env.OPENAI_API_KEY?new OpenAI({apiKey:process.env.OPENAI_API_KE
 const db=process.env.DATABASE_URL?new Pool({connectionString:process.env.DATABASE_URL,ssl:process.env.DATABASE_SSL==="false"?false:{rejectUnauthorized:false},max:5,connectionTimeoutMillis:5000}):null;
 const pmsRegistry=createPmsRegistry([createSandboxAdapter()]);
 const pmsCredentialVault=createPmsCredentialVault();
+const paidAddonLedgerStore=db?createPostgresPaidAddonLedgerStore({db}):null;
 const scrypt=promisify(crypto.scrypt);
 const prod=process.env.NODE_ENV==="production";
 const cookie=prod?"__Host-veyra_session":"veyra_session";
@@ -90,6 +92,17 @@ const schema=[
 "CREATE TABLE IF NOT EXISTS pms_webhook_events(id UUID PRIMARY KEY DEFAULT gen_random_uuid(),organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,provider TEXT NOT NULL,external_event_id TEXT NOT NULL,event_type TEXT NOT NULL,payload_sha256 CHAR(64) NOT NULL,received_at TIMESTAMPTZ NOT NULL DEFAULT now(),status TEXT NOT NULL DEFAULT 'received' CHECK(status IN ('received','processed','ignored','failed')),processed_at TIMESTAMPTZ,UNIQUE(organization_id,provider,external_event_id))",
 "CREATE INDEX IF NOT EXISTS pms_webhook_events_org_time_idx ON pms_webhook_events(organization_id,received_at DESC)",
 "CREATE TABLE IF NOT EXISTS hotel_offer_attributions(id UUID PRIMARY KEY DEFAULT gen_random_uuid(),organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,offer_id UUID NOT NULL REFERENCES hotel_offers(id) ON DELETE CASCADE,conversation_id UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,status TEXT NOT NULL DEFAULT 'enquiry',amount_minor BIGINT,currency CHAR(3),notes TEXT NOT NULL DEFAULT '',marked_by UUID REFERENCES users(id) ON DELETE SET NULL,created_at TIMESTAMPTZ NOT NULL DEFAULT now(),updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),UNIQUE(organization_id,offer_id,conversation_id))",
+"ALTER TABLE hotel_offer_attributions ADD COLUMN IF NOT EXISTS evidence_source TEXT",
+"ALTER TABLE hotel_offer_attributions ADD COLUMN IF NOT EXISTS evidence_reference TEXT",
+"ALTER TABLE hotel_offer_attributions ADD COLUMN IF NOT EXISTS sold_at TIMESTAMPTZ",
+"CREATE UNIQUE INDEX IF NOT EXISTS hotel_offer_attributions_org_id_key ON hotel_offer_attributions(organization_id,id)",
+"CREATE UNIQUE INDEX IF NOT EXISTS hotel_offer_attributions_evidence_dedupe_idx ON hotel_offer_attributions(organization_id,evidence_source,evidence_reference) WHERE status='converted' AND evidence_source IS NOT NULL AND evidence_reference IS NOT NULL",
+"DO $ddl$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='hotel_offer_attributions_evidence_tuple_check' AND conrelid='hotel_offer_attributions'::regclass) THEN ALTER TABLE hotel_offer_attributions ADD CONSTRAINT hotel_offer_attributions_evidence_tuple_check CHECK ((evidence_source IS NULL AND evidence_reference IS NULL AND sold_at IS NULL) OR (evidence_source IS NOT NULL AND evidence_source IN ('pms_record','payment_receipt','invoice','hotel_report') AND evidence_reference IS NOT NULL AND evidence_reference ~ '^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,199}$' AND position('://' in evidence_reference)=0 AND evidence_reference !~* '^www[.]' AND sold_at IS NOT NULL AND amount_minor IS NOT NULL AND amount_minor>0 AND currency IS NOT NULL AND currency ~ '^[A-Z]{3}$')) NOT VALID; END IF; END $ddl$",
+"CREATE TABLE IF NOT EXISTS hotel_offer_attribution_events(id UUID PRIMARY KEY DEFAULT gen_random_uuid(),organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,attribution_id UUID NOT NULL,actor_user_id UUID REFERENCES users(id) ON DELETE SET NULL,action TEXT NOT NULL CHECK(action IN ('converted','not_converted')),previous_status TEXT NOT NULL,new_status TEXT NOT NULL,previous_amount_minor BIGINT,new_amount_minor BIGINT,previous_currency CHAR(3),new_currency CHAR(3),previous_evidence_source TEXT,new_evidence_source TEXT,previous_evidence_reference TEXT,new_evidence_reference TEXT,previous_sold_at TIMESTAMPTZ,new_sold_at TIMESTAMPTZ,created_at TIMESTAMPTZ NOT NULL DEFAULT now(),FOREIGN KEY(organization_id,attribution_id) REFERENCES hotel_offer_attributions(organization_id,id) ON DELETE CASCADE)",
+"CREATE INDEX IF NOT EXISTS hotel_offer_attribution_events_org_idx ON hotel_offer_attribution_events(organization_id,attribution_id,created_at DESC)",
+"CREATE OR REPLACE FUNCTION enforce_hotel_offer_attribution_evidence() RETURNS trigger LANGUAGE plpgsql AS $fn$ BEGIN IF TG_OP='UPDATE' AND OLD.status='converted' AND NEW.status IS DISTINCT FROM OLD.status THEN RAISE EXCEPTION 'Converted offer attributions cannot be reversed; record a separate adjustment.'; END IF; IF TG_OP='UPDATE' AND OLD.status='converted' AND OLD.evidence_source IS NOT NULL AND (NEW.amount_minor IS DISTINCT FROM OLD.amount_minor OR NEW.currency IS DISTINCT FROM OLD.currency OR NEW.evidence_source IS DISTINCT FROM OLD.evidence_source OR NEW.evidence_reference IS DISTINCT FROM OLD.evidence_reference OR NEW.sold_at IS DISTINCT FROM OLD.sold_at) THEN RAISE EXCEPTION 'Evidence-attested conversions are immutable; record a separate adjustment.'; END IF; IF NEW.status='converted' AND (NEW.amount_minor IS NULL OR NEW.amount_minor<=0 OR NEW.currency IS NULL OR NEW.currency !~ '^[A-Z]{3}$' OR NEW.evidence_source IS NULL OR NEW.evidence_source NOT IN ('pms_record','payment_receipt','invoice','hotel_report') OR NEW.evidence_reference IS NULL OR NEW.evidence_reference !~ '^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,199}$' OR position('://' in NEW.evidence_reference)>0 OR NEW.evidence_reference ~* '^www[.]' OR NEW.sold_at IS NULL OR NEW.sold_at<NEW.created_at OR NEW.sold_at>now()+interval '5 minutes') THEN RAISE EXCEPTION 'A converted offer attribution requires complete evidence and a valid sale timestamp.'; END IF; RETURN NEW; END; $fn$",
+"DROP TRIGGER IF EXISTS hotel_offer_attribution_evidence_guard ON hotel_offer_attributions",
+"CREATE TRIGGER hotel_offer_attribution_evidence_guard BEFORE INSERT OR UPDATE ON hotel_offer_attributions FOR EACH ROW EXECUTE FUNCTION enforce_hotel_offer_attribution_evidence()",
 ].join(";\n")+";";
 function hash(v){return crypto.createHash("sha256").update(v).digest("hex");}
 function equal(a,b){const x=Buffer.from(String(a||"")),y=Buffer.from(String(b||""));return x.length===y.length&&crypto.timingSafeEqual(x,y);}
@@ -271,8 +284,111 @@ app.patch("/api/admin/offers/:id",requireDb,auth,role("owner","admin"),async(q,r
 app.post("/api/admin/offers/:id/verify",requireDb,auth,role("owner","admin"),async(q,r,n)=>{try{const x=await db.query("UPDATE hotel_offers SET availability_status='available',availability_verified_at=now(),updated_by=$1,updated_at=now() WHERE id=$2 AND organization_id=$3 AND status='active' AND expires_at>now() RETURNING id,availability_status,availability_verified_at,expires_at",[q.actor.user_id,q.params.id,q.actor.organization_id]);if(!x.rowCount)return r.status(404).json({error:"Active, unexpired offer not found for this hotel."});await audit(q.actor,"offer.availability_verified","hotel_offer",q.params.id);r.json({offer:x.rows[0]});}catch(e){n(e);}});
 app.delete("/api/admin/offers/:id",requireDb,auth,role("owner","admin"),async(q,r,n)=>{try{const x=await db.query("UPDATE hotel_offers SET status='paused',availability_status='unknown',availability_verified_at=NULL,updated_by=$1,updated_at=now() WHERE id=$2 AND organization_id=$3 RETURNING id",[q.actor.user_id,q.params.id,q.actor.organization_id]);if(!x.rowCount)return r.status(404).json({error:"Offer not found."});await audit(q.actor,"offer.archived","hotel_offer",q.params.id);r.json({archived:true});}catch(e){n(e);}});
 
-app.get("/api/admin/offer-attributions",requireDb,auth,role("owner","admin","staff"),async(q,r,n)=>{try{const x=await db.query("SELECT a.id,a.status,a.amount_minor,a.currency,a.notes,a.created_at,a.updated_at,o.name AS offer_name,o.category,o.currency AS offer_currency,o.amount_minor AS listed_amount_minor,c.id AS conversation_id FROM hotel_offer_attributions a JOIN hotel_offers o ON o.id=a.offer_id AND o.organization_id=a.organization_id JOIN conversations c ON c.id=a.conversation_id AND c.organization_id=a.organization_id WHERE a.organization_id=$1 ORDER BY a.created_at DESC LIMIT 200",[q.actor.organization_id]);const totals=await db.query("SELECT status,count(*)::int AS count,COALESCE(sum(amount_minor),0)::text AS amount_minor,currency FROM hotel_offer_attributions WHERE organization_id=$1 GROUP BY status,currency ORDER BY status",[q.actor.organization_id]);r.json({attributions:x.rows,totals:totals.rows});}catch(e){n(e);}});
-app.patch("/api/admin/offer-attributions/:id",requireDb,auth,role("owner","admin","staff"),async(q,r,n)=>{try{const status=q.body?.status,notes=typeof q.body?.notes==="string"?q.body.notes.trim():"";if(!["converted","not_converted"].includes(status)||notes.length>500)return r.status(400).json({error:"Choose converted or not converted and keep notes under 500 characters."});let amount=null,currency=null;if(status==="converted"){amount=Number(q.body?.amount_minor);currency=typeof q.body?.currency==="string"?q.body.currency.trim().toUpperCase():"";if(!Number.isSafeInteger(amount)||amount<0||!/^[A-Z]{3}$/.test(currency))return r.status(400).json({error:"A completed sale needs a valid actual amount and three-letter currency code."});}const x=await db.query("UPDATE hotel_offer_attributions SET status=$1,amount_minor=$2,currency=$3,notes=$4,marked_by=$5,updated_at=now() WHERE id=$6 AND organization_id=$7 RETURNING id,status,amount_minor,currency,notes,updated_at",[status,amount,currency,notes,q.actor.user_id,q.params.id,q.actor.organization_id]);if(!x.rowCount)return r.status(404).json({error:"Offer enquiry not found."});await audit(q.actor,"offer_attribution."+status,"hotel_offer_attribution",q.params.id);r.json({attribution:x.rows[0]});}catch(e){n(e);}});
+app.get("/api/admin/offer-attributions",requireDb,auth,role("owner","admin","staff"),async(q,r,n)=>{try{
+ const org=q.actor.organization_id;
+ const financialVisibility=["owner","admin"].includes(q.actor.role);
+ const windowResult=await db.query("SELECT now() AS window_end,now()-interval '720 hours' AS window_start");
+ const windowStart=windowResult.rows[0].window_start;
+ const windowEnd=windowResult.rows[0].window_end;
+ const x=await db.query(financialVisibility
+  ? "SELECT a.id,a.status,a.amount_minor,a.currency,a.notes,a.evidence_source,a.evidence_reference,a.sold_at,CASE WHEN a.status='converted' AND a.evidence_source IS NOT NULL AND a.evidence_reference IS NOT NULL AND a.sold_at IS NOT NULL THEN 'evidence_attested' WHEN a.status='converted' THEN 'legacy_unverified' ELSE 'not_applicable' END AS evidence_status,a.created_at,a.updated_at,o.name AS offer_name,o.category,o.currency AS offer_currency,o.amount_minor AS listed_amount_minor,c.id AS conversation_id FROM hotel_offer_attributions a JOIN hotel_offers o ON o.id=a.offer_id AND o.organization_id=a.organization_id JOIN conversations c ON c.id=a.conversation_id AND c.organization_id=a.organization_id WHERE a.organization_id=$1 ORDER BY a.created_at DESC LIMIT 200"
+  : "SELECT a.id,a.status,a.created_at,o.name AS offer_name,o.category,c.id AS conversation_id FROM hotel_offer_attributions a JOIN hotel_offers o ON o.id=a.offer_id AND o.organization_id=a.organization_id JOIN conversations c ON c.id=a.conversation_id AND c.organization_id=a.organization_id WHERE a.organization_id=$1 ORDER BY a.created_at DESC LIMIT 200",
+  [org]);
+ const enquirySummary=await db.query("SELECT count(*)::int AS enquiry_count,count(DISTINCT conversation_id)::int AS enquiry_conversation_count FROM hotel_offer_attributions WHERE organization_id=$1 AND created_at >= $2 AND created_at < $3",[org,windowStart,windowEnd]);
+ const verifiedTotals=financialVisibility
+  ? await db.query("SELECT currency,count(*)::int AS count,COALESCE(sum(amount_minor),0)::text AS amount_minor FROM hotel_offer_attributions WHERE organization_id=$1 AND status='converted' AND evidence_source IS NOT NULL AND evidence_reference IS NOT NULL AND sold_at IS NOT NULL AND sold_at >= $2 AND sold_at < $3 GROUP BY currency ORDER BY currency",[org,windowStart,windowEnd])
+  : {rows:[]};
+ const legacyUnverifiedTotals=financialVisibility
+  ? await db.query("SELECT count(*)::int AS count FROM hotel_offer_attributions WHERE organization_id=$1 AND status='converted' AND (evidence_source IS NULL OR evidence_reference IS NULL OR sold_at IS NULL)",[org])
+  : {rows:[]};
+ r.json({
+  attributions:x.rows,
+  enquiryCount:enquirySummary.rows[0].enquiry_count,
+  enquiryConversationCount:enquirySummary.rows[0].enquiry_conversation_count,
+  verifiedTotals:verifiedTotals.rows,
+  legacyUnverifiedTotals:legacyUnverifiedTotals.rows,
+  legacyUnverifiedScope:"all_time",
+  financialVisibility,
+  windowStart:new Date(windowStart).toISOString(),
+  windowEnd:new Date(windowEnd).toISOString(),
+  windowTimezone:"UTC",
+  windowDays:30
+ });
+}catch(e){n(e);}});
+app.patch("/api/admin/offer-attributions/:id",requireDb,auth,role("owner","admin","staff"),async(q,r,n)=>{
+ const client=await db.connect();
+ try{
+  await client.query("BEGIN");
+  const currentResult=await client.query("SELECT id,status,amount_minor,currency,notes,evidence_source,evidence_reference,sold_at,created_at FROM hotel_offer_attributions WHERE id=$1 AND organization_id=$2 FOR UPDATE",[q.params.id,q.actor.organization_id]);
+  if(!currentResult.rowCount){await client.query("ROLLBACK");return r.status(404).json({error:"Offer enquiry not found."});}
+  const current=currentResult.rows[0];
+  const status=q.body?.status;
+  const notes=typeof q.body?.notes==="string"?q.body.notes.trim():"";
+  if(!["converted","not_converted"].includes(status)||notes.length>500){await client.query("ROLLBACK");return r.status(400).json({error:"Choose converted or not converted and keep notes under 500 characters."});}
+
+  let amount=null,currency=null,evidenceSource=null,evidenceReference=null,soldAt=null;
+  if(status==="converted"){
+   if(!["owner","admin"].includes(q.actor.role)){await client.query("ROLLBACK");return r.status(403).json({error:"Only an owner or admin can attest a completed sale."});}
+   amount=Number(q.body?.amount_minor);
+   currency=typeof q.body?.currency==="string"?q.body.currency.trim().toUpperCase():"";
+   evidenceSource=typeof q.body?.evidence_source==="string"?q.body.evidence_source.trim():"";
+   evidenceReference=typeof q.body?.evidence_reference==="string"?q.body.evidence_reference.trim():"";
+   const soldAtInput=typeof q.body?.sold_at==="string"?q.body.sold_at.trim():"";
+   const soldAtMs=/(Z|[+-]\d{2}:\d{2})$/.test(soldAtInput)?Date.parse(soldAtInput):NaN;
+   let supportedCurrency=false;
+   try{new Intl.NumberFormat("en",{style:"currency",currency});supportedCurrency=true;}catch{}
+   if(!Number.isSafeInteger(amount)||amount<=0||!/^[A-Z]{3}$/.test(currency)||!supportedCurrency||
+      !["pms_record","payment_receipt","invoice","hotel_report"].includes(evidenceSource)||
+      !/^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,199}$/.test(evidenceReference)||/:\/\//.test(evidenceReference)||/^www\./i.test(evidenceReference)||
+      !Number.isFinite(soldAtMs)){
+    await client.query("ROLLBACK");
+    return r.status(400).json({error:"A sale needs a positive actual amount, supported currency, evidence source, opaque evidence reference and timezone-qualified sale timestamp."});
+   }
+   if(soldAtMs<new Date(current.created_at).getTime()||soldAtMs>Date.now()+300000){
+    await client.query("ROLLBACK");
+    return r.status(400).json({error:"The sale timestamp must be on or after the enquiry and cannot be in the future."});
+   }
+   soldAt=new Date(soldAtMs).toISOString();
+
+   const alreadyAttested=current.status==="converted"&&current.evidence_source&&current.evidence_reference&&current.sold_at;
+   if(alreadyAttested){
+    const currentSoldAt=new Date(current.sold_at).toISOString();
+    const same=Number(current.amount_minor)===amount&&current.currency===currency&&
+      current.evidence_source===evidenceSource&&current.evidence_reference===evidenceReference&&currentSoldAt===soldAt;
+    await client.query("ROLLBACK");
+    if(same)return r.json({attribution:{...current,evidence_status:"evidence_attested"}});
+    return r.status(409).json({error:"This evidence-attested sale is immutable. Record a separate refund or adjustment instead of replacing it."});
+   }
+  }else{
+   if(current.status==="converted"){
+    await client.query("ROLLBACK");
+    return r.status(409).json({error:"A recorded conversion cannot be reversed here. Use a separate adjustment workflow."});
+   }
+   if(current.status==="not_converted"){
+    await client.query("ROLLBACK");
+    return r.json({attribution:{...current,evidence_status:"not_applicable"}});
+   }
+  }
+
+  const updated=await client.query("UPDATE hotel_offer_attributions SET status=$1,amount_minor=$2,currency=$3,notes=$4,marked_by=$5,evidence_source=$6,evidence_reference=$7,sold_at=$8,updated_at=now() WHERE id=$9 AND organization_id=$10 RETURNING id,status,amount_minor,currency,notes,evidence_source,evidence_reference,sold_at,updated_at",
+   [status,amount,currency,notes,q.actor.user_id,evidenceSource,evidenceReference,soldAt,q.params.id,q.actor.organization_id]);
+  const after=updated.rows[0];
+  await client.query("INSERT INTO hotel_offer_attribution_events(organization_id,attribution_id,actor_user_id,action,previous_status,new_status,previous_amount_minor,new_amount_minor,previous_currency,new_currency,previous_evidence_source,new_evidence_source,previous_evidence_reference,new_evidence_reference,previous_sold_at,new_sold_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)",
+   [q.actor.organization_id,q.params.id,q.actor.user_id,status,current.status,after.status,current.amount_minor,after.amount_minor,current.currency,after.currency,current.evidence_source,after.evidence_source,current.evidence_reference,after.evidence_reference,current.sold_at,after.sold_at]);
+  await client.query("INSERT INTO audit_logs(organization_id,actor_user_id,action,target_type,target_id) VALUES($1,$2,$3,'hotel_offer_attribution',$4)",
+   [q.actor.organization_id,q.actor.user_id,"offer_attribution."+status,q.params.id]);
+  await client.query("COMMIT");
+  after.evidence_status=status==="converted"?"evidence_attested":"not_applicable";
+  r.json({attribution:after});
+ }catch(e){await client.query("ROLLBACK").catch(()=>{});if(e.code==="23505"&&e.constraint==="hotel_offer_attributions_evidence_dedupe_idx")return r.status(409).json({error:"This evidence reference has already been used for another sale in this hotel."});n(e);}
+ finally{client.release();}
+});
+app.get("/api/admin/offer-attributions/:id/events",requireDb,auth,role("owner","admin"),async(q,r,n)=>{try{
+ const owned=await db.query("SELECT id FROM hotel_offer_attributions WHERE id=$1 AND organization_id=$2",[q.params.id,q.actor.organization_id]);
+ if(!owned.rowCount)return r.status(404).json({error:"Offer enquiry not found."});
+ const x=await db.query("SELECT e.id,e.action,e.previous_status,e.new_status,e.previous_amount_minor,e.new_amount_minor,e.previous_currency,e.new_currency,e.previous_evidence_source,e.new_evidence_source,e.previous_evidence_reference,e.new_evidence_reference,e.previous_sold_at,e.new_sold_at,e.created_at,u.email AS actor_email FROM hotel_offer_attribution_events e LEFT JOIN users u ON u.id=e.actor_user_id AND u.organization_id=e.organization_id WHERE e.organization_id=$1 AND e.attribution_id=$2 ORDER BY e.created_at DESC LIMIT 50",[q.actor.organization_id,q.params.id]);
+ r.json({events:x.rows});
+}catch(e){n(e);}});
 app.get("/api/admin/knowledge",requireDb,auth,async(q,r,n)=>{try{const x=await db.query("SELECT id,title,category,content,approved,source_reference,review_due_at,reviewed_at,updated_at FROM knowledge_documents WHERE organization_id=$1 ORDER BY updated_at DESC",[q.actor.organization_id]);r.json({documents:x.rows});}catch(e){n(e);}});
 app.post("/api/admin/knowledge",requireDb,auth,role("owner","admin"),async(q,r,n)=>{try{const b=q.body||{};if(typeof b.title!=="string"||b.title.trim().length<2||b.title.length>160||typeof b.content!=="string"||b.content.trim().length<5||b.content.length>12000)return r.status(400).json({error:"Valid title and content required."});const source=typeof b.source_reference==="string"?b.source_reference.trim():"";const due=b.review_due_at||null;if(source.length>500||due!==null&&(typeof due!=="string"||!/^\d{4}-\d{2}-\d{2}$/.test(due)||Number.isNaN(Date.parse(due))))return r.status(400).json({error:"Check the source reference and review date."});const approved=Boolean(b.approved);const x=await db.query("INSERT INTO knowledge_documents(organization_id,title,category,content,approved,source_reference,review_due_at,reviewed_at,updated_by) VALUES($1,$2,$3,$4,$5,$6,$7,CASE WHEN $5 THEN now() ELSE NULL END,$8) RETURNING id,title,category,content,approved,source_reference,review_due_at,reviewed_at,updated_at",[q.actor.organization_id,b.title.trim(),String(b.category||"general").slice(0,60),b.content.trim(),approved,source,due,q.actor.user_id]);const d=x.rows[0];await db.query("INSERT INTO knowledge_document_versions(organization_id,document_id,title,category,content,approved,source_reference,review_due_at,reviewed_at,changed_by,change_type) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'created')",[q.actor.organization_id,d.id,d.title,d.category,d.content,d.approved,d.source_reference,d.review_due_at,d.reviewed_at,q.actor.user_id]);await audit(q.actor,"knowledge.created","knowledge_document",d.id);r.status(201).json({document:d});}catch(e){n(e);}});app.patch("/api/admin/knowledge/:id",requireDb,auth,role("owner","admin"),async(q,r,n)=>{try{const body=q.body||{},keys=Object.keys(body);if(!keys.length||keys.some(k=>!["title","category","content","approved","source_reference","review_due_at"].includes(k)))return r.status(400).json({error:"Unsupported fields."});
  if(body.title!==undefined&&(typeof body.title!=="string"||body.title.trim().length<2||body.title.length>160))return r.status(400).json({error:"Title must be 2–160 characters."});
@@ -333,5 +449,5 @@ app.get("/setup.html",publicFile("setup.html","html"));
 app.get("/invite.html",publicFile("invite.html","html"));
 app.get("/widget.js",publicFile("widget.js","javascript"));
 app.use((e,_q,r,_n)=>{console.error("Veyra API error:",e?.message||"unknown");if(!r.headersSent)r.status(500).json({error:"Something went wrong. Please try again."});});
-async function start(){if(db){await db.query(schema);await db.query("DELETE FROM sessions WHERE expires_at<now()");await db.query("DELETE FROM storage_oauth_states WHERE expires_at<now()");}app.listen(PORT,"0.0.0.0",()=>console.log("Veyra listening on "+PORT+(db?" with PostgreSQL":" in demo mode")));}
+async function start(){if(db){await db.query(schema);await paidAddonLedgerStore.ensureSchema();await db.query("DELETE FROM sessions WHERE expires_at<now()");await db.query("DELETE FROM storage_oauth_states WHERE expires_at<now()");}app.listen(PORT,"0.0.0.0",()=>console.log("Veyra listening on "+PORT+(db?" with PostgreSQL":" in demo mode")));}
 start().catch(e=>{console.error("Startup failed:",e.message);process.exit(1);});

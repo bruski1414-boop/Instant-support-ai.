@@ -165,14 +165,15 @@ main{padding:28px clamp(16px,4vw,48px);max-width:1450px;width:100%;margin:auto}.
    <div class="card"><div class="metriclabel">APPROVED & CURRENT</div><div class="metric" id="knowledgeApproved">—</div></div>
    <div class="card"><div class="metriclabel">PENDING REVIEW</div><div class="metric" id="knowledgePending">—</div></div>
    <div class="card"><div class="metriclabel">OVERDUE</div><div class="metric" id="knowledgeOverdue">—</div></div>
+   <div class="card"><div class="metriclabel">DUE IN 14 DAYS</div><div class="metric" id="knowledgeDueSoon">—</div></div>
   </div>
   <div class="card" style="margin-top:12px">
    <div class="formrow">
     <div class="field"><label for="knowledgeSearch">Search documents</label><input id="knowledgeSearch" type="search" placeholder="Search title, category or source"></div>
-    <div class="field"><label for="knowledgeStatusFilter">Review status</label><select id="knowledgeStatusFilter"><option value="all">All documents</option><option value="needs-review">Needs review</option><option value="approved">Approved & current</option><option value="overdue">Overdue</option></select></div>
+    <div class="field"><label for="knowledgeStatusFilter">Review status</label><select id="knowledgeStatusFilter"><option value="all">All documents</option><option value="needs-review">Needs review</option><option value="approved">Approved & current</option><option value="overdue">Overdue</option><option value="due-soon">Due in next 14 days</option></select></div>
     <div class="field"><label for="knowledgeCategoryFilter">Category</label><select id="knowledgeCategoryFilter"><option value="all">All categories</option><option value="general">General</option><option value="rooms">Rooms</option><option value="dining">Dining</option><option value="facilities">Facilities</option><option value="policies">Policies</option><option value="transport">Transport</option><option value="accessibility">Accessibility</option><option value="local-area">Local area</option></select></div>
    </div>
-   <p class="muted" style="font-size:12px;margin:0">Approval is never automatic. Review the source and document content before approving it for guest answers.</p>
+   <p class="muted" style="font-size:12px;margin:0">Review reminders: documents due within 14 days are flagged as due soon; past-due documents are overdue. This is an in-dashboard reminder, not an email notification. Approval is never automatic—review the source and content first.</p>
   </div>
   <div id="knowledgeList" style="display:grid;gap:10px;margin-top:14px"></div>
  </section>
@@ -283,8 +284,12 @@ async function loadOverview(){
 }
 let knowledgeDocumentsCache=[];
 function knowledgeReviewState(x){
- const overdue=Boolean(x.review_due_at&&new Date(x.review_due_at+"T00:00:00")<new Date(new Date().toDateString()));
- return {overdue,approvedCurrent:Boolean(x.approved&&!overdue),needsReview:Boolean(!x.approved||overdue)};
+ const today=new Date();today.setHours(0,0,0,0);
+ const due=x.review_due_at?new Date(x.review_due_at+"T00:00:00"):null;
+ const daysUntilDue=due?Math.round((due.getTime()-today.getTime())/86400000):null;
+ const overdue=Boolean(due&&daysUntilDue<0);
+ const dueSoon=Boolean(due&&daysUntilDue>=0&&daysUntilDue<=14);
+ return {overdue,dueSoon,daysUntilDue,approvedCurrent:Boolean(x.approved&&!overdue),needsReview:Boolean(!x.approved||overdue)};
 }
 function renderKnowledgeReview(){
  const docs=knowledgeDocumentsCache;
@@ -293,16 +298,17 @@ function renderKnowledgeReview(){
  $("knowledgeApproved").textContent=states.filter(x=>x.approvedCurrent).length;
  $("knowledgePending").textContent=states.filter(x=>!x.approvedCurrent&&!x.overdue).length;
  $("knowledgeOverdue").textContent=states.filter(x=>x.overdue).length;
+ $("knowledgeDueSoon").textContent=states.filter(x=>x.dueSoon).length;
  const query=($("knowledgeSearch").value||"").trim().toLowerCase();
  const status=$("knowledgeStatusFilter").value,category=$("knowledgeCategoryFilter").value;
  const visible=docs.filter((x,i)=>{
   const state=states[i];
   const matchesQuery=[x.title,x.category,x.source_reference].some(v=>String(v||"").toLowerCase().includes(query));
-  const matchesStatus=status==="all"||(status==="needs-review"&&state.needsReview)||(status==="approved"&&state.approvedCurrent)||(status==="overdue"&&state.overdue);
+  const matchesStatus=status==="all"||(status==="needs-review"&&state.needsReview)||(status==="approved"&&state.approvedCurrent)||(status==="overdue"&&state.overdue)||(status==="due-soon"&&state.dueSoon);
   return matchesQuery&&matchesStatus&&(category==="all"||String(x.category||"").toLowerCase()===category);
  });
  $("knowledgeList").innerHTML=visible.map(x=>{
-  const state=knowledgeReviewState(x),statusText=state.overdue?"review overdue":x.approved?"approved":"pending review";
+  const state=knowledgeReviewState(x),statusText=state.overdue?"review overdue":state.dueSoon?"review due soon":x.approved?"approved":"pending review";
   const actionLabel=state.overdue?"Mark reviewed & approve":x.approved?"Unapprove":"Approve after verification";
   const actionValue=state.overdue||!x.approved;
   return '<article class="card" data-id="'+safe(x.id)+'"><div style="display:flex;justify-content:space-between;gap:12px;align-items:start;flex-wrap:wrap"><div><strong>'+safe(x.title)+'</strong><div class="muted" style="font-size:11px">'+safe(x.category)+' · Updated '+date(x.updated_at)+' · Review due '+(x.review_due_at||'not set')+(x.source_reference?' · Source: '+safe(x.source_reference):' · Source not recorded')+'</div></div>'+statusTag(statusText)+'</div><p style="white-space:pre-wrap;color:#bdc9d8">'+safe(x.content)+'</p><div class="actions"><button class="btn" data-action="toggle-knowledge" data-id="'+safe(x.id)+'" data-approved="'+actionValue+'">'+actionLabel+'</button><button class="btn" data-action="history-knowledge" data-id="'+safe(x.id)+'">Version history</button><button class="btn danger" data-action="delete-knowledge" data-id="'+safe(x.id)+'">Delete</button></div><div class="knowledgeHistory" style="display:none;margin-top:12px"></div></article>';

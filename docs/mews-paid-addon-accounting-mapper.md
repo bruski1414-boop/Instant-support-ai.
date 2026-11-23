@@ -124,3 +124,22 @@ No credentials, live Mews account, production configuration, hotel data or guest
 - [Payments — BillId, signed Amount, State and Kind](https://docs.mews.com/connector-api/operations/payments)
 - [Configuration — NowUtc and editable-history intervals](https://docs.mews.com/connector-api/operations/configuration)
 - [Accounting use case — editable-history windows, reservation linkage and rebate chains](https://docs.mews.com/connector-api/use-cases/accounting)
+
+## Fail-closed cursor pagination
+
+`mews-cursor-pagination.js` adds a bounded cursor collector for Mews `getAll` responses.
+
+- Mews documents a maximum page count of 1,000 records and a cursor identifying the last/oldest record. The collector follows cursors until the explicit empty terminal page returns `Cursor: null`; it does not infer completion from a short page.
+- It checks that each response contains the expected collection array and a `Cursor` field, that the cursor exactly matches the last record ID, and that IDs/cursors do not repeat.
+- Page size, maximum page count and maximum record count are bounded. Any malformed response, repeated ID/cursor, provider request failure or safety-limit overflow aborts the collection; no partial result is branded complete.
+- Returned records are recursively copied and frozen. Completed collections carry an in-process `WeakMap` brand, so a caller-created object with `complete: true`, a copied JSON object or a raw array cannot satisfy the mapper/readback wrappers.
+- `mapMewsPaidAddonEvidenceFromPageCollections` requires branded `OrderItems`, `Bills` and `Payments` collections. `resolveMewsAddonOrderReadbackFromPageCollections` requires branded `OrderItems` and `ProductServiceOrders` collections.
+
+This is a pagination-integrity primitive, not a provider transport. The injected page fetch function must still use the authorised tenant's verified Mews connection and exact `EnterpriseIds`/service/bill filters. The collector does not authenticate the provider response, prove corrective-bill coverage or resolve rebate chains; those remain separate mapper gates. Raw Mews rows remain in memory for mapping only and must not be logged or persisted. The module is not yet wired to an authenticated hotel route.
+
+Official Mews references:
+- [Cursor pagination](https://docs.mews.com/connector-api/guidelines/pagination)
+- [Order items](https://docs.mews.com/connector-api/operations/orderitems)
+- [Bills](https://docs.mews.com/connector-api/operations/bills)
+- [Payments](https://docs.mews.com/connector-api/operations/payments)
+- [Product service orders](https://docs.mews.com/connector-api/operations/productserviceorders)

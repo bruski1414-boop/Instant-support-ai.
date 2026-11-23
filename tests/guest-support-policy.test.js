@@ -88,7 +88,8 @@ test("guest support prompt requires staff confirmation for unverified facts and 
   const prompt = buildGuestSupportSystemPrompt("Aster House", "Pool hours are 8:00 to 20:00.");
   assert.match(prompt, /Do not guess or fill gaps/);
   assert.match(prompt, /Do not claim that staff have been notified unless the system confirms delivery/);
-  assert.match(prompt, /Set needsHuman=true whenever a fact cannot be verified/);
+  assert.match(prompt, /If the answer is not explicitly supported by the knowledge data, say you cannot verify it and request hotel staff/);
+  assert.match(prompt, /If you cannot provide exact supporting quotations, set needsHuman=true and ask hotel staff/);
 });
 
 

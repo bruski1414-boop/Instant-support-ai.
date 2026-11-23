@@ -242,8 +242,9 @@ try {
   const needsHelpBody = await needsHelp.json();
   assert.ok(needsHelpBody.escalationId, "request for more help creates a staff escalation");
   assert.equal(needsHelpBody.notificationStatus, "not_configured", "guest is not told that staff were notified when no notification endpoint is configured");
+  const feedbackOrgA = await pool.query("SELECT id FROM organizations WHERE slug=$1", [tenants[0].slug]);
   const feedbackCounts = await pool.query("SELECT organization_id,count(*)::int AS total FROM conversation_resolution_feedback WHERE organization_id IN ((SELECT id FROM organizations WHERE slug=$1),(SELECT id FROM organizations WHERE slug=$2)) GROUP BY organization_id", [tenants[0].slug, tenants[1].slug]);
-  assert.equal(feedbackCounts.rows.find(x => x.organization_id === (await pool.query("SELECT id FROM organizations WHERE slug=$1", [tenants[0].slug])).rows[0].id)?.total, 2, "tenant A has only its two explicit feedback records");
+  assert.equal(feedbackCounts.rows.find(x => x.organization_id === feedbackOrgA.rows[0].id)?.total, 2, "tenant A has only its two explicit feedback records");
   assert.equal(feedbackCounts.rows.length, 1, "tenant B cannot inherit tenant A feedback records");
 
   await Promise.all(tenants.map(seedKnowledge));

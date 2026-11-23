@@ -292,7 +292,7 @@ async function loadNotificationCentre(){
  const documents=results[1].status==="fulfilled"?(results[1].value.documents||[]):[];
  const offers=results[2].status==="fulfilled"?(results[2].value.offers||[]):[];
  const active=escalations.filter(x=>x.status!=="resolved");
- const manual=active.filter(x=>(x.notification_status||"not_configured")!=="delivered"||Number(x.notification_attempts||0)>=5);
+ const manual=active.filter(x=>{const status=x.notification_status||"not_configured";return status!=="delivered"&& (status==="failed"||status==="not_configured"||Number(x.notification_attempts||0)>=5);});
  const today=new Date();today.setHours(0,0,0,0);
  const daysUntil=value=>Math.ceil((new Date(value).getTime()-today.getTime())/86400000);
  const overdue=documents.filter(x=>x.review_due_at&&daysUntil(x.review_due_at+"T00:00:00")<0);

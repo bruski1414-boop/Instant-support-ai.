@@ -489,6 +489,16 @@ test("staff handoff replies are tenant-scoped, audited and record first response
  assert.match(server,/first_staff_response_at=COALESCE\(first_staff_response_at,now\(\)\)/);
  assert.match(server,/escalation\.staff_reply_sent/);
  assert.match(server,/staffResponseLatency:staffResponseLatency\.rows\[0\]/);
+ assert.match(server,/staffWorkload:staffWorkload\.rows/);
+ assert.match(server,/LEFT JOIN users u ON u\.id=e\.assigned_to AND u\.organization_id=e\.organization_id/);
+ assert.match(server,/e\.organization_id=\$1 AND \(e\.created_at>=now\(\)-interval '30 days' OR e\.status IN \('open','claimed'\)\)/);
+ assert.match(server,/AS currently_open/);
+ assert.match(server,/AS resolved_30d/);
+ const dashboard=fs.readFileSync("dashboard.html","utf8");
+ assert.match(dashboard,/id="performanceStaffWorkload"/);
+ assert.match(dashboard,/Handoffs · 30d/);
+ assert.match(dashboard,/Unassigned handoffs are shown separately/);
+
  const dashboard=fs.readFileSync("dashboard.html","utf8");
  assert.match(dashboard,/id="performanceStaffCount"/);
  assert.match(dashboard,/id="performanceStaffMedian"/);

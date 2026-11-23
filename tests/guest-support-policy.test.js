@@ -27,6 +27,8 @@ test("sensitive, urgent and operational requests are routed to staff", () => {
     "Someone has stolen my bag.",
     "I cannot breathe properly.",
     "I need to report an assault.",
+    "Someone has threatened me.",
+    "I have a payment dispute about a charge.",
     "Please cancel my stay.",
   ];
 

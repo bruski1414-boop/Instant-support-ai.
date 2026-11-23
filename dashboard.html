@@ -426,6 +426,22 @@ async function loadConversationInsights(){
  $("insightRecommendations").innerHTML=recommendations.join("")||'<div class="card empty">No staff handoffs recorded in this period. Keep approved hotel information up to date and review this report regularly.</div>';
  $("insightDaily").innerHTML=render(d.daily||[],"day","conversations");
 }
+async function loadPerformanceReport(){
+ const [insights,revenue]=await Promise.all([api("/api/admin/insights"),api("/api/admin/offer-attributions")]);
+ const m=insights.metrics||{},totals=revenue.totals||[];
+ $("performanceConversations").textContent=String(m.conversations_30d||0);
+ $("performanceEscalated").textContent=String(m.currently_escalated||0);
+ $("performanceResolved").textContent=String(m.resolved_30d||0);
+ const daily=insights.daily||[],max=Math.max(1,...daily.map(x=>Number(x.conversations||0)));
+ $("performanceDaily").innerHTML=daily.length?daily.map(x=>{const count=Number(x.conversations||0),width=count?Math.max(2,count/max*100):0;return '<div style="display:grid;grid-template-columns:90px minmax(0,1fr) 35px;gap:9px;align-items:center"><span class="muted" style="font-size:11px">'+safe(x.day)+'</span><div style="height:9px;background:#263449;border-radius:8px;overflow:hidden"><div style="height:9px;width:'+width+'%;background:#78a9df;border-radius:8px"></div></div><strong style="text-align:right">'+count+'</strong></div>';}).join(""):'<div class="empty">No daily conversation data in this period.</div>';
+ const enquiries=totals.reduce((sum,x)=>sum+Number(x.count||0),0);
+ const conversions=totals.filter(x=>x.status==="converted").reduce((sum,x)=>sum+Number(x.count||0),0);
+ $("performanceEnquiries").textContent=String(enquiries);
+ $("performanceConversions").textContent=String(conversions);
+ $("performanceRate").textContent=enquiries?((conversions/enquiries)*100).toFixed(1)+"%":"—";
+ const currencies={};for(const x of totals.filter(x=>x.status==="converted")){const c=x.currency||"UNKNOWN";currencies[c]=(currencies[c]||0)+Number(x.amount_minor||0);}
+ $("performanceRevenue").innerHTML=Object.keys(currencies).length?Object.entries(currencies).map(([c,v])=>'<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #263449"><span>'+safe(c)+'</span><strong>'+moneyMinor(v,c)+'</strong></div>').join(""):'<div class="empty">No staff-confirmed offer sales recorded yet.</div>';
+}
 async function loadEscalations(){
  const d=await api("/api/admin/escalations");
  const rows=(d.escalations||[]).map(x=>{

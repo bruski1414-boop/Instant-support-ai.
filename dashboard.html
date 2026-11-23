@@ -38,6 +38,7 @@ main{padding:28px clamp(16px,4vw,48px);max-width:1450px;width:100%;margin:auto}.
   <button class="active" data-panel="overview">◫ Overview</button>
   <button data-panel="setup">⚙ Hotel setup</button><button data-panel="storage" id="storageNav">▤ Hotel storage</button>
   <button data-panel="conversations">☷ Conversations</button>
+  <button data-panel="insights">◷ Conversation insights</button>
   <button data-panel="knowledge">✧ Knowledge base</button>
   <button data-panel="offers" id="offersNav">✦ Revenue offers</button>
   <button data-panel="revenue" id="revenueNav">€ Revenue tracking</button>
@@ -126,6 +127,21 @@ main{padding:28px clamp(16px,4vw,48px);max-width:1450px;width:100%;margin:auto}.
   <div class="sectionrow"><h2>Recent conversations</h2><span class="muted">Latest 20 · message previews</span></div>
   <div class="card tablewrap"><table class="table"><thead><tr><th>ID</th><th>LAST MESSAGE</th><th>STATUS</th><th>CHANNEL</th><th>STARTED</th><th>ACTION</th></tr></thead><tbody id="conversationRows"></tbody></table></div>
   <div id="conversationDetail" class="card hidden" style="margin-top:14px"></div>
+ </section>
+ <section id="panel-insights" class="panel">
+  <div class="sectionrow"><h2>Guest conversation intelligence</h2><span class="muted">Rolling 30 days · aggregate counts only</span></div>
+  <p class="muted" style="font-size:12px">Topics are grouped from guest messages. This report does not display message text, guest names, email addresses or individual conversation transcripts. Topic labels are approximate and should be reviewed by hotel staff.</p>
+  <div class="grid">
+   <div class="card"><div class="metriclabel">Conversations · 30 days</div><div class="metric" id="insightConversations">—</div></div>
+   <div class="card"><div class="metriclabel">Currently escalated</div><div class="metric" id="insightEscalated">—</div></div>
+   <div class="card"><div class="metriclabel">Resolved · 30 days</div><div class="metric" id="insightResolved">—</div></div>
+  </div>
+  <div class="sectionrow"><h2>Most common guest topics</h2><span class="muted">Unique conversations per topic</span></div>
+  <div class="card tablewrap"><table class="table"><thead><tr><th>TOPIC</th><th>CONVERSATIONS</th></tr></thead><tbody id="insightTopics"></tbody></table></div>
+  <div class="sectionrow"><h2>Reasons associated with staff handoffs</h2><span class="muted">Grouped categories, not raw guest text</span></div>
+  <div class="card tablewrap"><table class="table"><thead><tr><th>HANDOFF CATEGORY</th><th>COUNT</th></tr></thead><tbody id="insightHandoffs"></tbody></table></div>
+  <div class="sectionrow"><h2>Daily conversation volume</h2><span class="muted">Last 30 days</span></div>
+  <div class="card tablewrap"><table class="table"><thead><tr><th>DATE</th><th>CONVERSATIONS</th></tr></thead><tbody id="insightDaily"></tbody></table></div>
  </section>
  <section id="panel-knowledge" class="panel">
   <div class="sectionrow"><h2>Approved business knowledge</h2><span class="muted">Only approved documents can inform the guest assistant.</span></div>
@@ -233,7 +249,7 @@ function switchPanel(name){
  document.querySelectorAll(".panel").forEach(x=>x.classList.remove("active"));
  $("panel-"+name).classList.add("active");
  document.querySelectorAll("[data-panel]").forEach(x=>x.classList.toggle("active",x.dataset.panel===name));
- const labels={storage:["HOTEL STORAGE","Hotel storage","Connect hotel document repositories and choose source documents."],setup:["HOTEL SETUP","Hotel setup","Configure the hotel profile and review the real pre-pilot requirements."],team:["TEAM ACCESS","Team access","Invite employees and manage pending invitations."],overview:["OVERVIEW","Support overview","A live view of conversations and staff attention."],conversations:["CONVERSATIONS","Recent conversations","Review the latest guest interactions."],knowledge:["KNOWLEDGE BASE","Hotel knowledge","Control the facts the assistant is allowed to use."],offers:["REVENUE OFFERS","Revenue offers","Manage hotel-approved extras and verified availability."],revenue:["REVENUE TRACKING","Revenue attribution","Review guest enquiries and confirm actual completed sales."],escalations:["STAFF HANDOFFS","Staff handoff queue","Requests that need a member of your team."]};
+ const labels={storage:["HOTEL STORAGE","Hotel storage","Connect hotel document repositories and choose source documents."],setup:["HOTEL SETUP","Hotel setup","Configure the hotel profile and review the real pre-pilot requirements."],team:["TEAM ACCESS","Team access","Invite employees and manage pending invitations."],overview:["OVERVIEW","Support overview","A live view of conversations and staff attention."],conversations:["CONVERSATIONS","Recent conversations","Review the latest guest interactions."],knowledge:["KNOWLEDGE BASE","Hotel knowledge","Control the facts the assistant is allowed to use."],offers:["REVENUE OFFERS","Revenue offers","Manage hotel-approved extras and verified availability."],revenue:["REVENUE TRACKING","Revenue attribution","Review guest enquiries and confirm actual completed sales."],insights:["CONVERSATION INSIGHTS","Guest conversation intelligence","Understand recurring topics and where staff support is needed."],escalations:["STAFF HANDOFFS","Staff handoff queue","Requests that need a member of your team."]};
  $("crumb").textContent="WORKSPACE / "+labels[name][0];$("heading").textContent=labels[name][1];$("subheading").textContent=labels[name][2];
  loadPanel(name);
 }
@@ -278,6 +294,17 @@ async function loadRevenueAttributions(){
  $("revenueCurrencyTotals").innerHTML=Object.keys(currencyGroups).length?Object.entries(currencyGroups).map(([c,v])=>'<div style="display:flex;justify-content:space-between;padding:7px 0"><span>'+safe(c)+'</span><strong>'+moneyMinor(v,c)+'</strong></div>').join(""):'<div class="empty">No staff-confirmed revenue yet.</div>';
  $("attributionList").innerHTML=rows.map(x=>'<article class="card"><div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap"><strong>'+safe(x.offer_name)+'</strong>'+statusTag(x.status)+'</div><div class="muted" style="font-size:11px;margin-top:5px">'+safe(x.category)+' · Enquiry '+date(x.created_at)+' · '+safe(x.conversation_id)+'</div>'+(x.status==="converted"?'<p><strong>Confirmed sale: '+moneyMinor(x.amount_minor,x.currency)+'</strong></p>':'')+(x.notes?'<p class="muted">'+safe(x.notes)+'</p>':'')+(x.status==="enquiry"?'<div class="actions" style="margin-top:12px"><button class="btn primary" data-attribution-action="converted" data-id="'+safe(x.id)+'" data-currency="'+safe(x.offer_currency)+'">Confirm completed sale</button><button class="btn" data-attribution-action="not_converted" data-id="'+safe(x.id)+'">Close · no sale</button></div>':'')+'</article>').join("")||'<div class="card empty">No offer enquiries recorded yet. They will appear when guest chat is enabled and a guest asks about a verified offer.</div>';
 }
+async function loadConversationInsights(){
+ const d=await api("/api/admin/insights");
+ const m=d.metrics||{};
+ $("insightConversations").textContent=String(m.conversations_30d||0);
+ $("insightEscalated").textContent=String(m.currently_escalated||0);
+ $("insightResolved").textContent=String(m.resolved_30d||0);
+ const render=(rows,label,count)=>rows.length?rows.map(x=>'<tr><td>'+safe(x[label])+'</td><td>'+safe(x[count])+'</td></tr>').join(""):'<tr><td colspan="2" class="empty">No data in this period yet.</td></tr>';
+ $("insightTopics").innerHTML=render(d.topics||[],"topic","conversations");
+ $("insightHandoffs").innerHTML=render(d.handoffTopics||[],"topic","count");
+ $("insightDaily").innerHTML=render(d.daily||[],"day","conversations");
+}
 async function loadEscalations(){
  const d=await api("/api/admin/escalations");
  const rows=(d.escalations||[]).map(x=>{
@@ -293,7 +320,7 @@ async function loadEscalations(){
  $("escalationRows").innerHTML=rows||'<tr><td colspan="5" class="empty">No staff handoffs yet.</td></tr>';
 }
 async function loadPanel(name){
- try{if(name==="overview"||name==="conversations")await loadOverview();if(name==="knowledge")await loadKnowledge();if(name==="offers")await loadOffers();if(name==="revenue")await loadRevenueAttributions();if(name==="escalations")await loadEscalations();if(name==="team")await loadInvitations();if(name==="setup")await loadSetup();if(name==="storage")await loadStorage();$("globalNotice").classList.add("hidden");}
+ try{if(name==="overview"||name==="conversations")await loadOverview();if(name==="knowledge")await loadKnowledge();if(name==="offers")await loadOffers();if(name==="revenue")await loadRevenueAttributions();if(name==="insights")await loadConversationInsights();if(name==="escalations")await loadEscalations();if(name==="team")await loadInvitations();if(name==="setup")await loadSetup();if(name==="storage")await loadStorage();$("globalNotice").classList.add("hidden");}
  catch(e){notice(e.message,"error");}
 }
 async function enterWorkspace(){

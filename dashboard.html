@@ -38,7 +38,7 @@ main{padding:28px clamp(16px,4vw,48px);max-width:1450px;width:100%;margin:auto}.
   <button class="active" data-panel="overview">◫ Overview</button>
   <button data-panel="setup">⚙ Hotel setup</button><button data-panel="storage" id="storageNav">▤ Hotel storage</button>
   <button data-panel="conversations">☷ Conversations</button>
-  <button data-panel="insights">◷ Conversation insights</button>
+  <button data-panel="insights">◷ Conversation insights</button><button data-panel="performance">▥ Performance report</button>
   <button data-panel="knowledge">✧ Knowledge base</button>
   <button data-panel="offers" id="offersNav">✦ Revenue offers</button>
   <button data-panel="revenue" id="revenueNav">€ Revenue tracking</button>
@@ -278,7 +278,7 @@ function switchPanel(name){
  document.querySelectorAll(".panel").forEach(x=>x.classList.remove("active"));
  $("panel-"+name).classList.add("active");
  document.querySelectorAll("[data-panel]").forEach(x=>x.classList.toggle("active",x.dataset.panel===name));
- const labels={storage:["HOTEL STORAGE","Hotel storage","Connect hotel document repositories and choose source documents."],setup:["HOTEL SETUP","Hotel setup","Configure the hotel profile and review the real pre-pilot requirements."],team:["TEAM ACCESS","Team access","Invite employees and manage pending invitations."],overview:["OVERVIEW","Support overview","A live view of conversations and staff attention."],conversations:["CONVERSATIONS","Recent conversations","Review the latest guest interactions."],knowledge:["KNOWLEDGE BASE","Hotel knowledge","Control the facts the assistant is allowed to use."],offers:["REVENUE OFFERS","Revenue offers","Manage hotel-approved extras and verified availability."],revenue:["REVENUE TRACKING","Revenue attribution","Review guest enquiries and confirm actual completed sales."],insights:["CONVERSATION INSIGHTS","Guest conversation intelligence","Understand recurring topics and where staff support is needed."],escalations:["STAFF HANDOFFS","Staff handoff queue","Requests that need a member of your team."]};
+ const labels={storage:["HOTEL STORAGE","Hotel storage","Connect hotel document repositories and choose source documents."],setup:["HOTEL SETUP","Hotel setup","Configure the hotel profile and review the real pre-pilot requirements."],team:["TEAM ACCESS","Team access","Invite employees and manage pending invitations."],overview:["OVERVIEW","Support overview","A live view of conversations and staff attention."],conversations:["CONVERSATIONS","Recent conversations","Review the latest guest interactions."],knowledge:["KNOWLEDGE BASE","Hotel knowledge","Control the facts the assistant is allowed to use."],offers:["REVENUE OFFERS","Revenue offers","Manage hotel-approved extras and verified availability."],revenue:["REVENUE TRACKING","Revenue attribution","Review guest enquiries and confirm actual completed sales."],insights:["CONVERSATION INSIGHTS","Guest conversation intelligence","Understand recurring topics and where staff support is needed."],performance:["PERFORMANCE REPORT","Hotel performance report","Review conversation activity and staff-confirmed offer outcomes."],escalations:["STAFF HANDOFFS","Staff handoff queue","Requests that need a member of your team."]};
  $("crumb").textContent="WORKSPACE / "+labels[name][0];$("heading").textContent=labels[name][1];$("subheading").textContent=labels[name][2];
  loadPanel(name);
 }
@@ -421,7 +421,7 @@ async function loadEscalations(){
  $("escalationRows").innerHTML=rows||'<tr><td colspan="5" class="empty">No staff handoffs yet.</td></tr>';
 }
 async function loadPanel(name){
- try{if(name==="overview"||name==="conversations")await loadOverview();if(name==="overview")await loadNotificationCentre();if(name==="knowledge")await loadKnowledge();if(name==="offers")await loadOffers();if(name==="revenue")await loadRevenueAttributions();if(name==="insights")await loadConversationInsights();if(name==="escalations")await loadEscalations();if(name==="team")await loadInvitations();if(name==="setup")await loadSetup();if(name==="storage")await loadStorage();$("globalNotice").classList.add("hidden");}
+ try{if(name==="overview"||name==="conversations")await loadOverview();if(name==="overview")await loadNotificationCentre();if(name==="knowledge")await loadKnowledge();if(name==="offers")await loadOffers();if(name==="revenue")await loadRevenueAttributions();if(name==="insights")await loadConversationInsights();if(name==="performance")await loadPerformanceReport();if(name==="escalations")await loadEscalations();if(name==="team")await loadInvitations();if(name==="setup")await loadSetup();if(name==="storage")await loadStorage();$("globalNotice").classList.add("hidden");}
  catch(e){notice(e.message,"error");}
 }
 async function enterWorkspace(){

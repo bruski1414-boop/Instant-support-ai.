@@ -409,3 +409,17 @@ test("conversation insights compare guest topics with tenant-scoped approved kno
   assert.match(dashboard, /id="insightKnowledgeCoverage"/);
   assert.match(dashboard, /does not prove that it answers every guest question/);
 });
+
+test("knowledge review centre provides document search, status and category filters with approval totals", () => {
+  const dashboard = fs.readFileSync("dashboard.html", "utf8");
+  assert.match(dashboard, /id="knowledgeTotal"/);
+  assert.match(dashboard, /id="knowledgeApproved"/);
+  assert.match(dashboard, /id="knowledgePending"/);
+  assert.match(dashboard, /id="knowledgeOverdue"/);
+  assert.match(dashboard, /id="knowledgeSearch"/);
+  assert.match(dashboard, /id="knowledgeStatusFilter"/);
+  assert.match(dashboard, /id="knowledgeCategoryFilter"/);
+  assert.match(dashboard, /function renderKnowledgeReview\(\)/);
+  assert.match(dashboard, /Approve after verification/);
+  assert.match(dashboard, /Approval is never automatic/);
+});

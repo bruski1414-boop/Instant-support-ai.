@@ -116,7 +116,7 @@ test("rejects malformed rows, unsafe cursors and oversized pages", async () => {
   await assert.rejects(
     collectMewsCursorPages({
       collectionKey: "OrderItems",
-      fetchPage: async () => ({ OrderItems: [{ Id: "contains spaces" }], Cursor: "contains spaces" })
+      fetchPage: async () => ({ OrderItems: [{ Id: "contains spaces" }], Cursor: "valid-cursor" })
     }),
     /valid opaque identifier/
   );
@@ -198,7 +198,7 @@ test("passes only branded complete pages to the paid add-on evidence mapper", as
   });
 
   assert.equal(result.events.length, 1);
-  assert.equal(result.events[0].attributionStatus, "hotel_reported_unlinked");
+  assert.equal(result.attribution, "hotel_reported_unlinked");
   assert.equal(result.events[0].grossAmountMinor, 12500);
   assert.equal("conversationId" in result.events[0], false);
 });
@@ -212,7 +212,7 @@ test("paid add-on mapper wrapper rejects caller-created completion flags", () =>
       billsCollection: { collectionKey: "Bills", items: fixture.bills, complete: true },
       paymentsCollection: { collectionKey: "Payments", items: fixture.payments, complete: true }
     }),
-    /validated, complete Mews cursor collections/
+    /Validated, complete Mews cursor collections/
   );
 });
 
@@ -260,6 +260,6 @@ test("readback proof rejects unbranded arrays and caller-supplied pagination boo
       paginationComplete: true,
       verifiedAt: "2026-11-20T09:00:00.000Z"
     }),
-    /validated, complete Mews cursor collections/
+    /Validated, complete Mews cursor collections/
   );
 });

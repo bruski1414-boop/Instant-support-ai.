@@ -1,5 +1,5 @@
 function requiresStaffEscalation(message) {
-  return /\b(human|real person|staff|manager|urgent|emergency|complaint|cancel|cancellation|refund|medical|allergy|allergic|injury|injured|unsafe|harassment|discrimination|lost child|child.{0,30}missing|missing.{0,30}child|fire|smoke|gas leak|flood|flooding|water leak|theft|stolen|assault|abuse|threat|security|police|ambulance|cannot breathe|can.t breathe|payment|booking|reservation|change my dates|change dates|change my stay|modify my stay|extend my stay|shorten my stay|move my booking|move my reservation|late checkout request|early check-in request)\b/i.test(String(message || ""));
+  return /\b(human|real person|staff|manager|urgent|emergency|complaint|cancel|cancellation|refund|medical|allergy|allergic|injury|injured|unconscious|not breathing|unresponsive|unsafe|harassment|discrimination|lost child|child.{0,30}missing|missing.{0,30}child|fire|smoke|gas leak|flood|flooding|water leak|theft|stolen|assault|abuse|threat|threatened|security|police|ambulance|cannot breathe|can.t breathe|payment|booking|reservation|change my dates|change dates|change my stay|modify my stay|extend my stay|shorten my stay|move my booking|move my reservation|late checkout request|early check-in request)\b/i.test(String(message || ""));
 }
 
 function buildGuestSupportSystemPrompt(hotelName, approvedKnowledge) {
@@ -55,9 +55,20 @@ function hasSupportedEvidence(answer, approvedKnowledge) {
   if (!answer || typeof answer !== "object" || !Array.isArray(answer.evidence)) return false;
   if (answer.evidence.length < 1 || answer.evidence.length > 5) return false;
   const source = String(approvedKnowledge || "");
-  return answer.evidence.every((quote) =>
+  const quotations = answer.evidence;
+  if (!quotations.every((quote) =>
     typeof quote === "string" && quote.trim().length >= 8 && source.includes(quote.trim())
-  );
+  )) return false;
+
+  // Exact citations alone are insufficient: reject concrete numbers, times,
+  // dates, percentages, currencies, phone numbers and email addresses in the
+  // reply unless those exact tokens occur in at least one cited quotation.
+  // This is a conservative guard, not a semantic proof of answer correctness.
+  const citedText = quotations.join(" ");
+  const tokenPattern = /(?:\b\d{1,2}:\d{2}\b|\b(?:USD|EUR|GBP|THB|AED)\b\s?\d+(?:[.,]\d+)?|[€£$]\s?\d+(?:[.,]\d+)?|\b\d{1,4}(?:[.,]\d+)?%|\b\d{1,4}[/-]\d{1,2}(?:[/-]\d{2,4})?\b|[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}|\b\d{1,4}(?:[.,]\d+)?\b)/g;
+  const concreteTokens = String(answer.reply || "").match(tokenPattern) || [];
+  const citedTokens = new Set(citedText.match(tokenPattern) || []);
+  return concreteTokens.every((token) => citedTokens.has(token));
 }
 
 function requiresHumanHandoff(message, normalizedAnswer) {

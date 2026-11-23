@@ -12,6 +12,7 @@ async function generateGuestSupportAnswer({
   approvedKnowledge,
   history = [],
   message,
+  includeEvidence = false,
 }) {
   if (!ai || !ai.chat?.completions?.create) {
     throw new Error("AI provider is not configured.");
@@ -66,6 +67,9 @@ async function generateGuestSupportAnswer({
     };
   }
 
+  if (includeEvidence && !resolvedAnswer.needsHuman) {
+    resolvedAnswer.evidence = parsedAnswer.evidence;
+  }
   return resolvedAnswer;
 }
 

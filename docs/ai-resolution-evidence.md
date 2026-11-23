@@ -84,3 +84,17 @@ Add a visible note: "Guest feedback is self-reported and does not independently 
 ## Release gates
 
 Do not expose this as a hotel performance metric until the migration, API, widget, dashboard, tenant-isolation tests, retention behavior, and real notification test all pass on the same commit. Use synthetic data only until an authorised hotel approves its privacy notice and guest-data processing arrangements.
+
+
+## Deterministic guest-support benchmark
+
+A synthetic, mock-provider benchmark now lives in `tests/guest-support-benchmark.test.js`. It exercises:
+
+- A supported answer with exact evidence.
+- Abstention when a requested policy is absent.
+- A real but unrelated quotation.
+- A fabricated quotation.
+- A sensitive allergy request.
+- An immediate-danger report that must override the model response.
+
+The benchmark uses fictional Aster House facts and mocked model responses. It does not call a live AI provider, incur model usage charges, or measure real model accuracy. Passing means the deterministic policy/validation path behaved as expected for these fixtures; it is not evidence of production answer quality. A separately human-reviewed dataset and controlled live-model evaluation are still required before a hotel pilot.

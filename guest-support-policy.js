@@ -65,12 +65,9 @@ function hasSupportedEvidence(answer, approvedKnowledge) {
   // reply unless those exact tokens occur in at least one cited quotation.
   // This is a conservative guard, not a semantic proof of answer correctness.
   const citedText = quotations.join(" ");
-  const concreteTokens = String(answer.reply || "").match(
-    /(?:\b\d{1,2}:\d{2}\b|\b\d{1,4}(?:[.,]\d+)?%?\b|\b(?:USD|EUR|GBP|THB|AED|€|£|\$)\s?\d+(?:[.,]\d+)?|\b\d{1,4}[/-]\d{1,2}(?:[/-]\d{2,4})?\b|[\w.+-]+@[\w.-]+\.[A-Za-z]{2,})/g
-  ) || [];
-  const citedTokens = new Set(citedText.match(
-    /(?:\b\d{1,2}:\d{2}\b|\b\d{1,4}(?:[.,]\d+)?%?\b|\b(?:USD|EUR|GBP|THB|AED|€|£|\$)\s?\d+(?:[.,]\d+)?|\b\d{1,4}[/-]\d{1,2}(?:[/-]\d{2,4})?\b|[\w.+-]+@[\w.-]+\.[A-Za-z]{2,})/g
-  ) || []);
+  const tokenPattern = /(?:\b\d{1,2}:\d{2}\b|\b(?:USD|EUR|GBP|THB|AED)\b\s?\d+(?:[.,]\d+)?|[€£$]\s?\d+(?:[.,]\d+)?|\b\d{1,4}(?:[.,]\d+)?%|\b\d{1,4}[/-]\d{1,2}(?:[/-]\d{2,4})?\b|[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}|\b\d{1,4}(?:[.,]\d+)?\b)/g;
+  const concreteTokens = String(answer.reply || "").match(tokenPattern) || [];
+  const citedTokens = new Set(citedText.match(tokenPattern) || []);
   return concreteTokens.every((token) => citedTokens.has(token));
 }
 

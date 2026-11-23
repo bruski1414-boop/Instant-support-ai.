@@ -51,7 +51,16 @@ function normalizeGuestSupportAnswer(value) {
   };
 }
 
-function hasSupportedEvidence(answer, approvedKnowledge) {\n  if (!answer || typeof answer !== "object" || !Array.isArray(answer.evidence)) return false;\n  if (answer.evidence.length < 1 || answer.evidence.length > 5) return false;\n  const source = String(approvedKnowledge || "");\n  return answer.evidence.every((quote) =>\n    typeof quote === "string" && quote.trim().length >= 8 && source.includes(quote.trim())\n  );\n}\n\nfunction requiresHumanHandoff(message, normalizedAnswer) {
+function hasSupportedEvidence(answer, approvedKnowledge) {
+  if (!answer || typeof answer !== "object" || !Array.isArray(answer.evidence)) return false;
+  if (answer.evidence.length < 1 || answer.evidence.length > 5) return false;
+  const source = String(approvedKnowledge || "");
+  return answer.evidence.every((quote) =>
+    typeof quote === "string" && quote.trim().length >= 8 && source.includes(quote.trim())
+  );
+}
+
+function requiresHumanHandoff(message, normalizedAnswer) {
   return requiresStaffEscalation(message) || normalizedAnswer?.needsHuman === true;
 }
 
@@ -79,6 +88,7 @@ function resolveGuestSupportAnswer(message, normalizedAnswer) {
 
 module.exports = {
   requiresStaffEscalation,
+  hasSupportedEvidence,
   requiresHumanHandoff,
   resolveGuestSupportAnswer,
   buildGuestSupportSystemPrompt,

@@ -433,3 +433,19 @@ test("knowledge review centre flags review dates due within fourteen days separa
   assert.match(dashboard, /review due soon/);
   assert.match(dashboard, /not an email notification/);
 });
+
+test("manager notification centre aggregates staff handoffs, knowledge reviews and offer expiry without guest message content", () => {
+  const dashboard = fs.readFileSync("dashboard.html", "utf8");
+  assert.match(dashboard, /id="notificationCount"/);
+  assert.match(dashboard, /id="notificationHandoffs"/);
+  assert.match(dashboard, /id="notificationKnowledge"/);
+  assert.match(dashboard, /id="notificationOffers"/);
+  assert.match(dashboard, /async function loadNotificationCentre\(\)/);
+  assert.match(dashboard, /api\("\/api\/admin\/escalations"\)/);
+  assert.match(dashboard, /api\("\/api\/admin\/knowledge"\)/);
+  assert.match(dashboard, /api\("\/api\/admin\/offers"\)/);
+  assert.match(dashboard, /notification_status/);
+  assert.match(dashboard, /daysUntil\(x\.expires_at\)<=7/);
+  assert.match(dashboard, /data-panel=/);
+  assert.match(dashboard, /No manager action items detected/);
+});

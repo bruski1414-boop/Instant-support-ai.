@@ -490,21 +490,29 @@ test("staff handoff replies are tenant-scoped, audited and record first response
  assert.match(server,/escalation\.staff_reply_sent/);
  assert.match(server,/staffResponseLatency:staffResponseLatency\.rows\[0\]/);
  assert.match(server,/staffWorkload:staffWorkload\.rows/);
+ assert.match(server,/COALESCE\(msg\.recent_messages,'\[\]'::json\) AS recent_messages/);
+ assert.match(server,/SELECT role,content,created_at FROM messages WHERE conversation_id=e\.conversation_id ORDER BY created_at DESC LIMIT 8/);
+
  assert.match(server,/LEFT JOIN users u ON u\.id=e\.assigned_to AND u\.organization_id=e\.organization_id/);
  assert.match(server,/e\.organization_id=\$1 AND \(e\.created_at>=now\(\)-interval '30 days' OR e\.status IN \('open','claimed'\)\)/);
  assert.match(server,/AS currently_open/);
  assert.match(server,/AS resolved_30d/);
- const dashboard=fs.readFileSync("dashboard.html","utf8");
+ const dashboardHtml=fs.readFileSync("dashboard.html","utf8");
  assert.match(dashboard,/id="performanceStaffWorkload"/);
  assert.match(dashboard,/Handoffs · 30d/);
  assert.match(dashboard,/Unassigned handoffs are shown separately/);
+ assert.match(dashboard,/id="handoffSearch"/);
+ assert.match(dashboard,/id="handoffFilter"/);
+ assert.match(dashboard,/RECENT CONVERSATION/);
+ assert.match(dashboard,/recent_messages/);
+
 
  const dashboard=fs.readFileSync("dashboard.html","utf8");
- assert.match(dashboard,/id="performanceStaffCount"/);
- assert.match(dashboard,/id="performanceStaffMedian"/);
- assert.match(dashboard,/id="performanceStaffP95"/);
- assert.match(dashboard,/data-action="send-staff-reply"/);
- assert.match(dashboard,/api\("\/api\/admin\/escalations\/".*\/reply/);
+ assert.match(dashboardHtml,/id="performanceStaffCount"/);
+ assert.match(dashboardHtml,/id="performanceStaffMedian"/);
+ assert.match(dashboardHtml,/id="performanceStaffP95"/);
+ assert.match(dashboardHtml,/data-action="send-staff-reply"/);
+ assert.match(dashboardHtml,/api\("\/api\/admin\/escalations\/".*\/reply/);
 
  assert.match(server,/percentile_cont\(0\.95\) WITHIN GROUP\(ORDER BY EXTRACT\(EPOCH FROM \(first_staff_response_at-created_at\)\)\*1000\)/);
 });

@@ -109,3 +109,20 @@ The benchmark fixture is `tests/fixtures/guest-support-benchmark.js`, exercised 
 - 30 sensitive or operational requests; expected behaviour is staff escalation, including threats, payment disputes and immediate-danger guidance for smoke, fire, gas leak, breathing difficulty, unconsciousness, or not breathing.
 
 The test uses mocked model responses. It checks the deterministic application policy and evidence gate, not the intelligence or accuracy of a live model. It does not make model API calls. Passing this benchmark is a software regression signal only, not a claim of 100% answer accuracy or hotel readiness.
+
+## Opt-in live-model evaluation runner
+
+The script `scripts/evaluate-live-guest-support.js` runs the same fictional Aster House benchmark through the configured live model using the existing guest-support engine. It reports handoff-classification results by category and checks that immediate-danger scenarios include the configured emergency instruction.
+
+The runner is deliberately blocked unless all of the following are supplied explicitly:
+
+- `VEYRA_LIVE_EVAL_APPROVED=YES` after the API account owner has approved the test.
+- `OPENAI_API_KEY` for the approved provider account.
+- `VEYRA_AI_MODEL` naming the model to test.
+- `VEYRA_LIVE_EVAL_LIMIT` as an explicit integer from 1 to 100, to limit request count and potential charges.
+- Optional `OPENAI_BASE_URL` only when using an approved compatible provider endpoint.
+
+Run it with `npm run evaluate:live`. Start with a very small limit, review provider pricing and usage limits first, and never put API keys in source code, browser code, commits, chat messages, or screenshots. A parent/guardian or the adult who owns the API account should approve and supervise any paid API use.
+
+The runner uses synthetic hotel information only. Its automated score measures handoff classification and emergency wording; it does not prove that a free-form answer is semantically correct. Human review of every automatic answer against the approved source remains mandatory. Do not run this against a real hotel's private knowledge or guest records.
+

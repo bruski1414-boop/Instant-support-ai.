@@ -479,3 +479,15 @@ test("AI response latency is measured at generation and aggregated per tenant", 
  assert.match(dashboard,/id="performanceLatencyP95"/);
  assert.match(dashboard,/does not measure knowledge retrieval, database writes, delivery to the guest, or staff response time/);
 });
+
+test("staff handoff replies are tenant-scoped, audited and record first response time once", () => {
+ const server=fs.readFileSync("server.js","utf8");
+ assert.match(server,/ALTER TABLE escalations ADD COLUMN IF NOT EXISTS first_staff_response_at TIMESTAMPTZ/);
+ assert.match(server,/app\.post\("\/api\/admin\/escalations\/:id\/reply",requireDb,auth,role\("owner","admin","staff"\)/);
+ assert.match(server,/SELECT id,conversation_id,status,created_at,first_staff_response_at FROM escalations WHERE id=\$1 AND organization_id=\$2 FOR UPDATE/);
+ assert.match(server,/INSERT INTO messages\(conversation_id,role,content\) VALUES\(\$1,'staff',\$2\)/);
+ assert.match(server,/first_staff_response_at=COALESCE\(first_staff_response_at,now\(\)\)/);
+ assert.match(server,/escalation\.staff_reply_sent/);
+ assert.match(server,/staffResponseLatency:staffResponseLatency\.rows\[0\]/);
+ assert.match(server,/percentile_cont\(0\.95\) WITHIN GROUP\(ORDER BY EXTRACT\(EPOCH FROM \(first_staff_response_at-created_at\)\)\*1000\)/);
+});

@@ -3,6 +3,7 @@
 const SAFE_ID = /^[A-Za-z0-9._:-]{1,200}$/;
 const EXTERNAL_ID = /^veyra-addon:[A-Za-z0-9._:-]{1,120}$/;
 const SOURCE = "mews.orders.add+orderItems.getAll+productServiceOrders.getAll";
+const { isCompleteMewsPageCollection } = require("./mews-cursor-pagination");
 
 function required(value, field) {
   if (typeof value !== "string" || !SAFE_ID.test(value.trim())) throw new Error(field + " is invalid.");
@@ -100,4 +101,20 @@ function resolveMewsAddonOrderReadback({
   });
 }
 
-module.exports = { resolveMewsAddonOrderReadback, SOURCE };
+
+function resolveMewsAddonOrderReadbackFromPageCollections(input = {}) {
+  const orderItemsCollection = input.orderItemsCollection;
+  const productServiceOrdersCollection = input.productServiceOrdersCollection;
+  if (!isCompleteMewsPageCollection(orderItemsCollection, "OrderItems") ||
+      !isCompleteMewsPageCollection(productServiceOrdersCollection, "ProductServiceOrders")) {
+    throw new Error("Validated, complete Mews cursor collections for order items and product service orders are required.");
+  }
+  return resolveMewsAddonOrderReadback({
+    ...input,
+    orderItems: orderItemsCollection.items,
+    productServiceOrders: productServiceOrdersCollection.items,
+    paginationComplete: true
+  });
+}
+
+module.exports = { resolveMewsAddonOrderReadback, resolveMewsAddonOrderReadbackFromPageCollections, SOURCE };

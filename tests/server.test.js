@@ -423,3 +423,13 @@ test("knowledge review centre provides document search, status and category filt
   assert.match(dashboard, /Approve after verification/);
   assert.match(dashboard, /Approval is never automatic/);
 });
+
+test("knowledge review centre flags review dates due within fourteen days separately from overdue documents", () => {
+  const dashboard = fs.readFileSync("dashboard.html", "utf8");
+  assert.match(dashboard, /id="knowledgeDueSoon"/);
+  assert.match(dashboard, /value="due-soon"/);
+  assert.match(dashboard, /daysUntilDue>=0&&daysUntilDue<=14/);
+  assert.match(dashboard, /status==="due-soon"&&state.dueSoon/);
+  assert.match(dashboard, /review due soon/);
+  assert.match(dashboard, /not an email notification/);
+});

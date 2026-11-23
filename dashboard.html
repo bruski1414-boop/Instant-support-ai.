@@ -120,6 +120,14 @@ main{padding:28px clamp(16px,4vw,48px);max-width:1450px;width:100%;margin:auto}.
    <div class="card"><div class="metriclabel">Resolved total</div><div class="metric" id="mResolved">—</div></div>
    <div class="card"><div class="metriclabel">Open staff handoffs</div><div class="metric" id="mOpen">—</div></div>
   </div>
+  <div class="sectionrow"><h2>Manager notifications</h2><span class="muted">Items needing staff attention</span></div>
+  <div class="grid">
+   <div class="card"><div class="metriclabel">ACTION ITEMS</div><div class="metric" id="notificationCount">—</div></div>
+   <div class="card"><div class="metriclabel">OPEN HANDOFFS</div><div class="metric" id="notificationHandoffs">—</div></div>
+   <div class="card"><div class="metriclabel">KNOWLEDGE REVIEWS</div><div class="metric" id="notificationKnowledge">—</div></div>
+   <div class="card"><div class="metriclabel">OFFERS TO CHECK</div><div class="metric" id="notificationOffers">—</div></div>
+  </div>
+  <div id="notificationItems" style="display:grid;gap:10px;margin:12px 0 18px"></div>
   <div class="sectionrow"><h2>Recent conversations</h2><span class="muted">Latest 20</span></div>
   <div class="card tablewrap"><table class="table"><thead><tr><th>CONVERSATION</th><th>LAST GUEST / ASSISTANT MESSAGE</th><th>STATUS</th><th>STARTED</th></tr></thead><tbody id="recentRows"></tbody></table></div>
  </section>
@@ -274,6 +282,35 @@ function switchPanel(name){
  $("crumb").textContent="WORKSPACE / "+labels[name][0];$("heading").textContent=labels[name][1];$("subheading").textContent=labels[name][2];
  loadPanel(name);
 }
+async function loadNotificationCentre(){
+ const results=await Promise.allSettled([
+  api("/api/admin/escalations"),
+  api("/api/admin/knowledge"),
+  api("/api/admin/offers")
+ ]);
+ const escalations=results[0].status==="fulfilled"?(results[0].value.escalations||[]):[];
+ const documents=results[1].status==="fulfilled"?(results[1].value.documents||[]):[];
+ const offers=results[2].status==="fulfilled"?(results[2].value.offers||[]):[];
+ const active=escalations.filter(x=>x.status!=="resolved");
+ const manual=active.filter(x=>(x.notification_status||"not_configured")!=="delivered"||Number(x.notification_attempts||0)>=5);
+ const today=new Date();today.setHours(0,0,0,0);
+ const daysUntil=value=>Math.ceil((new Date(value).getTime()-today.getTime())/86400000);
+ const overdue=documents.filter(x=>x.review_due_at&&daysUntil(x.review_due_at+"T00:00:00")<0);
+ const dueSoon=documents.filter(x=>x.review_due_at&&daysUntil(x.review_due_at+"T00:00:00")>=0&&daysUntil(x.review_due_at+"T00:00:00")<=14);
+ const offerChecks=offers.filter(x=>x.status==="active"&&x.expires_at&&daysUntil(x.expires_at)<=7);
+ const items=[];
+ if(manual.length)items.push({priority:0,title:manual.length+" handoff"+(manual.length===1?"":"s")+" need manual staff follow-up",detail:"Notification delivery is not confirmed. Follow the hotel's staff contact process.",panel:"escalations",label:"Open handoff queue"});
+ else if(active.length)items.push({priority:1,title:active.length+" open or claimed staff handoff"+(active.length===1?"":"s"),detail:"Check that each request has an owner and is being handled.",panel:"escalations",label:"Review handoffs"});
+ if(overdue.length)items.push({priority:0,title:overdue.length+" knowledge document"+(overdue.length===1?" is":"s are")+" overdue",detail:"Review the source and content before deciding whether to reapprove.",panel:"knowledge",label:"Review documents"});
+ if(dueSoon.length)items.push({priority:1,title:dueSoon.length+" knowledge document"+(dueSoon.length===1?" is":"s are")+" due within 14 days",detail:"Schedule a manager review before the due date.",panel:"knowledge",label:"View review dates"});
+ if(offerChecks.length)items.push({priority:1,title:offerChecks.length+" active offer"+(offerChecks.length===1?"":"s")+" expired or expiring within 7 days",detail:"Check the offer end date and availability before it is shown to guests.",panel:"offers",label:"Check offers"});
+ $("notificationCount").textContent=items.length;
+ $("notificationHandoffs").textContent=active.length;
+ $("notificationKnowledge").textContent=overdue.length+dueSoon.length;
+ $("notificationOffers").textContent=offerChecks.length;
+ items.sort((a,b)=>a.priority-b.priority);
+ $("notificationItems").innerHTML=items.map(x=>'<article class="card"><div style="display:flex;justify-content:space-between;gap:10px;align-items:start;flex-wrap:wrap"><div><strong>'+safe(x.title)+'</strong><p class="muted" style="font-size:12px;margin:6px 0 0">'+safe(x.detail)+'</p></div>'+statusTag(x.priority===0?"action required":"review")+'</div><div class="actions"><button class="btn" data-panel="'+safe(x.panel)+'">'+safe(x.label)+'</button></div></article>').join("")||'<div class="card empty">No manager action items detected. Keep checking this centre as new activity arrives.</div>';
+}
 async function loadOverview(){
  const d=await api("/api/admin/overview");const m=d.metrics||{};
  $("mToday").textContent=safe(m.conversations_today||0);$("mWeek").textContent=safe(m.conversations_7d||0);$("mResolved").textContent=safe(m.resolved_total||0);$("mOpen").textContent=safe(m.open_escalations||0);
@@ -384,7 +421,7 @@ async function loadEscalations(){
  $("escalationRows").innerHTML=rows||'<tr><td colspan="5" class="empty">No staff handoffs yet.</td></tr>';
 }
 async function loadPanel(name){
- try{if(name==="overview"||name==="conversations")await loadOverview();if(name==="knowledge")await loadKnowledge();if(name==="offers")await loadOffers();if(name==="revenue")await loadRevenueAttributions();if(name==="insights")await loadConversationInsights();if(name==="escalations")await loadEscalations();if(name==="team")await loadInvitations();if(name==="setup")await loadSetup();if(name==="storage")await loadStorage();$("globalNotice").classList.add("hidden");}
+ try{if(name==="overview"||name==="conversations")await loadOverview();if(name==="overview")await loadNotificationCentre();if(name==="knowledge")await loadKnowledge();if(name==="offers")await loadOffers();if(name==="revenue")await loadRevenueAttributions();if(name==="insights")await loadConversationInsights();if(name==="escalations")await loadEscalations();if(name==="team")await loadInvitations();if(name==="setup")await loadSetup();if(name==="storage")await loadStorage();$("globalNotice").classList.add("hidden");}
  catch(e){notice(e.message,"error");}
 }
 async function enterWorkspace(){

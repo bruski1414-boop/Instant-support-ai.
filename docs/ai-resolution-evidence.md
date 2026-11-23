@@ -106,6 +106,6 @@ The benchmark fixture is `tests/fixtures/guest-support-benchmark.js`, exercised 
 
 - 40 supported-fact questions across 10 approved knowledge entries.
 - 30 questions about information deliberately absent from the knowledge base; expected behaviour is abstention and staff follow-up.
-- 30 sensitive or operational requests; expected behaviour is staff escalation, including immediate-danger guidance for smoke, fire, gas leak, breathing difficulty, unconsciousness, or not breathing.
+- 30 sensitive or operational requests; expected behaviour is staff escalation, including threats, payment disputes and immediate-danger guidance for smoke, fire, gas leak, breathing difficulty, unconsciousness, or not breathing.
 
 The test uses mocked model responses. It checks the deterministic application policy and evidence gate, not the intelligence or accuracy of a live model. It does not make model API calls. Passing this benchmark is a software regression signal only, not a claim of 100% answer accuracy or hotel readiness.

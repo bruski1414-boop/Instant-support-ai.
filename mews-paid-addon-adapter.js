@@ -6,6 +6,7 @@
 // created from successful Mews orders/add responses.
 
 const { reconcilePaidAddons } = require("./paid-addon-reconciliation");
+const { isCompleteMewsPageCollection } = require("./mews-cursor-pagination");
 
 const VEYRA_EXTERNAL_ID = /^veyra-addon:[A-Za-z0-9._:-]{1,120}$/;
 const SAFE_ID = /^[A-Za-z0-9._:-]{1,200}$/;
@@ -439,4 +440,23 @@ function mapMewsPaidAddonEvidence(input = {}) {
   });
 }
 
-module.exports = { mapMewsPaidAddonEvidence, parseIsoDuration, addIsoDuration, minorUnitsFromGross };
+
+function mapMewsPaidAddonEvidenceFromPageCollections(input = {}) {
+  const orderItemsCollection = input.orderItemsCollection;
+  const billsCollection = input.billsCollection;
+  const paymentsCollection = input.paymentsCollection;
+  if (!isCompleteMewsPageCollection(orderItemsCollection, "OrderItems") ||
+      !isCompleteMewsPageCollection(billsCollection, "Bills") ||
+      !isCompleteMewsPageCollection(paymentsCollection, "Payments")) {
+    throw new Error("Validated, complete Mews cursor collections for order items, bills and payments are required.");
+  }
+  return mapMewsPaidAddonEvidence({
+    ...input,
+    orderItems: orderItemsCollection.items,
+    bills: billsCollection.items,
+    payments: paymentsCollection.items,
+    paginationComplete: true
+  });
+}
+
+module.exports = { mapMewsPaidAddonEvidence, mapMewsPaidAddonEvidenceFromPageCollections, parseIsoDuration, addIsoDuration, minorUnitsFromGross };

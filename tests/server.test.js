@@ -450,3 +450,16 @@ test("manager notification centre aggregates staff handoffs, knowledge reviews a
   assert.match(dashboard, /data-panel=/);
   assert.match(dashboard, /No manager action items detected/);
 });
+
+test("performance report separates rolling conversation metrics from all-time staff-confirmed sales", () => {
+  const dashboard = fs.readFileSync("dashboard.html", "utf8");
+  assert.match(dashboard, /data-panel="performance"/);
+  assert.match(dashboard, /id="performanceDaily"/);
+  assert.match(dashboard, /async function loadPerformanceReport\(\)/);
+  assert.match(dashboard, /api\("\/api\/admin\/insights"\)/);
+  assert.match(dashboard, /api\("\/api\/admin\/offer-attributions"\)/);
+  assert.match(dashboard, /All-time staff-confirmed offer attributions/);
+  assert.match(dashboard, /not claim that Veyra caused incremental revenue/);
+  assert.match(dashboard, /id="performanceRate"/);
+  assert.match(dashboard, /id="performanceRevenue"/);
+});

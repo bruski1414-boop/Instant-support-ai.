@@ -123,3 +123,22 @@ test("guest-support engine rejects automatic answers with missing or fabricated 
   }
 });
 
+
+test("guest-support engine rejects valid but unrelated evidence for a concrete answer", async () => {
+  const result = await generateGuestSupportAnswer({
+    ai: fakeAi(JSON.stringify({
+      reply: "The swimming pool is open from 8:00 to 20:00.",
+      needsHuman: false,
+      handoffReason: "",
+      evidence: ["[facilities] Breakfast: 7:00–10:00"],
+    })),
+    model: "test-model",
+    hotelName: "Aster House",
+    approvedKnowledge: "[facilities] Breakfast: 7:00–10:00",
+    message: "What are the swimming pool hours?",
+  });
+
+  assert.equal(result.needsHuman, true);
+  assert.match(result.reply, /cannot verify that answer/i);
+  assert.match(result.handoffReason, /exact approved-knowledge evidence/);
+});

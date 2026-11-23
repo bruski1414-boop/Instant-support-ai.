@@ -2,6 +2,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const {
   requiresStaffEscalation,
+  hasSupportedEvidence,
   requiresHumanHandoff,
   resolveGuestSupportAnswer,
   buildGuestSupportSystemPrompt,
@@ -283,4 +284,15 @@ test("non-emergency sensitive requests are directed to the front desk", () => {
   assert.equal(resolved.needsHuman, true);
   assert.match(resolved.reply, /contact the front desk/);
   assert.doesNotMatch(resolved.reply, /emergency services/);
+});
+
+
+test("exact evidence quotations must exist in approved hotel knowledge", () => {
+  const knowledge = "[facilities] Breakfast: 7:00–10:00\n[pool] Pool hours: 8:00–20:00";
+  assert.equal(hasSupportedEvidence({ evidence: ["[facilities] Breakfast: 7:00–10:00"] }, knowledge), true);
+  assert.equal(hasSupportedEvidence({ evidence: ["Breakfast is served all day."] }, knowledge), false);
+  assert.equal(hasSupportedEvidence({ evidence: [] }, knowledge), false);
+  assert.equal(hasSupportedEvidence({ evidence: ["short"] }, knowledge), false);
+  assert.equal(hasSupportedEvidence({ evidence: ["[pool] Pool hours: 8:00–20:00", "fabricated"] }, knowledge), false);
+  assert.equal(hasSupportedEvidence({ evidence: ["[facilities] Breakfast: 7:00–10:00"] }, ""), false);
 });

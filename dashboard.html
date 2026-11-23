@@ -139,6 +139,13 @@ main{padding:28px clamp(16px,4vw,48px);max-width:1450px;width:100%;margin:auto}.
     <div class="card"><div class="metriclabel">CURRENTLY ESCALATED</div><div class="metric" id="performanceEscalated">—</div></div>
     <div class="card"><div class="metriclabel">RESOLVED · STARTED IN PERIOD</div><div class="metric" id="performanceResolved">—</div></div>
    </div>
+   <div class="sectionrow"><h2>AI response generation time</h2><span class="muted">Measured over the last 30 days</span></div>
+   <p class="muted" style="font-size:12px">Measures the time spent generating an AI reply, including provider request and fallback handling. It does not measure knowledge retrieval, database writes, delivery to the guest, or staff response time.</p>
+   <div class="grid">
+    <div class="card"><div class="metriclabel">MEASURED AI REPLIES</div><div class="metric" id="performanceLatencyCount">—</div></div>
+    <div class="card"><div class="metriclabel">MEDIAN GENERATION TIME</div><div class="metric" id="performanceLatencyMedian">—</div></div>
+    <div class="card"><div class="metriclabel">95TH-PERCENTILE TIME</div><div class="metric" id="performanceLatencyP95">—</div></div>
+   </div>
    <div class="sectionrow"><h2>Daily conversation volume</h2><span class="muted">Unique conversations per day</span></div>
    <div class="card" id="performanceDaily" style="display:grid;gap:10px"><div class="empty">Loading report…</div></div>
    <div class="sectionrow"><h2>Offer enquiry outcomes</h2><span class="muted">All-time recorded attributions</span></div>
@@ -432,6 +439,10 @@ async function loadPerformanceReport(){
  $("performanceConversations").textContent=String(m.conversations_30d||0);
  $("performanceEscalated").textContent=String(m.currently_escalated||0);
  $("performanceResolved").textContent=String(m.resolved_30d||0);
+ const latency=insights.responseLatency||{};
+ $("performanceLatencyCount").textContent=String(latency.measured_responses||0);
+ $("performanceLatencyMedian").textContent=latency.median_ms==null?"—":(Number(latency.median_ms)/1000).toFixed(2)+" s";
+ $("performanceLatencyP95").textContent=latency.p95_ms==null?"—":(Number(latency.p95_ms)/1000).toFixed(2)+" s";
  const daily=insights.daily||[],max=Math.max(1,...daily.map(x=>Number(x.conversations||0)));
  $("performanceDaily").innerHTML=daily.length?daily.map(x=>{const count=Number(x.conversations||0),width=count?Math.max(2,count/max*100):0;return '<div style="display:grid;grid-template-columns:90px minmax(0,1fr) 35px;gap:9px;align-items:center"><span class="muted" style="font-size:11px">'+safe(x.day)+'</span><div style="height:9px;background:#263449;border-radius:8px;overflow:hidden"><div style="height:9px;width:'+width+'%;background:#78a9df;border-radius:8px"></div></div><strong style="text-align:right">'+count+'</strong></div>';}).join(""):'<div class="empty">No daily conversation data in this period.</div>';
  const enquiries=totals.reduce((sum,x)=>sum+Number(x.count||0),0);

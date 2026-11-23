@@ -469,7 +469,9 @@ test("AI response latency is measured at generation and aggregated per tenant", 
  const dashboard=fs.readFileSync("dashboard.html","utf8");
  assert.match(server,/ALTER TABLE messages ADD COLUMN IF NOT EXISTS response_time_ms INTEGER/);
  assert.match(server,/process\.hrtime\.bigint\(\)/);
- assert.match(server,/response_time_ms\) VALUES\(\$1,'guest',\$2,NULL\),\(\$1,'assistant',\$3,\$4\)/);
+ assert.match(server,/INSERT INTO messages\(conversation_id,role,content,response_time_ms\) VALUES\(\$1,'guest',\$2,NULL\)/);
+ assert.match(server,/INSERT INTO messages\(conversation_id,role,content,response_time_ms\) VALUES\(\$1,'assistant',\$2,\$3\) RETURNING id/);
+ assert.match(server,/assistantMessageId/);
  assert.match(server,/percentile_cont\(0\.5\) WITHIN GROUP\(ORDER BY response_time_ms\)/);
  assert.match(server,/percentile_cont\(0\.95\) WITHIN GROUP\(ORDER BY response_time_ms\)/);
  assert.match(server,/c\.organization_id=\$1 AND m\.role='assistant'/);

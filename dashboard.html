@@ -272,16 +272,18 @@ main{padding:28px clamp(16px,4vw,48px);max-width:1450px;width:100%;margin:auto}.
  </section>
 
  <section id="panel-revenue" class="panel">
-  <div class="sectionrow"><h2>Revenue attribution</h2><span class="muted">Only staff-confirmed sales count as generated revenue</span></div>
-  <div class="grid">
-   <div class="card"><div class="metriclabel">Total guest enquiries</div><div class="metric" id="revenueEnquiries">—</div></div>
-   <div class="card"><div class="metriclabel">Confirmed sales</div><div class="metric" id="revenueConversions">—</div></div>
-   <div class="card"><div class="metriclabel">Conversion rate</div><div class="metric" id="revenueConversionRate">—</div></div>
-   <div class="card"><div class="metriclabel">Confirmed revenue</div><div class="metric" id="revenueTotal">—</div></div>
+  <div class="sectionrow"><h2>Revenue attribution</h2><span class="muted" id="revenueWindowLabel">Rolling 30 × 24-hour UTC window</span></div>
+  <div class="grid" id="revenueSummary">
+   <div class="card"><div class="metriclabel">Offer enquiry records</div><div class="metric" id="revenueEnquiries">—</div></div>
+   <div class="card"><div class="metriclabel">Distinct enquiry conversations</div><div class="metric" id="revenueEnquiryConversations">—</div></div>
+   <div class="card"><div class="metriclabel">Evidence-attested sales</div><div class="metric" id="revenueConversions">—</div></div>
+   <div class="card"><div class="metriclabel">Evidence-attested revenue</div><div class="metric" id="revenueTotal">—</div></div>
+   <div class="card"><div class="metriclabel">Legacy sales missing evidence (all time)</div><div class="metric" id="revenueLegacyUnverified">—</div></div>
   </div>
-  <p class="muted" style="font-size:12px">Revenue is grouped by currency. Enquiries are recorded when a guest asks about an offer category and a matching verified offer exists. Staff must confirm the actual sale amount; recommendations and enquiries are not counted as revenue.</p>
+  <div id="revenueStaffNotice" class="notice hidden" role="status">Offer enquiry details are visible here. Sale amounts and evidence references are restricted to workspace owners and administrators.</div>
+  <p class="muted" style="font-size:12px">Offer enquiry records and distinct conversations are counted by enquiry creation time. Evidence-attested sales are counted by sale time within the exact UTC reporting window. The start is inclusive and the end is exclusive. Influenced conversations: Not measured. Estimated staff time saved: Not calculated. A hotel-attested link to an enquiry does not prove Veyra caused the sale. Legacy conversions without evidence are excluded from revenue totals and shown separately as an all-time count. Currencies are kept separate.</p>
   <div id="revenueCurrencyTotals" class="card" style="margin:12px 0"></div>
-  <div class="sectionrow"><h2>Offer enquiries awaiting review</h2><span class="muted">Staff can confirm or close an enquiry</span></div>
+  <div class="sectionrow"><h2>Offer enquiry history</h2><span class="muted">Staff can close an enquiry; only owners/admins can attest a sale</span></div>
   <div id="attributionList" style="display:grid;gap:10px"></div>
  </section>
  <section id="panel-escalations" class="panel">
@@ -411,22 +413,54 @@ async function loadOffers(){
  }).join("")||'<div class="card empty">No offers yet. Add a hotel-approved offer above.</div>';
 }
 
-function moneyMinor(amount,currency){return (Number(amount||0)/100).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})+" "+safe(currency||"");}
+function moneyMinor(amount,currency){
+ try{
+  const code=String(currency||"").toUpperCase();
+  const digits=new Intl.NumberFormat("en",{style:"currency",currency:code}).resolvedOptions().maximumFractionDigits;
+  const raw=BigInt(String(amount||0));
+  const negative=raw<0n;
+  const minor=negative?-raw:raw;
+  const scale=10n**BigInt(digits);
+  const whole=minor/scale;
+  const fraction=digits?String(minor%scale).padStart(digits,"0"):"";
+  return (negative?"-":"")+new Intl.NumberFormat(undefined,{maximumFractionDigits:0}).format(whole)+(digits?"."+fraction:"")+" "+safe(code);
+ }catch{return "—";}
+}
 async function loadRevenueAttributions(){
  const d=await api("/api/admin/offer-attributions");
  const rows=d.attributions||[];
- const totals=d.totals||[];
- const enquiries=totals.reduce((sum,x)=>sum+Number(x.count||0),0);
- const conversions=totals.filter(x=>x.status==="converted").reduce((sum,x)=>sum+Number(x.count||0),0);
- $("revenueEnquiries").textContent=String(enquiries);
+ const canViewFinancials=d.financialVisibility===true;
+ $("revenueSummary").classList.toggle("hidden",!canViewFinancials);
+ $("revenueCurrencyTotals").classList.toggle("hidden",!canViewFinancials);
+ $("revenueStaffNotice").classList.toggle("hidden",canViewFinancials);
+ const start=d.windowStart||"",end=d.windowEnd||"";
+ $("revenueWindowLabel").textContent=start&&end
+  ?"Rolling 30 × 24-hour UTC window · ["+start+", "+end+")"
+  :"Reporting window unavailable";
+ $("revenueEnquiries").textContent=String(d.enquiryCount||0);
+ $("revenueEnquiryConversations").textContent=String(d.enquiryConversationCount||0);
+ const verifiedTotals=canViewFinancials?(d.verifiedTotals||[]):[];
+ const legacyCount=canViewFinancials?(d.legacyUnverifiedTotals||[]).reduce((sum,x)=>sum+Number(x.count||0),0):0;
+ const conversions=verifiedTotals.reduce((sum,x)=>sum+Number(x.count||0),0);
  $("revenueConversions").textContent=String(conversions);
- $("revenueConversionRate").textContent=enquiries?((conversions/enquiries)*100).toFixed(1)+"%":"—";
+ $("revenueLegacyUnverified").textContent=String(legacyCount);
  const currencyGroups={};
- for(const x of totals.filter(x=>x.status==="converted")){const c=x.currency||"UNKNOWN";currencyGroups[c]=(currencyGroups[c]||0)+Number(x.amount_minor||0);}
- $("revenueTotal").textContent=Object.keys(currencyGroups).length===1?moneyMinor(Object.values(currencyGroups)[0],Object.keys(currencyGroups)[0]):"See currencies below";
- $("revenueCurrencyTotals").innerHTML=Object.keys(currencyGroups).length?Object.entries(currencyGroups).map(([c,v])=>'<div style="display:flex;justify-content:space-between;padding:7px 0"><span>'+safe(c)+'</span><strong>'+moneyMinor(v,c)+'</strong></div>').join(""):'<div class="empty">No staff-confirmed revenue yet.</div>';
- $("attributionList").innerHTML=rows.map(x=>'<article class="card"><div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap"><strong>'+safe(x.offer_name)+'</strong>'+statusTag(x.status)+'</div><div class="muted" style="font-size:11px;margin-top:5px">'+safe(x.category)+' · Enquiry '+date(x.created_at)+' · '+safe(x.conversation_id)+'</div>'+(x.status==="converted"?'<p><strong>Confirmed sale: '+moneyMinor(x.amount_minor,x.currency)+'</strong></p>':'')+(x.notes?'<p class="muted">'+safe(x.notes)+'</p>':'')+(x.status==="enquiry"?'<div class="actions" style="margin-top:12px"><button class="btn primary" data-attribution-action="converted" data-id="'+safe(x.id)+'" data-currency="'+safe(x.offer_currency)+'">Confirm completed sale</button><button class="btn" data-attribution-action="not_converted" data-id="'+safe(x.id)+'">Close · no sale</button></div>':'')+'</article>').join("")||'<div class="card empty">No offer enquiries recorded yet. They will appear when guest chat is enabled and a guest asks about a verified offer.</div>';
+ for(const x of verifiedTotals){const c=x.currency||"UNKNOWN";currencyGroups[c]=(currencyGroups[c]||0n)+BigInt(String(x.amount_minor||0));}
+ const currencies=Object.keys(currencyGroups);
+ $("revenueTotal").textContent=currencies.length===1?moneyMinor(currencyGroups[currencies[0]].toString(),currencies[0]):currencies.length?"See currencies below":"—";
+ const totalsHtml=currencies.length?Object.entries(currencyGroups).map(([c,v])=>'<div style="display:flex;justify-content:space-between;padding:7px 0"><span>'+safe(c)+'</span><strong>'+moneyMinor(v.toString(),c)+'</strong></div>').join(""):'<div class="empty">No evidence-attested sales in this reporting window.</div>';
+ $("revenueCurrencyTotals").innerHTML=totalsHtml+'<p class="muted" style="font-size:11px;margin:8px 0 0">Hotel-attested evidence-referenced amounts only. These records show an association with an offer enquiry, not incremental revenue caused by Veyra.'+(legacyCount?' '+legacyCount+' legacy conversion record(s) without evidence are excluded from revenue totals (all time).':'')+'</p>';
+ $("attributionList").innerHTML=rows.map(x=>{
+  const evidenceAttested=canViewFinancials&&x.status==="converted"&&x.evidence_status==="evidence_attested";
+  const legacyUnverified=canViewFinancials&&x.status==="converted"&&!evidenceAttested;
+  const tag=!canViewFinancials?statusTag(x.status):evidenceAttested?'<span class="tag good">evidence recorded</span>':legacyUnverified?'<span class="tag warn">legacy · evidence missing</span>':statusTag(x.status);
+  const sale=evidenceAttested?'<p><strong>Hotel-attested linked sale: '+moneyMinor(x.amount_minor,x.currency)+'</strong><br><small class="muted">Source: '+safe(x.evidence_source)+' · Reference: '+safe(x.evidence_reference)+' · Sold: '+date(x.sold_at)+'</small></p>':legacyUnverified?'<p class="muted"><strong>Legacy conversion — evidence missing; excluded from revenue totals.</strong></p>':'';
+  const canAttest=["owner","admin"].includes(currentRole);
+  const actions=x.status==="enquiry"?'<div class="actions" style="margin-top:12px">'+(canAttest?'<button class="btn primary" data-attribution-action="converted" data-id="'+safe(x.id)+'" data-currency="'+safe(x.offer_currency)+'">Attest completed sale</button>':'<span class="muted">Owner/admin attestation required</span>')+'<button class="btn" data-attribution-action="not_converted" data-id="'+safe(x.id)+'">Close · no sale</button></div>':x.status==="converted"&&canAttest?'<div class="actions"><button class="btn" data-attribution-history data-id="'+safe(x.id)+'">Evidence history</button></div>':'';
+  return '<article class="card"><div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap"><strong>'+safe(x.offer_name)+'</strong>'+tag+'</div><div class="muted" style="font-size:11px;margin-top:5px">'+safe(x.category)+' · Enquiry '+date(x.created_at)+' · '+safe(x.conversation_id)+'</div>'+sale+actions+'<div class="attributionHistory" style="display:none;gap:8px;margin-top:12px"></div></article>';
+ }).join("")||'<div class="card empty">No offer enquiries recorded yet. They will appear when a guest asks about a currently verified hotel offer.</div>';
 }
+
 async function loadConversationInsights(){
  const d=await api("/api/admin/insights");
  const m=d.metrics||{};
@@ -638,7 +672,48 @@ $("invitationList").addEventListener("click",async e=>{const b=e.target.closest(
 
 $("offerForm").addEventListener("submit",async e=>{e.preventDefault();try{const price=Number($("offerPrice").value);if(!Number.isFinite(price)||price<0)throw new Error("Enter a valid price.");const expiry=new Date($("offerExpiry").value);if(!Number.isFinite(expiry.getTime())||expiry<=new Date())throw new Error("Choose a future expiry date.");await api("/api/admin/offers",{method:"POST",body:JSON.stringify({name:$("offerName").value,description:$("offerDescription").value,category:$("offerCategory").value,amount_minor:Math.round(price*100),currency:$("offerCurrency").value,status:$("offerStatus").value,verify_availability:$("offerVerify").checked,expires_at:expiry.toISOString()})});$("offerForm").reset();$("offerCurrency").value="THB";showToast("Offer saved. It will only be recommended when availability verification is fresh.");await loadOffers();}catch(err){notice(err.message,"error");}});
 
-$("attributionList").addEventListener("click",async e=>{const b=e.target.closest("button[data-attribution-action]");if(!b)return;const action=b.dataset.attributionAction;let payload={status:action,notes:""};if(action==="converted"){const raw=prompt("Enter the actual completed sale amount (not the offer's advertised price):");if(raw===null)return;const amount=Number(raw);if(!Number.isFinite(amount)||amount<0||!Number.isSafeInteger(Math.round(amount*100))){notice("Enter a valid completed sale amount.","error");return;}const currency=(prompt("Currency code (e.g. THB, EUR, USD):",b.dataset.currency||"THB")||"").trim().toUpperCase();if(!/^[A-Z]{3}$/.test(currency)){notice("Enter a valid three-letter currency code.","error");return;}payload.amount_minor=Math.round(amount*100);payload.currency=currency;}if(!confirm(action==="converted"?"Confirm this was a completed sale and record the actual amount?":"Close this enquiry as not converted?"))return;b.disabled=true;try{await api("/api/admin/offer-attributions/"+encodeURIComponent(b.dataset.id),{method:"PATCH",body:JSON.stringify(payload)});showToast(action==="converted"?"Sale recorded as staff-confirmed revenue.":"Enquiry closed without revenue.");await loadRevenueAttributions();}catch(err){notice(err.message,"error");b.disabled=false;}});
+$("attributionList").addEventListener("click",async e=>{
+ const historyButton=e.target.closest("button[data-attribution-history]");
+ if(historyButton){
+  historyButton.disabled=true;
+  try{
+   const d=await api("/api/admin/offer-attributions/"+encodeURIComponent(historyButton.dataset.id)+"/events");
+   const panel=historyButton.closest("article").querySelector(".attributionHistory");
+   panel.style.display="grid";
+   panel.innerHTML=(d.events||[]).map(x=>{
+    const currency=x.new_currency||x.previous_currency||"";
+    const amount=x.new_amount_minor!==null&&x.new_amount_minor!==undefined?moneyMinor(x.new_amount_minor,currency):"—";
+    const evidence=x.new_evidence_reference?'<div class="muted" style="font-size:11px">Evidence: '+safe(x.new_evidence_source)+' · '+safe(x.new_evidence_reference)+' · '+date(x.new_sold_at)+'</div>':"";
+    return '<div class="card"><strong>'+safe(x.action)+'</strong><div class="muted" style="font-size:11px">'+date(x.created_at)+' · '+safe(x.actor_email||"workspace user")+' · '+safe(x.previous_status)+' → '+safe(x.new_status)+'</div><div>'+amount+'</div>'+evidence+'</div>';
+   }).join("")||'<div class="muted">No evidence history is available.</div>';
+  }catch(err){notice(err.message,"error");}
+  finally{historyButton.disabled=false;}
+  return;
+ }
+ const b=e.target.closest("button[data-attribution-action]");if(!b)return;
+ const action=b.dataset.attributionAction;
+ let payload={status:action,notes:""};
+ if(action==="converted"){
+  if(!["owner","admin"].includes(currentRole)){notice("Only an owner or admin can attest a completed sale.","error");return;}
+  const raw=prompt("Enter the actual completed sale amount (not the offer's advertised price):");if(raw===null)return;
+  const amount=Number(raw);
+  const currency=(prompt("Currency code (e.g. THB, EUR, USD):",b.dataset.currency||"THB")||"").trim().toUpperCase();
+  let digits;try{digits=new Intl.NumberFormat("en",{style:"currency",currency}).resolvedOptions().maximumFractionDigits;}catch{notice("Enter a supported ISO currency code.","error");return;}
+  const scaled=amount*(10**digits),amountMinor=Math.round(scaled);
+  if(!Number.isFinite(amount)||amount<=0||!Number.isSafeInteger(amountMinor)||Math.abs(scaled-amountMinor)>1e-7){notice("Enter a positive sale amount using the selected currency's supported decimal places.","error");return;}
+  const evidenceSource=(prompt("Evidence source: pms_record, payment_receipt, invoice, or hotel_report","hotel_report")||"").trim();
+  if(!["pms_record","payment_receipt","invoice","hotel_report"].includes(evidenceSource)){notice("Choose a supported evidence source.","error");return;}
+  const evidenceReference=(prompt("Opaque evidence reference only — no guest names, payment details, URLs or tokens:")||"").trim();
+  if(!/^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,199}$/.test(evidenceReference)||/:\/\//.test(evidenceReference)||/^www\./i.test(evidenceReference)){notice("Enter an opaque reference of 1–200 letters, numbers or . _ : / # - characters, not a URL.","error");return;}
+  const soldAt=(prompt("Sale timestamp with timezone (ISO-8601):",new Date().toISOString())||"").trim();
+  if(!/(Z|[+-]\d{2}:\d{2})$/.test(soldAt)||!Number.isFinite(Date.parse(soldAt))){notice("Enter a valid timezone-qualified sale timestamp.","error");return;}
+  payload={status:"converted",amount_minor:amountMinor,currency,evidence_source:evidenceSource,evidence_reference:evidenceReference,sold_at:soldAt,notes:""};
+ }
+ if(!confirm(action==="converted"?"Record this hotel-attested sale linked to the enquiry? This does not prove Veyra caused it.":"Close this enquiry as not converted?"))return;
+ b.disabled=true;
+ try{await api("/api/admin/offer-attributions/"+encodeURIComponent(b.dataset.id),{method:"PATCH",body:JSON.stringify(payload)});showToast(action==="converted"?"Hotel-attested sale evidence recorded; causation is not claimed.":"Enquiry closed without revenue.");await loadRevenueAttributions();}
+ catch(err){notice(err.message,"error");b.disabled=false;}
+});
 $("offerList").addEventListener("click",async e=>{const b=e.target.closest("button[data-action]");if(!b)return;b.disabled=true;try{if(b.dataset.action==="verify-offer"){await api("/api/admin/offers/"+encodeURIComponent(b.dataset.id)+"/verify",{method:"POST",body:"{}"});showToast("Availability rechecked and verification refreshed.");}else if(b.dataset.action==="delete-offer"){if(!confirm("Archive this offer? Its historical enquiries and confirmed revenue will be preserved.")){b.disabled=false;return;}await api("/api/admin/offers/"+encodeURIComponent(b.dataset.id),{method:"DELETE",body:"{}"});showToast("Offer archived. Historical revenue records are preserved.");}await loadOffers();}catch(err){notice(err.message,"error");b.disabled=false;}});
 $("knowledgeSearch").addEventListener("input",renderKnowledgeReview);
 $("knowledgeStatusFilter").addEventListener("change",renderKnowledgeReview);

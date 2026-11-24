@@ -315,11 +315,11 @@ try {
   assert.equal(revenueABody.windowTimezone, "UTC");
   assert.equal(revenueABody.windowDays, 30);
   assert.equal(Date.parse(revenueABody.windowEnd) - Date.parse(revenueABody.windowStart), 720 * 60 * 60 * 1000);
-  assert.equal(revenueABody.enquiryCount, 1);
+  assert.equal(revenueABody.enquiryCount, 2, "both offer enquiries are counted as records");
   assert.equal(revenueABody.enquiryConversationCount, 1);
-  assert.equal(revenueABody.verifiedTotals.length, 1);
-  assert.equal(revenueABody.verifiedTotals[0].count, 1);
-  assert.equal(revenueABody.verifiedTotals[0].amount_minor, "235000");
+  assert.equal(revenueABody.evidenceAttestedTotals.length, 1);
+  assert.equal(revenueABody.evidenceAttestedTotals[0].count, 1);
+  assert.equal(revenueABody.evidenceAttestedTotals[0].amount_minor, "235000");
   assert.equal(revenueABody.legacyUnverifiedTotals[0].count, 0);
   assert.equal(revenueABody.legacyUnverifiedScope, "all_time");
 
@@ -331,15 +331,40 @@ try {
   const crossHistoryResponse = await fetch(baseUrl + "/api/admin/offer-attributions/" + tenants[1].attributionId + "/events", { headers: { cookie: cookieA } });
   assert.equal(crossHistoryResponse.status, 404, "tenant A cannot read tenant B's evidence history");
 
+  const duplicateOffer = await pool.query(
+    "INSERT INTO hotel_offers(organization_id,name,description,category,amount_minor,currency,status,availability_status,availability_verified_at,expires_at) VALUES((SELECT id FROM organizations WHERE slug=$1),'Synthetic duplicate evidence offer','Synthetic fixture only','spa',10000,'THB','active','available',now(),now()+interval '1 day') RETURNING id",
+    [tenants[0].slug]
+  );
+  const duplicateAttribution = await pool.query(
+    "INSERT INTO hotel_offer_attributions(organization_id,offer_id,conversation_id,status) VALUES((SELECT id FROM organizations WHERE slug=$1),$2,$3,'enquiry') RETURNING id",
+    [tenants[0].slug, duplicateOffer.rows[0].id, tenants[0].conversationId]
+  );
+  const duplicateEvidenceAttempt = await fetch(baseUrl + "/api/admin/offer-attributions/" + duplicateAttribution.rows[0].id, {
+    method: "PATCH",
+    headers: { cookie: cookieA, "X-CSRF-Token": tenants[0].csrfToken, "content-type": "application/json" },
+    body: JSON.stringify({ ...validSaleEvidence, amount_minor: 10000, sold_at: new Date().toISOString() }),
+  });
+  assert.equal(duplicateEvidenceAttempt.status, 409, "the same evidence reference cannot be counted twice within one hotel");
+
+  const tenantBSaleEvidence = { ...validSaleEvidence, amount_minor: 9900 };
+  const tenantBAttributionUpdate = await fetch(baseUrl + "/api/admin/offer-attributions/" + tenants[1].attributionId, {
+    method: "PATCH",
+    headers: { cookie: cookieB, "X-CSRF-Token": tenants[1].csrfToken, "content-type": "application/json" },
+    body: JSON.stringify(tenantBSaleEvidence),
+  });
+  assert.equal(tenantBAttributionUpdate.status, 200, "the same opaque evidence reference is independent in another hotel tenant");
+  const tenantBHistoryFromA = await fetch(baseUrl + "/api/admin/offer-attributions/" + tenants[0].attributionId + "/events", { headers: { cookie: cookieB } });
+  assert.equal(tenantBHistoryFromA.status, 404, "tenant B cannot read tenant A's evidence history");
+
   await pool.query("UPDATE users SET role='staff' WHERE organization_id=(SELECT id FROM organizations WHERE slug=$1) AND email=$2", [tenants[0].slug, tenants[0].email]);
   try {
     const staffRevenueResponse = await fetch(baseUrl + "/api/admin/offer-attributions", { headers: { cookie: cookieA } });
     assert.equal(staffRevenueResponse.status, 200);
     const staffRevenueBody = await staffRevenueResponse.json();
     assert.equal(staffRevenueBody.financialVisibility, false);
-    assert.deepEqual(staffRevenueBody.verifiedTotals, []);
+    assert.deepEqual(staffRevenueBody.evidenceAttestedTotals, []);
     assert.deepEqual(staffRevenueBody.legacyUnverifiedTotals, []);
-    const staffRecord = staffRevenueBody.attributions[0];
+    const staffRecord = staffRevenueBody.attributions.find(record => record.id === tenants[0].attributionId);
     for (const field of ["amount_minor", "currency", "notes", "evidence_source", "evidence_reference", "sold_at", "offer_currency", "listed_amount_minor"]) {
       assert.equal(Object.hasOwn(staffRecord, field), false, "staff response must redact " + field);
     }
@@ -349,6 +374,12 @@ try {
       body: JSON.stringify(validSaleEvidence),
     });
     assert.equal(staffSaleAttempt.status, 403, "staff cannot attest completed sale revenue");
+    const staffCloseAttempt = await fetch(baseUrl + "/api/admin/offer-attributions/" + duplicateAttribution.rows[0].id, {
+      method: "PATCH",
+      headers: { cookie: cookieA, "X-CSRF-Token": tenants[0].csrfToken, "content-type": "application/json" },
+      body: JSON.stringify({ status: "not_converted", notes: "Reviewed by staff" }),
+    });
+    assert.equal(staffCloseAttempt.status, 200, "staff may close an enquiry without attesting revenue");
     const staffHistoryAttempt = await fetch(baseUrl + "/api/admin/offer-attributions/" + tenants[0].attributionId + "/events", { headers: { cookie: cookieA } });
     assert.equal(staffHistoryAttempt.status, 403, "staff cannot read financial evidence history");
   } finally {
@@ -357,8 +388,10 @@ try {
 
   const attributionBAfter = await fetch(baseUrl + "/api/admin/offer-attributions", { headers: { cookie: cookieB } });
   const attributionBBody = await attributionBAfter.json();
-  assert.equal(attributionBBody.attributions[0].status, "enquiry", "tenant A's sale must not affect tenant B");
-  assert.equal(attributionBBody.verifiedTotals.length, 0, "tenant B must not see tenant A's sale value");
+  assert.equal(attributionBBody.attributions[0].status, "converted", "tenant B can attest its own sale independently");
+  assert.equal(attributionBBody.evidenceAttestedTotals.length, 1);
+  assert.equal(attributionBBody.evidenceAttestedTotals[0].amount_minor, "9900");
+  assert.equal(attributionBBody.evidenceAttestedTotals[0].count, 1);
 
   const conversionAuditCount = await pool.query(
     "SELECT count(*)::int AS count FROM hotel_offer_attribution_events WHERE organization_id=(SELECT id FROM organizations WHERE slug=$1) AND attribution_id=$2",

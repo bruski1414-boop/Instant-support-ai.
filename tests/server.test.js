@@ -363,14 +363,23 @@ test("staff webhook configuration is encrypted, tenant-scoped and verified befor
   assert.match(dashboard, /id="staffWebhookSecret"/);
 });
 
-test("revenue dashboard counts every attributed enquiry and calculates conversion rate", () => {
+test("revenue dashboard separates enquiries from hotel-attested evidence and leaves unmeasured ROI blank", () => {
   const dashboard = fs.readFileSync("dashboard.html", "utf8");
-  assert.match(dashboard, /Total guest enquiries/);
-  assert.match(dashboard, /id="revenueConversionRate"/);
-  assert.match(dashboard, /const enquiries=totals\.reduce\(/);
-  assert.match(dashboard, /const conversions=totals\.filter\(x=>x\.status==="converted"\)/);
-  assert.match(dashboard, /\(conversions\/enquiries\)\*100/);
-  assert.match(dashboard, /enquiries\?\(/);
+  const server = fs.readFileSync("server.js", "utf8");
+  assert.match(dashboard, /Offer enquiry records/);
+  assert.match(dashboard, /Distinct enquiry conversations/);
+  assert.match(dashboard, /Evidence-attested sales/);
+  assert.match(dashboard, /Evidence-attested revenue/);
+  assert.match(dashboard, /Legacy sales missing evidence/);
+  assert.match(dashboard, /Influenced conversations: Not measured/);
+  assert.match(dashboard, /Estimated staff time saved: Not calculated/);
+  assert.match(dashboard, /Rolling 30 × 24-hour UTC window/);
+  assert.match(dashboard, /start is inclusive and the end is exclusive/);
+  assert.match(dashboard, /evidenceAttestedTotals/);
+  assert.doesNotMatch(dashboard, /id="revenueConversionRate"/);
+  assert.match(server, /evidenceAttestedTotals/);
+  assert.match(server, /Only an owner or admin can attest a completed sale/);
+  assert.match(server, /hotel_offer_attributions_evidence_dedupe_idx/);
 });
 
 test("conversation insights endpoint uses organization-scoped aggregate data without returning message text", () => {

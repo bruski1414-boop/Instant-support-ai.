@@ -315,7 +315,7 @@ try {
   assert.equal(revenueABody.windowTimezone, "UTC");
   assert.equal(revenueABody.windowDays, 30);
   assert.equal(Date.parse(revenueABody.windowEnd) - Date.parse(revenueABody.windowStart), 720 * 60 * 60 * 1000);
-  assert.equal(revenueABody.enquiryCount, 2, "both offer enquiries are counted as records");
+  assert.equal(revenueABody.enquiryCount, 1, "the original enquiry is counted once before the second fixture is added");
   assert.equal(revenueABody.enquiryConversationCount, 1);
   assert.equal(revenueABody.evidenceAttestedTotals.length, 1);
   assert.equal(revenueABody.evidenceAttestedTotals[0].count, 1);
@@ -345,6 +345,12 @@ try {
     body: JSON.stringify({ ...validSaleEvidence, amount_minor: 10000, sold_at: new Date().toISOString() }),
   });
   assert.equal(duplicateEvidenceAttempt.status, 409, "the same evidence reference cannot be counted twice within one hotel");
+  const revenueAfterDuplicateResponse = await fetch(baseUrl + "/api/admin/offer-attributions", { headers: { cookie: cookieA } });
+  const revenueAfterDuplicateBody = await revenueAfterDuplicateResponse.json();
+  assert.equal(revenueAfterDuplicateBody.enquiryCount, 2, "both enquiry records are counted after the second fixture is added");
+  assert.equal(revenueAfterDuplicateBody.enquiryConversationCount, 1, "two offer enquiries in one conversation count as one distinct conversation");
+  assert.equal(revenueAfterDuplicateBody.evidenceAttestedTotals[0].count, 1, "a duplicate evidence reference cannot increase the sale count");
+
 
   const tenantBSaleEvidence = { ...validSaleEvidence, amount_minor: 9900 };
   const tenantBAttributionUpdate = await fetch(baseUrl + "/api/admin/offer-attributions/" + tenants[1].attributionId, {

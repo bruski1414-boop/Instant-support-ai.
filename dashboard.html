@@ -439,13 +439,13 @@ async function loadRevenueAttributions(){
   :"Reporting window unavailable";
  $("revenueEnquiries").textContent=String(d.enquiryCount||0);
  $("revenueEnquiryConversations").textContent=String(d.enquiryConversationCount||0);
- const verifiedTotals=canViewFinancials?(d.evidenceAttestedTotals||[]):[];
- const legacyCount=canViewFinancials?(d.legacyUnverifiedTotals||[]).reduce((sum,x)=>sum+Number(x.count||0),0):0;
- const conversions=verifiedTotals.reduce((sum,x)=>sum+Number(x.count||0),0);
+ const evidenceAttestedTotals=canViewFinancials?(d.evidenceAttestedTotals||[]):[];
+ const legacyCount=canViewFinancials?(d.legacyUnevidenceAttestedTotals||[]).reduce((sum,x)=>sum+Number(x.count||0),0):0;
+ const conversions=evidenceAttestedTotals.reduce((sum,x)=>sum+Number(x.count||0),0);
  $("revenueConversions").textContent=String(conversions);
  $("revenueLegacyUnverified").textContent=String(legacyCount);
  const currencyGroups={};
- for(const x of verifiedTotals){const c=x.currency||"UNKNOWN";currencyGroups[c]=(currencyGroups[c]||0n)+BigInt(String(x.amount_minor||0));}
+ for(const x of evidenceAttestedTotals){const c=x.currency||"UNKNOWN";currencyGroups[c]=(currencyGroups[c]||0n)+BigInt(String(x.amount_minor||0));}
  const currencies=Object.keys(currencyGroups);
  $("revenueTotal").textContent=currencies.length===1?moneyMinor(currencyGroups[currencies[0]].toString(),currencies[0]):currencies.length?"See currencies below":"—";
  const totalsHtml=currencies.length?Object.entries(currencyGroups).map(([c,v])=>'<div style="display:flex;justify-content:space-between;padding:7px 0"><span>'+safe(c)+'</span><strong>'+moneyMinor(v.toString(),c)+'</strong></div>').join(""):'<div class="empty">No evidence-attested sales in this reporting window.</div>';

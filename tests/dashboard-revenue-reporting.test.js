@@ -12,18 +12,22 @@ test("revenue dashboard uses exact UTC windows and does not claim causation or u
   assert.match(html, /windowEnd/);
   assert.match(html, /Influenced conversations: Not measured/);
   assert.match(html, /Estimated staff time saved: Not calculated/);
-  assert.match(html, /legacy conversion records without evidence are excluded from revenue totals/i);
+  assert.match(html, /Legacy conversions without evidence are excluded from revenue totals/i);
   assert.match(html, /financialVisibility/);
   assert.match(html, /Only an owner or admin can attest a completed sale/);
   assert.match(html, /Evidence history/);
 });
 
-test("revenue dashboard scripts parse and currency formatting uses ISO precision", () => {
+test("revenue dashboard scripts parse and minor-unit formatting honours ISO currency precision", () => {
   const scripts = [...html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi)]
     .map(match => match[1])
     .filter(source => source.trim());
   assert.ok(scripts.length > 0);
   for (const source of scripts) assert.doesNotThrow(() => new vm.Script(source));
-  assert.match(html, /BigInt\(String\(amount\|\|0\)\)/);
-  assert.match(html, /maximumFractionDigits/);
+  const helper = html.match(/function moneyMinor\(amount,currency\)\{[\s\S]*?\n\}/);
+  assert.ok(helper, "the dashboard must define the currency formatter");
+  const moneyMinor = vm.runInNewContext("(" + helper[0] + ")", { safe: value => String(value) });
+  assert.equal(moneyMinor("123", "JPY"), "123 JPY");
+  assert.equal(moneyMinor("1250", "EUR"), "12.50 EUR");
+  assert.equal(moneyMinor("12345", "KWD"), "12.345 KWD");
 });

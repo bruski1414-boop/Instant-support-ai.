@@ -256,18 +256,162 @@ try {
     body: JSON.stringify({ status: "converted", amount_minor: -1, currency: "THB" }),
   });
   assert.equal(invalidConversion.status, 400, "completed sale requires a valid non-negative actual amount");
+  const saleOccurredAt = new Date().toISOString();
+  const validSaleEvidence = {
+    status: "converted",
+    amount_minor: 235000,
+    currency: "THB",
+    evidence_source: "hotel_report",
+    evidence_reference: "synthetic-sale-tenant-a-" + tag,
+    sold_at: saleOccurredAt,
+    notes: "Checked against a synthetic hotel record"
+  };
+  const missingEvidenceAttempt = await fetch(baseUrl + "/api/admin/offer-attributions/" + tenants[0].attributionId, {
+    method: "PATCH",
+    headers: { cookie: cookieA, "X-CSRF-Token": tenants[0].csrfToken, "content-type": "application/json" },
+    body: JSON.stringify({ status: "converted", amount_minor: 235000, currency: "THB" }),
+  });
+  assert.equal(missingEvidenceAttempt.status, 400, "a completed sale must include evidence and a sale timestamp");
+  const urlEvidenceAttempt = await fetch(baseUrl + "/api/admin/offer-attributions/" + tenants[0].attributionId, {
+    method: "PATCH",
+    headers: { cookie: cookieA, "X-CSRF-Token": tenants[0].csrfToken, "content-type": "application/json" },
+    body: JSON.stringify({ ...validSaleEvidence, evidence_reference: "https://example.test/receipt/1" }),
+  });
+  assert.equal(urlEvidenceAttempt.status, 400, "evidence references must be opaque identifiers, not URLs");
+  const saleBeforeEnquiry = await fetch(baseUrl + "/api/admin/offer-attributions/" + tenants[0].attributionId, {
+    method: "PATCH",
+    headers: { cookie: cookieA, "X-CSRF-Token": tenants[0].csrfToken, "content-type": "application/json" },
+    body: JSON.stringify({ ...validSaleEvidence, sold_at: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString() }),
+  });
+  assert.equal(saleBeforeEnquiry.status, 400, "a sale dated before the enquiry must not be attributed to it");
   const ownAttributionUpdate = await fetch(baseUrl + "/api/admin/offer-attributions/" + tenants[0].attributionId, {
     method: "PATCH",
     headers: { cookie: cookieA, "X-CSRF-Token": tenants[0].csrfToken, "content-type": "application/json" },
-    body: JSON.stringify({ status: "converted", amount_minor: 235000, currency: "THB", notes: "Confirmed by hotel staff" }),
+    body: JSON.stringify(validSaleEvidence),
   });
-  assert.equal(ownAttributionUpdate.status, 200, "tenant A can confirm its own sale");
+  assert.equal(ownAttributionUpdate.status, 200, "tenant A owner can attest its own sale with evidence");
   const confirmedAttribution = await ownAttributionUpdate.json();
   assert.equal(confirmedAttribution.attribution.amount_minor, "235000");
   assert.equal(confirmedAttribution.attribution.status, "converted");
+  assert.equal(confirmedAttribution.attribution.evidence_status, "evidence_attested");
+  assert.equal(confirmedAttribution.attribution.evidence_reference, validSaleEvidence.evidence_reference);
+
+  const replayAttributionUpdate = await fetch(baseUrl + "/api/admin/offer-attributions/" + tenants[0].attributionId, {
+    method: "PATCH",
+    headers: { cookie: cookieA, "X-CSRF-Token": tenants[0].csrfToken, "content-type": "application/json" },
+    body: JSON.stringify(validSaleEvidence),
+  });
+  assert.equal(replayAttributionUpdate.status, 200, "an identical evidence replay must be idempotent");
+  const changedSaleAttempt = await fetch(baseUrl + "/api/admin/offer-attributions/" + tenants[0].attributionId, {
+    method: "PATCH",
+    headers: { cookie: cookieA, "X-CSRF-Token": tenants[0].csrfToken, "content-type": "application/json" },
+    body: JSON.stringify({ ...validSaleEvidence, amount_minor: 240000 }),
+  });
+  assert.equal(changedSaleAttempt.status, 409, "an evidence-attested sale cannot be overwritten");
+
+  const revenueAResponse = await fetch(baseUrl + "/api/admin/offer-attributions", { headers: { cookie: cookieA } });
+  const revenueABody = await revenueAResponse.json();
+  assert.equal(revenueABody.financialVisibility, true);
+  assert.equal(revenueABody.windowTimezone, "UTC");
+  assert.equal(revenueABody.windowDays, 30);
+  assert.equal(Date.parse(revenueABody.windowEnd) - Date.parse(revenueABody.windowStart), 720 * 60 * 60 * 1000);
+  assert.equal(revenueABody.enquiryCount, 1, "the original enquiry is counted once before the second fixture is added");
+  assert.equal(revenueABody.enquiryConversationCount, 1);
+  assert.equal(revenueABody.evidenceAttestedTotals.length, 1);
+  assert.equal(revenueABody.evidenceAttestedTotals[0].count, 1);
+  assert.equal(revenueABody.evidenceAttestedTotals[0].amount_minor, "235000");
+  assert.equal(revenueABody.legacyUnverifiedTotals[0].count, 0);
+  assert.equal(revenueABody.legacyUnverifiedScope, "all_time");
+
+  const historyResponse = await fetch(baseUrl + "/api/admin/offer-attributions/" + tenants[0].attributionId + "/events", { headers: { cookie: cookieA } });
+  assert.equal(historyResponse.status, 200);
+  const historyBody = await historyResponse.json();
+  assert.equal(historyBody.events.length, 1, "one conversion event must be recorded");
+  assert.equal(historyBody.events[0].new_evidence_reference, validSaleEvidence.evidence_reference);
+  const crossHistoryResponse = await fetch(baseUrl + "/api/admin/offer-attributions/" + tenants[1].attributionId + "/events", { headers: { cookie: cookieA } });
+  assert.equal(crossHistoryResponse.status, 404, "tenant A cannot read tenant B's evidence history");
+
+  const duplicateOffer = await pool.query(
+    "INSERT INTO hotel_offers(organization_id,name,description,category,amount_minor,currency,status,availability_status,availability_verified_at,expires_at) VALUES((SELECT id FROM organizations WHERE slug=$1),'Synthetic duplicate evidence offer','Synthetic fixture only','spa',10000,'THB','active','available',now(),now()+interval '1 day') RETURNING id",
+    [tenants[0].slug]
+  );
+  const duplicateAttribution = await pool.query(
+    "INSERT INTO hotel_offer_attributions(organization_id,offer_id,conversation_id,status) VALUES((SELECT id FROM organizations WHERE slug=$1),$2,$3,'enquiry') RETURNING id",
+    [tenants[0].slug, duplicateOffer.rows[0].id, tenants[0].conversationId]
+  );
+  const duplicateEvidenceAttempt = await fetch(baseUrl + "/api/admin/offer-attributions/" + duplicateAttribution.rows[0].id, {
+    method: "PATCH",
+    headers: { cookie: cookieA, "X-CSRF-Token": tenants[0].csrfToken, "content-type": "application/json" },
+    body: JSON.stringify({ ...validSaleEvidence, amount_minor: 10000, sold_at: new Date().toISOString() }),
+  });
+  assert.equal(duplicateEvidenceAttempt.status, 409, "the same evidence reference cannot be counted twice within one hotel");
+  const revenueAfterDuplicateResponse = await fetch(baseUrl + "/api/admin/offer-attributions", { headers: { cookie: cookieA } });
+  const revenueAfterDuplicateBody = await revenueAfterDuplicateResponse.json();
+  assert.equal(revenueAfterDuplicateBody.enquiryCount, 2, "both enquiry records are counted after the second fixture is added");
+  assert.equal(revenueAfterDuplicateBody.enquiryConversationCount, 1, "two offer enquiries in one conversation count as one distinct conversation");
+  assert.equal(revenueAfterDuplicateBody.evidenceAttestedTotals[0].count, 1, "a duplicate evidence reference cannot increase the sale count");
+
+
+  const tenantBSaleEvidence = { ...validSaleEvidence, amount_minor: 9900 };
+  const tenantBAttributionUpdate = await fetch(baseUrl + "/api/admin/offer-attributions/" + tenants[1].attributionId, {
+    method: "PATCH",
+    headers: { cookie: cookieB, "X-CSRF-Token": tenants[1].csrfToken, "content-type": "application/json" },
+    body: JSON.stringify(tenantBSaleEvidence),
+  });
+  assert.equal(tenantBAttributionUpdate.status, 200, "the same opaque evidence reference is independent in another hotel tenant");
+  const tenantBHistoryFromA = await fetch(baseUrl + "/api/admin/offer-attributions/" + tenants[0].attributionId + "/events", { headers: { cookie: cookieB } });
+  assert.equal(tenantBHistoryFromA.status, 404, "tenant B cannot read tenant A's evidence history");
+
+  await pool.query("UPDATE users SET role='staff' WHERE organization_id=(SELECT id FROM organizations WHERE slug=$1) AND email=$2", [tenants[0].slug, tenants[0].email]);
+  try {
+    const staffRevenueResponse = await fetch(baseUrl + "/api/admin/offer-attributions", { headers: { cookie: cookieA } });
+    assert.equal(staffRevenueResponse.status, 200);
+    const staffRevenueBody = await staffRevenueResponse.json();
+    assert.equal(staffRevenueBody.financialVisibility, false);
+    assert.deepEqual(staffRevenueBody.evidenceAttestedTotals, []);
+    assert.deepEqual(staffRevenueBody.legacyUnverifiedTotals, []);
+    const staffRecord = staffRevenueBody.attributions.find(record => record.id === tenants[0].attributionId);
+    for (const field of ["amount_minor", "currency", "notes", "evidence_source", "evidence_reference", "sold_at", "offer_currency", "listed_amount_minor"]) {
+      assert.equal(Object.hasOwn(staffRecord, field), false, "staff response must redact " + field);
+    }
+    const staffSaleAttempt = await fetch(baseUrl + "/api/admin/offer-attributions/" + tenants[0].attributionId, {
+      method: "PATCH",
+      headers: { cookie: cookieA, "X-CSRF-Token": tenants[0].csrfToken, "content-type": "application/json" },
+      body: JSON.stringify(validSaleEvidence),
+    });
+    assert.equal(staffSaleAttempt.status, 403, "staff cannot attest completed sale revenue");
+    const staffCloseAttempt = await fetch(baseUrl + "/api/admin/offer-attributions/" + duplicateAttribution.rows[0].id, {
+      method: "PATCH",
+      headers: { cookie: cookieA, "X-CSRF-Token": tenants[0].csrfToken, "content-type": "application/json" },
+      body: JSON.stringify({ status: "not_converted", notes: "Reviewed by staff" }),
+    });
+    assert.equal(staffCloseAttempt.status, 200, "staff may close an enquiry without attesting revenue");
+    const staffHistoryAttempt = await fetch(baseUrl + "/api/admin/offer-attributions/" + tenants[0].attributionId + "/events", { headers: { cookie: cookieA } });
+    assert.equal(staffHistoryAttempt.status, 403, "staff cannot read financial evidence history");
+  } finally {
+    await pool.query("UPDATE users SET role='owner' WHERE organization_id=(SELECT id FROM organizations WHERE slug=$1) AND email=$2", [tenants[0].slug, tenants[0].email]);
+  }
+
   const attributionBAfter = await fetch(baseUrl + "/api/admin/offer-attributions", { headers: { cookie: cookieB } });
   const attributionBBody = await attributionBAfter.json();
-  assert.equal(attributionBBody.attributions[0].status, "enquiry", "tenant A's confirmation must not affect tenant B");
+  assert.equal(attributionBBody.attributions[0].status, "converted", "tenant B can attest its own sale independently");
+  assert.equal(attributionBBody.evidenceAttestedTotals.length, 1);
+  assert.equal(attributionBBody.evidenceAttestedTotals[0].amount_minor, "9900");
+  assert.equal(attributionBBody.evidenceAttestedTotals[0].count, 1);
+
+  const conversionAuditCount = await pool.query(
+    "SELECT count(*)::int AS count FROM hotel_offer_attribution_events WHERE organization_id=(SELECT id FROM organizations WHERE slug=$1) AND attribution_id=$2",
+    [tenants[0].slug, tenants[0].attributionId]
+  );
+  assert.equal(conversionAuditCount.rows[0].count, 1, "idempotent replay must not duplicate the audit event");
+  await assert.rejects(
+    pool.query("UPDATE hotel_offer_attributions SET amount_minor=240000 WHERE id=$1 AND organization_id=(SELECT id FROM organizations WHERE slug=$2)", [tenants[0].attributionId, tenants[0].slug]),
+    /Evidence-attested conversions are immutable/
+  );
+  await assert.rejects(
+    pool.query("UPDATE hotel_offer_attributions SET evidence_reference=NULL WHERE id=$1 AND organization_id=(SELECT id FROM organizations WHERE slug=$2)", [tenants[0].attributionId, tenants[0].slug]),
+    /Evidence-attested conversions are immutable|hotel_offer_attributions_evidence_tuple_check/
+  );
 
   const crossOfferVerify = await fetch(baseUrl + "/api/admin/offers/" + tenants[1].offerId + "/verify", {
     method: "POST",

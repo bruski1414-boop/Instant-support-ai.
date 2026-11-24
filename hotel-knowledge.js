@@ -8,4 +8,33 @@ async function loadApprovedKnowledge(db, organizationId, today = new Date()) {
   );
 }
 
-module.exports = { loadApprovedKnowledge };
+function buildApprovedKnowledgeContext(documents, maxChars = 26000) {
+  if (!Array.isArray(documents)) throw new TypeError("Approved knowledge documents must be an array.");
+  if (!Number.isInteger(maxChars) || maxChars < 1) throw new RangeError("maxChars must be a positive integer.");
+
+  const sections = [];
+  let usedChars = 0;
+  for (const document of documents) {
+    if (!document || typeof document.title !== "string" ||
+        typeof document.category !== "string" || typeof document.content !== "string") {
+      continue;
+    }
+    const title = document.title.trim();
+    const category = document.category.trim();
+    const content = document.content.trim();
+    if (!title || !category || !content) continue;
+
+    const section = "[" + category + "] " + title + "\n" + content;
+    const separator = sections.length ? "\n\n" : "";
+    if (usedChars + separator.length + section.length > maxChars) {
+      // Documents are ordered newest-first. Stop here rather than include older
+      // material after a newer document has been excluded for size.
+      break;
+    }
+    sections.push(section);
+    usedChars += separator.length + section.length;
+  }
+  return sections.join("\n\n");
+}
+
+module.exports = { loadApprovedKnowledge, buildApprovedKnowledgeContext };

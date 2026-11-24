@@ -439,7 +439,7 @@ async function loadRevenueAttributions(){
   :"Reporting window unavailable";
  $("revenueEnquiries").textContent=String(d.enquiryCount||0);
  $("revenueEnquiryConversations").textContent=String(d.enquiryConversationCount||0);
- const verifiedTotals=canViewFinancials?(d.verifiedTotals||[]):[];
+ const verifiedTotals=canViewFinancials?(d.evidenceAttestedTotals||[]):[];
  const legacyCount=canViewFinancials?(d.legacyUnverifiedTotals||[]).reduce((sum,x)=>sum+Number(x.count||0),0):0;
  const conversions=verifiedTotals.reduce((sum,x)=>sum+Number(x.count||0),0);
  $("revenueConversions").textContent=String(conversions);

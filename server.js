@@ -313,7 +313,7 @@ app.get("/api/admin/offer-attributions",requireDb,auth,role("owner","admin","sta
   : "SELECT a.id,a.status,a.created_at,o.name AS offer_name,o.category,c.id AS conversation_id FROM hotel_offer_attributions a JOIN hotel_offers o ON o.id=a.offer_id AND o.organization_id=a.organization_id JOIN conversations c ON c.id=a.conversation_id AND c.organization_id=a.organization_id WHERE a.organization_id=$1 ORDER BY a.created_at DESC LIMIT 200",
   [org]);
  const enquirySummary=await db.query("SELECT count(*)::int AS enquiry_count,count(DISTINCT conversation_id)::int AS enquiry_conversation_count FROM hotel_offer_attributions WHERE organization_id=$1 AND created_at >= $2 AND created_at < $3",[org,windowStart,windowEnd]);
- const verifiedTotals=financialVisibility
+ const evidenceAttestedTotals=financialVisibility
   ? await db.query("SELECT currency,count(*)::int AS count,COALESCE(sum(amount_minor),0)::text AS amount_minor FROM hotel_offer_attributions WHERE organization_id=$1 AND status='converted' AND evidence_source IS NOT NULL AND evidence_reference IS NOT NULL AND sold_at IS NOT NULL AND sold_at >= $2 AND sold_at < $3 GROUP BY currency ORDER BY currency",[org,windowStart,windowEnd])
   : {rows:[]};
  const legacyUnverifiedTotals=financialVisibility
@@ -323,7 +323,7 @@ app.get("/api/admin/offer-attributions",requireDb,auth,role("owner","admin","sta
   attributions:x.rows,
   enquiryCount:enquirySummary.rows[0].enquiry_count,
   enquiryConversationCount:enquirySummary.rows[0].enquiry_conversation_count,
-  verifiedTotals:verifiedTotals.rows,
+  evidenceAttestedTotals:evidenceAttestedTotals.rows,
   legacyUnverifiedTotals:legacyUnverifiedTotals.rows,
   legacyUnverifiedScope:"all_time",
   financialVisibility,

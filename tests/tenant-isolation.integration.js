@@ -10,6 +10,8 @@ import bookingAttribution from "../booking-attribution.js";
 const { createVerifiedReservationEvidence, hashBookingAttributionToken } = bookingAttribution;
 import bookingAttributionStore from "../booking-attribution-store.js";
 const { createBookingAttributionStore } = bookingAttributionStore;
+import bookingAttributionReport from "../booking-attribution-report.js";
+const { createBookingAttributionReportStore } = bookingAttributionReport;
 const { Pool } = pg;
 
 if (process.env.CI !== "true" || process.env.VEYRA_TENANT_TEST_DATABASE !== "true") {
@@ -370,6 +372,7 @@ try {
   const orgA = (await pool.query("SELECT id FROM organizations WHERE slug=$1", [tenants[0].slug])).rows[0].id;
   const orgB = (await pool.query("SELECT id FROM organizations WHERE slug=$1", [tenants[1].slug])).rows[0].id;
   const bookingStore = createBookingAttributionStore({ pool });
+  const bookingReportStore = createBookingAttributionReportStore({ pool });
   const correlationConversation = await pool.query(
     "INSERT INTO conversations(organization_id,channel,status) VALUES($1,'website','open') RETURNING id",
     [orgA],
@@ -530,6 +533,19 @@ try {
     verifiedEvidence: currentTokenEvidence,
   })).status, "matched", "the replacement token remains usable");
 
+  const reportNow = new Date(Date.now() + 1_000);
+  const linkedBookingReport = await bookingReportStore.getReport({ organizationId: orgA, now: reportNow });
+  assert.equal(linkedBookingReport.linkedConfirmedBookings, "2");
+  assert.equal(linkedBookingReport.distinctLinkedConversations, "2");
+  assert.equal(linkedBookingReport.retainedUnlinkedReservationRecords, "0");
+  assert.deepEqual(linkedBookingReport.providerReportedBookingValueByCurrency, [
+    { currency: "EUR", amountMinor: "168000", bookingCount: "2" },
+  ]);
+  assert.equal(linkedBookingReport.influencedConversations, "not_measured");
+  assert.equal(linkedBookingReport.estimatedStaffTimeSaved, "not_calculated");
+  const isolatedBookingReport = await bookingReportStore.getReport({ organizationId: orgB, now: reportNow });
+  assert.equal(isolatedBookingReport.linkedConfirmedBookings, "0", "a hotel report must never include another tenant's matches");
+
   await pool.query("DELETE FROM conversations WHERE id=$1 AND organization_id=$2", [correlationConversationId, orgA]);
   const retainedMatch = await pool.query(
     "SELECT conversation_id,intent_id,booking_value_minor,currency FROM booking_attribution_matches WHERE id=$1 AND organization_id=$2",
@@ -540,6 +556,13 @@ try {
   assert.equal(retainedMatch.rows[0].intent_id, null, "deleting a conversation must detach the consumed intent");
   assert.equal(retainedMatch.rows[0].booking_value_minor, "84000");
   assert.equal(retainedMatch.rows[0].currency, "EUR");
+  const retainedBookingReport = await bookingReportStore.getReport({ organizationId: orgA, now: reportNow });
+  assert.equal(retainedBookingReport.linkedConfirmedBookings, "1", "deleted conversations must no longer count as linked bookings");
+  assert.equal(retainedBookingReport.distinctLinkedConversations, "1");
+  assert.equal(retainedBookingReport.retainedUnlinkedReservationRecords, "1", "provider evidence is retained separately after conversation deletion");
+  assert.deepEqual(retainedBookingReport.providerReportedBookingValueByCurrency, [
+    { currency: "EUR", amountMinor: "84000", bookingCount: "1" },
+  ], "detached reservation evidence must not inflate linked booking value");
   const webhookReceivedAt = new Date();
   const webhookEvent = {
     eventId: "tenant-isolation-event-" + tag,

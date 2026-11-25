@@ -6,6 +6,10 @@ import knowledgeLoader from "../hotel-knowledge.js";
 const { loadApprovedKnowledge } = knowledgeLoader;
 import pmsIntegration from "../pms-integration.js";
 const { recordWebhookEvent } = pmsIntegration;
+import bookingAttribution from "../booking-attribution.js";
+const { createVerifiedReservationEvidence } = bookingAttribution;
+import bookingAttributionStore from "../booking-attribution-store.js";
+const { createBookingAttributionStore } = bookingAttributionStore;
 const { Pool } = pg;
 
 if (process.env.CI !== "true" || process.env.VEYRA_TENANT_TEST_DATABASE !== "true") {
@@ -365,6 +369,123 @@ try {
 
   const orgA = (await pool.query("SELECT id FROM organizations WHERE slug=$1", [tenants[0].slug])).rows[0].id;
   const orgB = (await pool.query("SELECT id FROM organizations WHERE slug=$1", [tenants[1].slug])).rows[0].id;
+  const bookingStore = createBookingAttributionStore({ pool });
+  const correlationConversation = await pool.query(
+    "INSERT INTO conversations(organization_id,channel,status) VALUES($1,'website','open') RETURNING id",
+    [orgA],
+  );
+  const correlationConversationId = correlationConversation.rows[0].id;
+  const issuedAt = new Date(Date.now() - 60_000).toISOString();
+  const issuedIntent = await bookingStore.issueIntent({
+    organizationId: orgA,
+    conversationId: correlationConversationId,
+    issuedAt,
+    ttlMs: 24 * 60 * 60 * 1000,
+  });
+  const persistedIntent = await pool.query(
+    "SELECT token_hash,conversation_id FROM booking_attribution_intents WHERE id=$1 AND organization_id=$2",
+    [issuedIntent.intentId, orgA],
+  );
+  assert.equal(persistedIntent.rowCount, 1);
+  assert.equal(persistedIntent.rows[0].token_hash.length, 64);
+  assert.equal(persistedIntent.rows[0].token_hash, require("../booking-attribution").hashBookingAttributionToken(issuedIntent.oneTimeToken));
+  assert.equal(JSON.stringify(persistedIntent.rows).includes(issuedIntent.oneTimeToken), false, "plaintext correlation token must never be persisted");
+
+  await assert.rejects(
+    bookingStore.issueIntent({ organizationId: orgB, conversationId: correlationConversationId }),
+    /Conversation not found/,
+    "a hotel cannot issue a token for another hotel's conversation",
+  );
+
+  const providerEvent = {
+    eventId: "synthetic-booking-event-" + tag,
+    eventType: "reservation.created",
+    occurredAt: new Date().toISOString(),
+    reservationId: "synthetic-booking-" + tag,
+    status: "confirmed",
+    attributionToken: issuedIntent.oneTimeToken,
+    totalAmountMinor: 84000,
+    currency: "EUR",
+    syntheticVerifierMarker: "fixture-valid",
+    guestEmail: "must-not-be-persisted@example.invalid",
+    guestName: "Synthetic Guest",
+  };
+  const verifiedEvidence = await createVerifiedReservationEvidence({
+    provider: "synthetic-pms",
+    event: providerEvent,
+    verify: async ({ event }) => event.syntheticVerifierMarker === "fixture-valid"
+      ? { verified: true, method: "api_readback" }
+      : { verified: false },
+  });
+  const matchedBooking = await bookingStore.consumeConfirmedReservation({
+    organizationId: orgA,
+    verifiedEvidence,
+  });
+  assert.equal(matchedBooking.status, "matched");
+  assert.equal(matchedBooking.match.conversationId, correlationConversationId);
+  assert.equal(matchedBooking.match.bookingValue.amountMinor, 84000);
+  assert.equal(matchedBooking.match.verificationMethod, "api_readback");
+  assert.equal(JSON.stringify(matchedBooking).includes("must-not-be-persisted"), false);
+
+  const replayedBooking = await bookingStore.consumeConfirmedReservation({
+    organizationId: orgA,
+    verifiedEvidence,
+  });
+  assert.equal(replayedBooking.status, "duplicate", "the same provider event must not create a second booking match");
+  const crossTenantBooking = await bookingStore.consumeConfirmedReservation({
+    organizationId: orgB,
+    verifiedEvidence,
+  });
+  assert.equal(crossTenantBooking.status, "unmatched", "a token must not resolve in another hotel workspace");
+
+  const secondConversation = await pool.query(
+    "INSERT INTO conversations(organization_id,channel,status) VALUES($1,'website','open') RETURNING id",
+    [orgA],
+  );
+  const secondIntent = await bookingStore.issueIntent({
+    organizationId: orgA,
+    conversationId: secondConversation.rows[0].id,
+    issuedAt,
+    ttlMs: 24 * 60 * 60 * 1000,
+  });
+  const reusedReservationEvidence = await createVerifiedReservationEvidence({
+    provider: "synthetic-pms",
+    event: {
+      ...providerEvent,
+      eventId: "synthetic-second-event-" + tag,
+      attributionToken: secondIntent.oneTimeToken,
+    },
+    verify: async ({ event }) => event.syntheticVerifierMarker === "fixture-valid"
+      ? { verified: true, method: "api_readback" }
+      : { verified: false },
+  });
+  const reusedReservation = await bookingStore.consumeConfirmedReservation({
+    organizationId: orgA,
+    verifiedEvidence: reusedReservationEvidence,
+  });
+  assert.equal(reusedReservation.status, "reservation_already_linked", "one provider reservation cannot be linked to two conversations");
+  const secondIntentRow = await pool.query(
+    "SELECT consumed_at FROM booking_attribution_intents WHERE id=$1 AND organization_id=$2",
+    [secondIntent.intentId, orgA],
+  );
+  assert.equal(secondIntentRow.rows[0].consumed_at, null, "a conflicting reservation must not consume the second token");
+
+  const matchAudit = await pool.query(
+    "SELECT count(*)::int AS count FROM audit_logs WHERE organization_id=$1 AND action='booking_attribution.reservation_matched' AND target_id=$2",
+    [orgA, matchedBooking.match.id],
+  );
+  assert.equal(matchAudit.rows[0].count, 1, "a successful match must have one audit entry");
+
+  await pool.query("DELETE FROM conversations WHERE id=$1 AND organization_id=$2", [correlationConversationId, orgA]);
+  const retainedMatch = await pool.query(
+    "SELECT conversation_id,intent_id,booking_value_minor,currency FROM booking_attribution_matches WHERE id=$1 AND organization_id=$2",
+    [matchedBooking.match.id, orgA],
+  );
+  assert.equal(retainedMatch.rowCount, 1, "conversation retention must not erase the provider reservation evidence");
+  assert.equal(retainedMatch.rows[0].conversation_id, null, "deleting a conversation must remove its attribution link");
+  assert.equal(retainedMatch.rows[0].intent_id, null, "deleting a conversation must detach the consumed intent");
+  assert.equal(retainedMatch.rows[0].booking_value_minor, "84000");
+  assert.equal(retainedMatch.rows[0].currency, "EUR");
   const webhookReceivedAt = new Date();
   const webhookEvent = {
     eventId: "tenant-isolation-event-" + tag,

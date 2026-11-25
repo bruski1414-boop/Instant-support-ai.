@@ -159,7 +159,7 @@ test("rejects malformed identifiers, timestamps, tokens and attribution windows"
     ttlMs: 31 * 24 * 60 * 60 * 1000
   }), /ttlMs/);
   assert.throws(() => hashBookingAttributionToken("short"), /token/);
-  assert.throws(() => hashBookingAttributionToken("A".repeat(43)), /canonical 256-bit/);
+  assert.throws(() => hashBookingAttributionToken("A".repeat(42) + "B"), /canonical 256-bit/);
   assert.throws(() => issueBookingAttributionIntent({
     organizationId: fixture.organizationId,
     conversationId: fixture.conversationId,

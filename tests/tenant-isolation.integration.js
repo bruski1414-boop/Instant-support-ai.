@@ -545,6 +545,16 @@ try {
   assert.equal(linkedBookingReport.estimatedStaffTimeSaved, "not_calculated");
   const isolatedBookingReport = await bookingReportStore.getReport({ organizationId: orgB, now: reportNow });
   assert.equal(isolatedBookingReport.linkedConfirmedBookings, "0", "a hotel report must never include another tenant's matches");
+  const ownerReportResponse = await fetch(baseUrl + "/api/admin/booking-attribution/report", { headers: { cookie: cookieA } });
+  assert.equal(ownerReportResponse.status, 200, "an authenticated workspace owner can read its booking attribution report");
+  const ownerReportBody = await ownerReportResponse.json();
+  assert.equal(ownerReportBody.linkedConfirmedBookings, "2");
+  assert.equal(ownerReportBody.distinctLinkedConversations, "2");
+  assert.equal("guestEmail" in ownerReportBody, false, "aggregate reports must not expose guest identifiers");
+  const otherHotelReportResponse = await fetch(baseUrl + "/api/admin/booking-attribution/report", { headers: { cookie: cookieB } });
+  assert.equal(otherHotelReportResponse.status, 200);
+  const otherHotelReportBody = await otherHotelReportResponse.json();
+  assert.equal(otherHotelReportBody.linkedConfirmedBookings, "0", "the HTTP report must remain tenant scoped");
 
   await pool.query("DELETE FROM conversations WHERE id=$1 AND organization_id=$2", [correlationConversationId, orgA]);
   const retainedMatch = await pool.query(

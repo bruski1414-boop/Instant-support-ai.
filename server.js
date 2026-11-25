@@ -17,12 +17,14 @@ const {PmsIntegrationError,createPmsRegistry,createSandboxAdapter}=require("./pm
 const {createPmsCredentialVault}=require("./pms-credential-vault");
 const {deliverStaffEscalation}=require("./staff-notifications");
 const {encryptWebhookConfig,decryptWebhookConfig,resolvePublicWebhook,postSignedWebhook}=require("./staff-webhook-security");
+const {createBookingAttributionReportStore}=require("./booking-attribution-report");
 const app=express();
 const PORT=Number(process.env.PORT||3000);
 const MODEL=process.env.OPENAI_MODEL||"gpt-4.1-mini";
 const origins=(process.env.ALLOWED_ORIGINS||"http://localhost:3000,http://127.0.0.1:3000").split(",").map(x=>x.trim()).filter(Boolean);
 const ai=process.env.OPENAI_API_KEY?new OpenAI({apiKey:process.env.OPENAI_API_KEY}):null;
 const db=process.env.DATABASE_URL?new Pool({connectionString:process.env.DATABASE_URL,ssl:process.env.DATABASE_SSL==="false"?false:{rejectUnauthorized:false},max:5,connectionTimeoutMillis:5000}):null;
+const bookingAttributionReportStore=db?createBookingAttributionReportStore({pool:db}):null;
 const pmsRegistry=createPmsRegistry([createSandboxAdapter()]);
 const pmsCredentialVault=createPmsCredentialVault();
 const scrypt=promisify(crypto.scrypt);
@@ -289,6 +291,8 @@ const knowledgeCoverage=intents.rows.map(row=>{
  return {topic:row.topic,guest_conversations:row.conversations,approved_documents:docs.reduce((n,x)=>n+Number(x.current_approved||0),0),documents_needing_review:docs.reduce((n,x)=>n+Number(x.needs_review||0),0)};
 });
 r.json({periodDays:30,metrics:metrics.rows[0],topics:intents.rows,handoffTopics:handoffs.rows,daily:daily.rows,knowledgeCoverage,responseLatency:responseLatency.rows[0],staffResponseLatency:staffResponseLatency.rows[0],staffWorkload:staffWorkload.rows});}catch(e){n(e);}});
+
+app.get("/api/admin/booking-attribution/report",requireDb,auth,role("owner","admin"),async(q,r,n)=>{try{const report=await bookingAttributionReportStore.getReport({organizationId:q.actor.organization_id});r.json(report);}catch(e){n(e);}});
 
 app.get("/api/admin/offers",requireDb,auth,role("owner","admin"),async(q,r,n)=>{try{const x=await db.query("SELECT id,name,description,category,amount_minor,currency,status,availability_status,availability_verified_at,expires_at,updated_at FROM hotel_offers WHERE organization_id=$1 ORDER BY updated_at DESC",[q.actor.organization_id]);r.json({offers:x.rows});}catch(e){n(e);}});
 function validateOfferInput(b){const categories=["dining","spa","transport","room_upgrade","experience"];const name=typeof b.name==="string"?b.name.trim():"",description=typeof b.description==="string"?b.description.trim():"",category=b.category,currency=typeof b.currency==="string"?b.currency.trim().toUpperCase():"",amount=Number(b.amount_minor),expires=typeof b.expires_at==="string"?Date.parse(b.expires_at):NaN,status=b.status||"paused",verify=b.verify_availability===true;if(name.length<2||name.length>120||description.length<5||description.length>400||!categories.includes(category)||!Number.isSafeInteger(amount)||amount<0||!/^[A-Z]{3}$/.test(currency)||!Number.isFinite(expires)||expires<=Date.now()||!["active","paused"].includes(status))return null;return{name,description,category,amount,currency,status,availability:verify?"available":"unknown",verifiedAt:verify?new Date().toISOString():null,expiresAt:new Date(expires).toISOString()};}

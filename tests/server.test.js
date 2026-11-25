@@ -515,3 +515,27 @@ test("staff handoff replies are tenant-scoped, audited and record first response
 
  assert.match(server,/percentile_cont\(0\.95\) WITHIN GROUP\(ORDER BY EXTRACT\(EPOCH FROM \(first_staff_response_at-created_at\)\)\*1000\)/);
 });
+
+
+test("provider-linked booking report fails closed when the database is unavailable", async () => {
+  const response = await fetch(`${baseUrl}/api/admin/booking-attribution/report`);
+  assert.equal(response.status, 503);
+});
+
+test("provider-linked booking report is owner/admin-only and labels booking value separately from revenue", () => {
+  const server = fs.readFileSync("server.js", "utf8");
+  const report = fs.readFileSync("booking-attribution-report.js", "utf8");
+  const dashboard = fs.readFileSync("dashboard.html", "utf8");
+  assert.match(server, /app\\.get\\("\\/api\\/admin\\/booking-attribution\\/report",requireDb,auth,role\\("owner","admin"\\)/);
+  assert.match(server, /bookingAttributionReportStore\\.getReport\\(\\{organizationId:q\\.actor\\.organization_id\\}\\)/);
+  assert.match(report, /WHERE organization_id=\\$1/);
+  assert.match(report, /occurred_at >= \\$2::timestamptz/);
+  assert.match(report, /occurred_at < \\$3::timestamptz/);
+  assert.match(report, /conversation_id IS NOT NULL/);
+  assert.match(dashboard, /id="bookingAttributionSection"/);
+  assert.match(dashboard, /Provider-linked confirmed bookings/);
+  assert.match(dashboard, /Provider-reported booking value is not paid revenue/);
+  assert.match(dashboard, /Influenced conversations: not measured/);
+  assert.match(dashboard, /Staff time saved: not calculated/);
+  assert.match(dashboard, /formatMinorUnits/);
+});

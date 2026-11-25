@@ -7,7 +7,7 @@ const { loadApprovedKnowledge } = knowledgeLoader;
 import pmsIntegration from "../pms-integration.js";
 const { recordWebhookEvent } = pmsIntegration;
 import bookingAttribution from "../booking-attribution.js";
-const { createVerifiedReservationEvidence } = bookingAttribution;
+const { createVerifiedReservationEvidence, hashBookingAttributionToken } = bookingAttribution;
 import bookingAttributionStore from "../booking-attribution-store.js";
 const { createBookingAttributionStore } = bookingAttributionStore;
 const { Pool } = pg;
@@ -388,7 +388,7 @@ try {
   );
   assert.equal(persistedIntent.rowCount, 1);
   assert.equal(persistedIntent.rows[0].token_hash.length, 64);
-  assert.equal(persistedIntent.rows[0].token_hash, require("../booking-attribution").hashBookingAttributionToken(issuedIntent.oneTimeToken));
+  assert.equal(persistedIntent.rows[0].token_hash, hashBookingAttributionToken(issuedIntent.oneTimeToken));
   assert.equal(JSON.stringify(persistedIntent.rows).includes(issuedIntent.oneTimeToken), false, "plaintext correlation token must never be persisted");
 
   await assert.rejects(

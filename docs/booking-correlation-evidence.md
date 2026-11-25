@@ -31,3 +31,18 @@ This is a data-model and synthetic-test foundation only. No production booking p
 - Cancellation, no-show, partial refund and payment settlement events require separate adjustment/reconciliation logic before any booking value is reported as net revenue.
 
 All fixtures and integration events are synthetic and labelled as such.
+
+
+## Owner/admin booking attribution report
+
+The read-only endpoint `GET /api/admin/booking-attribution/report` is restricted to authenticated workspace owners and administrators. It returns a rolling 720-hour UTC window with an inclusive start and exclusive end, computed by the server.
+
+- `linkedConfirmedBookings` counts provider-confirmed reservation matches that still have a conversation link.
+- `distinctLinkedConversations` counts distinct Veyra conversations among those matches. It is not a conversion rate or an influenced-conversation count.
+- `retainedUnlinkedReservationRecords` counts provider reservation evidence whose conversation link was removed by conversation retention/deletion. These records are excluded from linked counts and booking-value totals.
+- `providerReportedBookingValueByCurrency` groups the provider-supplied booking value at the matched event by currency using exact integer minor units. It is booking value, not settled payment, net revenue, profit or incremental revenue.
+- Influenced conversations remain `not_measured`; estimated staff time saved remains `not_calculated`.
+
+The dashboard section is visible only to owners and administrators. Staff roles do not call the financial booking-value report endpoint. The report contains aggregate counts and currency totals only; it does not return guest or conversation identifiers.
+
+This report does not reconcile later reservation cancellations, no-shows, payment settlement, refunds or chargebacks, and therefore does not claim current reservation status or realised revenue. The report route is read-only; it does not issue correlation tokens, accept provider webhooks or connect to a booking provider. Until a trusted provider adapter and token-carrying booking flow are approved and implemented, synthetic integration tests are the only exercised source of matches.

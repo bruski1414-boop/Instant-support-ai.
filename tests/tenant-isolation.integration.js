@@ -517,6 +517,7 @@ try {
     event: {
       ...providerEvent,
       eventId: "synthetic-current-event-" + tag,
+      occurredAt: new Date().toISOString(),
       reservationId: "synthetic-current-booking-" + tag,
       attributionToken: replacementToken.oneTimeToken,
     },

@@ -475,6 +475,59 @@ try {
     [orgA, matchedBooking.match.id],
   );
   assert.equal(matchAudit.rows[0].count, 1, "a successful match must have one audit entry");
+  const refreshConversation = await pool.query(
+    "INSERT INTO conversations(organization_id,channel,status) VALUES($1,'website','open') RETURNING id",
+    [orgA],
+  );
+  const firstToken = await bookingStore.issueIntent({
+    organizationId: orgA,
+    conversationId: refreshConversation.rows[0].id,
+    issuedAt: new Date(Date.now() - 60_000).toISOString(),
+    ttlMs: 24 * 60 * 60 * 1000,
+  });
+  const replacementToken = await bookingStore.issueIntent({
+    organizationId: orgA,
+    conversationId: refreshConversation.rows[0].id,
+    issuedAt: new Date().toISOString(),
+    ttlMs: 24 * 60 * 60 * 1000,
+  });
+  const revokedIntent = await pool.query(
+    "SELECT revoked_at FROM booking_attribution_intents WHERE id=$1 AND organization_id=$2",
+    [firstToken.intentId, orgA],
+  );
+  assert.ok(revokedIntent.rows[0].revoked_at, "issuing a replacement must retain and revoke the previous token record");
+  const staleTokenEvidence = await createVerifiedReservationEvidence({
+    provider: "synthetic-pms",
+    event: {
+      ...providerEvent,
+      eventId: "synthetic-revoked-event-" + tag,
+      reservationId: "synthetic-revoked-booking-" + tag,
+      attributionToken: firstToken.oneTimeToken,
+    },
+    verify: async ({ event }) => event.syntheticVerifierMarker === "fixture-valid"
+      ? { verified: true, method: "api_readback" }
+      : { verified: false },
+  });
+  assert.equal((await bookingStore.consumeConfirmedReservation({
+    organizationId: orgA,
+    verifiedEvidence: staleTokenEvidence,
+  })).status, "unmatched", "a revoked token must never match a later reservation");
+  const currentTokenEvidence = await createVerifiedReservationEvidence({
+    provider: "synthetic-pms",
+    event: {
+      ...providerEvent,
+      eventId: "synthetic-current-event-" + tag,
+      reservationId: "synthetic-current-booking-" + tag,
+      attributionToken: replacementToken.oneTimeToken,
+    },
+    verify: async ({ event }) => event.syntheticVerifierMarker === "fixture-valid"
+      ? { verified: true, method: "api_readback" }
+      : { verified: false },
+  });
+  assert.equal((await bookingStore.consumeConfirmedReservation({
+    organizationId: orgA,
+    verifiedEvidence: currentTokenEvidence,
+  })).status, "matched", "the replacement token remains usable");
 
   await pool.query("DELETE FROM conversations WHERE id=$1 AND organization_id=$2", [correlationConversationId, orgA]);
   const retainedMatch = await pool.query(

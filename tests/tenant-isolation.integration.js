@@ -447,8 +447,15 @@ try {
   await assert.rejects(bookingLifecycleStore.recordStatus({organizationId:orgA,verifiedEvidence:conflictingLifecycleEvidence}),/reused with conflicting evidence/);
   const olderLifecycleEvidence=await createVerifiedReservationLifecycleEvidence({organizationId:orgA,provider:"synthetic-pms",event:{...cancelledLifecycleEvent,eventId:"synthetic-out-of-order-status-"+tag,occurredAt:providerEvent.occurredAt,status:"confirmed"},verify:async({event})=>event.syntheticVerifierMarker==="fixture-valid"?{verified:true,method:"api_readback"}:{verified:false}});
   assert.equal((await bookingLifecycleStore.recordStatus({organizationId:orgA,verifiedEvidence:olderLifecycleEvidence})).status,"recorded");
+  const sameTimeConflictEvidence=await createVerifiedReservationLifecycleEvidence({
+    organizationId:orgA,
+    provider:"synthetic-pms",
+    event:{...cancelledLifecycleEvent,eventId:"synthetic-same-time-conflict-"+tag,status:"confirmed"},
+    verify:async({event})=>event.syntheticVerifierMarker==="fixture-valid"?{verified:true,method:"api_readback"}:{verified:false},
+  });
+  assert.equal((await bookingLifecycleStore.recordStatus({organizationId:orgA,verifiedEvidence:sameTimeConflictEvidence})).status,"recorded");
   const lifecycleAudit=await pool.query("SELECT count(*)::int AS count FROM audit_logs WHERE organization_id=$1 AND action='booking_attribution.reservation_status_recorded'",[orgA]);
-  assert.equal(lifecycleAudit.rows[0].count,2);
+  assert.equal(lifecycleAudit.rows[0].count,3);
   await assert.rejects(pool.query("UPDATE booking_reservation_lifecycle_events SET status='confirmed' WHERE organization_id=$1 AND provider_event_id=$2",[orgA,cancelledLifecycleEvent.eventId]),/immutable/);
 
   const replayedBooking = await bookingStore.consumeConfirmedReservation({
@@ -559,7 +566,7 @@ try {
   assert.equal(linkedBookingReport.linkedConfirmedBookings, "2");
   assert.equal(linkedBookingReport.distinctLinkedConversations, "2");
   assert.equal(linkedBookingReport.retainedUnlinkedReservationRecords, "0");
-  assert.deepEqual(linkedBookingReport.latestRecordedReservationStatuses,[{status:"cancelled",bookingCount:"1"},{status:"confirmed",bookingCount:"1"}]);
+  assert.deepEqual(linkedBookingReport.latestRecordedReservationStatuses,[{status:"ambiguous",bookingCount:"1"},{status:"confirmed",bookingCount:"1"}]);
   assert.deepEqual(linkedBookingReport.providerReportedBookingValueByCurrency, [
     { currency: "EUR", amountMinor: "168000", bookingCount: "2" },
   ]);

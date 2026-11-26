@@ -46,3 +46,17 @@ The read-only endpoint `GET /api/admin/booking-attribution/report` is restricted
 The dashboard section is visible only to owners and administrators. Staff roles do not call the financial booking-value report endpoint. The report contains aggregate counts and currency totals only; it does not return guest or conversation identifiers.
 
 This report does not reconcile later reservation cancellations, no-shows, payment settlement, refunds or chargebacks, and therefore does not claim current reservation status or realised revenue. The report route is read-only; it does not issue correlation tokens, accept provider webhooks or connect to a booking provider. Until a trusted provider adapter and token-carrying booking flow are approved and implemented, synthetic integration tests are the only exercised source of matches.
+
+
+## Reservation lifecycle history
+
+A provider-confirmed match now seeds an immutable `confirmed` lifecycle event in the same PostgreSQL transaction as the match and intent consumption. Later provider status changes use the normalized event contract `reservation.status_changed` with one of: `confirmed`, `checked_in`, `checked_out`, `cancelled`, or `no_show`.
+
+- Lifecycle evidence is created only by a configured verifier and is bound to the organization resolved from the trusted provider connection. The persistence store rejects evidence presented for a different hotel.
+- Only allowlisted IDs, status, provider event time and verification method are persisted. Guest names, email addresses, notes and raw provider payloads are discarded.
+- Events are append-only, deduplicated by organization/provider/event ID and written with an audit event in one transaction. Reusing an event ID with different content is rejected.
+- Out-of-order provider events are retained for audit. The report selects the latest provider event time; conflicting different statuses at the same latest timestamp are labelled `ambiguous` rather than guessed.
+- The report adds `latestRecordedReservationStatuses`, grouped for linked reservations in the 720-hour booking cohort. These are the latest verified lifecycle events Veyra has recorded, not a guaranteed live provider status. A missing update is not evidence that a reservation remains confirmed.
+- Booking value remains the provider-reported value at initial confirmation. Lifecycle status does not convert it to settled revenue or silently net it against cancellations.
+
+The lifecycle store is a tested persistence foundation only. No provider webhook or polling route invokes it yet. A future adapter must verify the provider event, resolve exactly one hotel connection, normalize the provider's documented status semantics and then call the store. No live provider data was used.

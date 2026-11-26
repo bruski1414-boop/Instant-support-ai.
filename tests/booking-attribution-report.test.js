@@ -19,6 +19,10 @@ test("booking attribution report uses an exact 720-hour UTC window and preserves
           booking_value_by_currency: [
             { currency: "EUR", amountMinor: "168000", bookingCount: "2" },
             { currency: "JPY", amountMinor: "84000", bookingCount: "1" }
+          ],
+          latest_reservation_statuses: [
+            { status: "cancelled", bookingCount: "1" },
+            { status: "confirmed", bookingCount: "1" }
           ]
         }]
       };
@@ -48,6 +52,11 @@ test("booking attribution report uses an exact 720-hour UTC window and preserves
     { currency: "EUR", amountMinor: "168000", bookingCount: "2" },
     { currency: "JPY", amountMinor: "84000", bookingCount: "1" }
   ]);
+  assert.deepEqual(report.latestRecordedReservationStatuses, [
+    { status: "cancelled", bookingCount: "1" },
+    { status: "confirmed", bookingCount: "1" }
+  ]);
+  assert.match(report.notice, /not a guaranteed live provider status/);
   assert.equal(report.influencedConversations, "not_measured");
   assert.equal(report.estimatedStaffTimeSaved, "not_calculated");
   assert.equal(report.window.timezone, "UTC");
@@ -68,7 +77,7 @@ test("booking attribution report rejects invalid tenant and time inputs before q
 
 test("booking attribution report fails closed when the database result is malformed", async () => {
   const store = createBookingAttributionReportStore({
-    pool: { query: async () => ({ rows: [{ linked_confirmed_bookings: "not-a-count", booking_value_by_currency: [] }] }) }
+    pool: { query: async () => ({ rows: [{ linked_confirmed_bookings: "not-a-count", booking_value_by_currency: [], latest_reservation_statuses: [] }] }) }
   });
   await assert.rejects(
     store.getReport({ organizationId: ORGANIZATION_ID, now: new Date("2026-11-25T16:00:00.000Z") }),

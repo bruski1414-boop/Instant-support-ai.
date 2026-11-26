@@ -533,7 +533,9 @@ test("provider-linked booking report is owner/admin-only and labels booking valu
   assert.ok(report.includes("occurred_at < $3::timestamptz"));
   assert.ok(report.includes("conversation_id IS NOT NULL"));
   assert.ok(dashboard.includes('id="bookingAttributionSection"'));
-  assert.ok(dashboard.includes("Provider-linked confirmed bookings"));
+  assert.ok(dashboard.includes("Provider-linked reservation matches"));
+  assert.ok(dashboard.includes("Latest recorded reservation status"));
+  assert.ok(dashboard.includes("not guaranteed live"));
   assert.ok(dashboard.includes("Provider-reported booking value is not paid revenue"));
   assert.ok(dashboard.includes("Influenced conversations: not measured"));
   assert.ok(dashboard.includes("Staff time saved: not calculated"));

@@ -8,6 +8,10 @@ import pmsIntegration from "../pms-integration.js";
 const { recordWebhookEvent } = pmsIntegration;
 import bookingAttribution from "../booking-attribution.js";
 const { createVerifiedReservationEvidence, hashBookingAttributionToken } = bookingAttribution;
+import bookingReservationLifecycle from "../booking-reservation-lifecycle.js";
+const { createVerifiedReservationLifecycleEvidence } = bookingReservationLifecycle;
+import bookingReservationLifecycleStore from "../booking-reservation-lifecycle-store.js";
+const { createBookingReservationLifecycleStore } = bookingReservationLifecycleStore;
 import bookingAttributionStore from "../booking-attribution-store.js";
 const { createBookingAttributionStore } = bookingAttributionStore;
 import bookingAttributionReport from "../booking-attribution-report.js";
@@ -373,6 +377,7 @@ try {
   const orgB = (await pool.query("SELECT id FROM organizations WHERE slug=$1", [tenants[1].slug])).rows[0].id;
   const bookingStore = createBookingAttributionStore({ pool });
   const bookingReportStore = createBookingAttributionReportStore({ pool });
+  const bookingLifecycleStore = createBookingReservationLifecycleStore({ pool });
   const correlationConversation = await pool.query(
     "INSERT INTO conversations(organization_id,channel,status) VALUES($1,'website','open') RETURNING id",
     [orgA],
@@ -429,6 +434,22 @@ try {
   assert.equal(matchedBooking.match.bookingValue.amountMinor, 84000);
   assert.equal(matchedBooking.match.verificationMethod, "api_readback");
   assert.equal(JSON.stringify(matchedBooking).includes("must-not-be-persisted"), false);
+  const initialLifecycle = await pool.query("SELECT status FROM booking_reservation_lifecycle_events WHERE organization_id=$1 AND provider=$2 AND provider_event_id=$3",[orgA,"synthetic-pms",providerEvent.eventId]);
+  assert.equal(initialLifecycle.rowCount,1);
+  assert.equal(initialLifecycle.rows[0].status,"confirmed");
+  const cancelledLifecycleEvent={eventId:"synthetic-cancelled-status-"+tag,eventType:"reservation.status_changed",occurredAt:new Date(Date.parse(providerEvent.occurredAt)+2000).toISOString(),reservationId:providerEvent.reservationId,status:"cancelled",syntheticVerifierMarker:"fixture-valid",guestName:"Synthetic Guest"};
+  const cancelledLifecycleEvidence=await createVerifiedReservationLifecycleEvidence({organizationId:orgA,provider:"synthetic-pms",event:cancelledLifecycleEvent,verify:async({event})=>event.syntheticVerifierMarker==="fixture-valid"?{verified:true,method:"api_readback"}:{verified:false}});
+  assert.equal("guestName" in cancelledLifecycleEvidence,false);
+  assert.equal((await bookingLifecycleStore.recordStatus({organizationId:orgA,verifiedEvidence:cancelledLifecycleEvidence})).status,"recorded");
+  assert.equal((await bookingLifecycleStore.recordStatus({organizationId:orgA,verifiedEvidence:cancelledLifecycleEvidence})).status,"duplicate");
+  await assert.rejects(bookingLifecycleStore.recordStatus({organizationId:orgB,verifiedEvidence:cancelledLifecycleEvidence}),/different hotel workspace/);
+  const conflictingLifecycleEvidence=await createVerifiedReservationLifecycleEvidence({organizationId:orgA,provider:"synthetic-pms",event:{...cancelledLifecycleEvent,status:"confirmed"},verify:async({event})=>event.syntheticVerifierMarker==="fixture-valid"?{verified:true,method:"api_readback"}:{verified:false}});
+  await assert.rejects(bookingLifecycleStore.recordStatus({organizationId:orgA,verifiedEvidence:conflictingLifecycleEvidence}),/reused with conflicting evidence/);
+  const olderLifecycleEvidence=await createVerifiedReservationLifecycleEvidence({organizationId:orgA,provider:"synthetic-pms",event:{...cancelledLifecycleEvent,eventId:"synthetic-out-of-order-status-"+tag,occurredAt:providerEvent.occurredAt,status:"confirmed"},verify:async({event})=>event.syntheticVerifierMarker==="fixture-valid"?{verified:true,method:"api_readback"}:{verified:false}});
+  assert.equal((await bookingLifecycleStore.recordStatus({organizationId:orgA,verifiedEvidence:olderLifecycleEvidence})).status,"recorded");
+  const lifecycleAudit=await pool.query("SELECT count(*)::int AS count FROM audit_logs WHERE organization_id=$1 AND action='booking_attribution.reservation_status_recorded'",[orgA]);
+  assert.equal(lifecycleAudit.rows[0].count,2);
+  await assert.rejects(pool.query("UPDATE booking_reservation_lifecycle_events SET status='confirmed' WHERE organization_id=$1 AND provider_event_id=$2",[orgA,cancelledLifecycleEvent.eventId]),/immutable/);
 
   const replayedBooking = await bookingStore.consumeConfirmedReservation({
     organizationId: orgA,
@@ -538,6 +559,7 @@ try {
   assert.equal(linkedBookingReport.linkedConfirmedBookings, "2");
   assert.equal(linkedBookingReport.distinctLinkedConversations, "2");
   assert.equal(linkedBookingReport.retainedUnlinkedReservationRecords, "0");
+  assert.deepEqual(linkedBookingReport.latestRecordedReservationStatuses,[{status:"cancelled",bookingCount:"1"},{status:"confirmed",bookingCount:"1"}]);
   assert.deepEqual(linkedBookingReport.providerReportedBookingValueByCurrency, [
     { currency: "EUR", amountMinor: "168000", bookingCount: "2" },
   ]);
@@ -555,6 +577,7 @@ try {
   assert.equal(otherHotelReportResponse.status, 200);
   const otherHotelReportBody = await otherHotelReportResponse.json();
   assert.equal(otherHotelReportBody.linkedConfirmedBookings, "0", "the HTTP report must remain tenant scoped");
+  assert.deepEqual(otherHotelReportBody.latestRecordedReservationStatuses,[]);
 
   await pool.query("DELETE FROM conversations WHERE id=$1 AND organization_id=$2", [correlationConversationId, orgA]);
   const retainedMatch = await pool.query(
@@ -570,6 +593,7 @@ try {
   assert.equal(retainedBookingReport.linkedConfirmedBookings, "1", "deleted conversations must no longer count as linked bookings");
   assert.equal(retainedBookingReport.distinctLinkedConversations, "1");
   assert.equal(retainedBookingReport.retainedUnlinkedReservationRecords, "1", "provider evidence is retained separately after conversation deletion");
+  assert.deepEqual(retainedBookingReport.latestRecordedReservationStatuses,[{status:"confirmed",bookingCount:"1"}]);
   assert.deepEqual(retainedBookingReport.providerReportedBookingValueByCurrency, [
     { currency: "EUR", amountMinor: "84000", bookingCount: "1" },
   ], "detached reservation evidence must not inflate linked booking value");

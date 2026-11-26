@@ -150,6 +150,10 @@ function createBookingAttributionStore({ pool } = {}) {
           match.verificationMethod
         ]
       );
+      await client.query(
+        "INSERT INTO booking_reservation_lifecycle_events(organization_id,provider,provider_event_id,reservation_id,status,occurred_at,verification_method) VALUES($1,$2,$3,$4,'confirmed',$5,$6)",
+        [safeOrganizationId, match.provider, match.providerEventId, match.reservationId, match.occurredAt, match.verificationMethod]
+      );
       const consumed = await client.query(
         "UPDATE booking_attribution_intents SET consumed_at=now(),provider=$3,provider_event_id=$4,reservation_id=$5 WHERE id=$1 AND organization_id=$2 AND consumed_at IS NULL AND revoked_at IS NULL",
         [row.id, safeOrganizationId, match.provider, match.providerEventId, match.reservationId]

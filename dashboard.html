@@ -135,14 +135,17 @@ main{padding:28px clamp(16px,4vw,48px);max-width:1450px;width:100%;margin:auto}.
    <div class="sectionrow"><h2>Operational performance · last 30 days</h2><span class="muted">Rolling period · refreshed on demand</span></div>
    <p class="muted" style="font-size:12px">Conversation and handoff figures cover the rolling 30-day period. Sales figures are all-time staff-confirmed offer attributions and are shown separately. This report does not claim that Veyra caused incremental revenue.</p>
    <div id="bookingAttributionSection" class="hidden">
-    <div class="sectionrow"><h2>Provider-linked confirmed bookings</h2><span class="muted">Rolling 720 hours · UTC</span></div>
-    <p class="muted" style="font-size:12px">A match means a trusted provider verifier confirmed a reservation event that echoed a one-time Veyra correlation token. It does not prove Veyra caused the booking, that payment settled, or that the reservation remains current. Provider-reported booking value is not paid revenue. Cancellations and payment adjustments are not reconciled here. Influenced conversations: not measured. Staff time saved: not calculated.</p>
+    <div class="sectionrow"><h2>Provider-linked reservation matches</h2><span class="muted">Rolling 720 hours · UTC</span></div>
+     <p class="muted" style="font-size:12px">A match means a trusted provider verifier confirmed a reservation event that echoed a one-time Veyra correlation token. It does not prove Veyra caused the booking or that payment settled. The status panel shows the latest verified lifecycle event recorded by Veyra; it may not reflect the provider live state if later events are not delivered. Provider-reported booking value at confirmation is not paid revenue and is not reduced for later cancellations. Influenced conversations: not measured. Staff time saved: not calculated.</p>
     <div class="grid">
-     <div class="card"><div class="metriclabel">LINKED CONFIRMED BOOKINGS</div><div class="metric" id="performanceBookingMatches">—</div></div>
+     <div class="card"><div class="metriclabel">LINKED RESERVATIONS AT CONFIRMATION</div><div class="metric" id="performanceBookingMatches">—</div></div>
      <div class="card"><div class="metriclabel">DISTINCT LINKED CONVERSATIONS</div><div class="metric" id="performanceBookingConversations">—</div></div>
      <div class="card"><div class="metriclabel">RETAINED RECORDS WITHOUT CONVERSATION LINK</div><div class="metric" id="performanceBookingDetached">—</div></div>
     </div>
-    <div class="sectionrow"><h2>Provider-reported booking value</h2><span class="muted">Not settled revenue</span></div>
+     <div class="sectionrow"><h2>Latest recorded reservation status</h2><span class="muted">Verified provider events · not guaranteed live</span></div>
+     <div class="card" id="performanceBookingStatuses"><div class="empty">Loading reservation status history…</div></div>
+     <p class="muted" style="font-size:11px">Statuses are based on the latest verified provider event received for each linked reservation. A missing later event does not prove that a reservation is still confirmed.</p>
+    <div class="sectionrow"><h2>Provider-reported booking value at confirmation</h2><span class="muted">Not settled revenue</span></div>
     <div class="card" id="performanceBookingValue"><div class="empty">Loading provider-reported booking values…</div></div>
     <p class="muted" style="font-size:11px">Reporting window: <span id="performanceBookingWindow">—</span>. Start is inclusive and end is exclusive. Conversation deletions detach the attribution and exclude the retained reservation record from linked counts and booking-value totals.</p>
    </div>
@@ -485,6 +488,9 @@ async function loadPerformanceReport(){
   $("performanceBookingDetached").textContent=String(bookingReport.retainedUnlinkedReservationRecords||"0");
   $("performanceBookingWindow").textContent=bookingReport.window.startInclusive+" to "+bookingReport.window.endExclusive+" UTC (end exclusive)";
   const bookingValues=bookingReport.providerReportedBookingValueByCurrency||[];
+   const reservationStatuses=bookingReport.latestRecordedReservationStatuses||[];
+   const reservationStatusLabels={confirmed:"Confirmed",checked_in:"Checked in",checked_out:"Checked out",cancelled:"Cancelled",no_show:"No-show",unknown:"Unknown",ambiguous:"Conflicting events at same timestamp"};
+   $("performanceBookingStatuses").innerHTML=reservationStatuses.length?reservationStatuses.map(x=>'<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #263449"><span>'+safe(reservationStatusLabels[x.status]||"Unrecognised status")+'</span><strong>'+safe(x.bookingCount)+'</strong></div>').join(""):'<div class="empty">No linked reservation status records in this window.</div>';
   $("performanceBookingValue").innerHTML=bookingValues.length?bookingValues.map(x=>'<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #263449"><span>'+safe(x.currency)+' · '+safe(x.bookingCount)+' bookings</span><strong>'+formatMinorUnits(x.amountMinor,x.currency)+'</strong></div>').join(""):'<div class="empty">No provider-reported booking values in this window.</div>';
  }else if(bookingSection){
   bookingSection.classList.add("hidden");

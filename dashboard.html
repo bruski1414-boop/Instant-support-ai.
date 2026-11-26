@@ -134,6 +134,21 @@ main{padding:28px clamp(16px,4vw,48px);max-width:1450px;width:100%;margin:auto}.
  <section id="panel-performance" class="panel">
    <div class="sectionrow"><h2>Operational performance · last 30 days</h2><span class="muted">Rolling period · refreshed on demand</span></div>
    <p class="muted" style="font-size:12px">Conversation and handoff figures cover the rolling 30-day period. Sales figures are all-time staff-confirmed offer attributions and are shown separately. This report does not claim that Veyra caused incremental revenue.</p>
+   <div id="bookingAttributionSection" class="hidden">
+    <div class="sectionrow"><h2>Provider-linked reservation matches</h2><span class="muted">Rolling 720 hours · UTC</span></div>
+     <p class="muted" style="font-size:12px">A match means a trusted provider verifier confirmed a reservation event that echoed a one-time Veyra correlation token. It does not prove Veyra caused the booking or that payment settled. The status panel shows the latest verified lifecycle event recorded by Veyra; it may not reflect the provider live state if later events are not delivered. Provider-reported booking value at confirmation is not paid revenue and is not reduced for later cancellations. Influenced conversations: not measured. Staff time saved: not calculated.</p>
+    <div class="grid">
+     <div class="card"><div class="metriclabel">LINKED RESERVATIONS AT CONFIRMATION</div><div class="metric" id="performanceBookingMatches">—</div></div>
+     <div class="card"><div class="metriclabel">DISTINCT LINKED CONVERSATIONS</div><div class="metric" id="performanceBookingConversations">—</div></div>
+     <div class="card"><div class="metriclabel">RETAINED RECORDS WITHOUT CONVERSATION LINK</div><div class="metric" id="performanceBookingDetached">—</div></div>
+    </div>
+     <div class="sectionrow"><h2>Latest recorded reservation status</h2><span class="muted">Verified provider events · not guaranteed live</span></div>
+     <div class="card" id="performanceBookingStatuses"><div class="empty">Loading reservation status history…</div></div>
+     <p class="muted" style="font-size:11px">Statuses are based on the latest verified provider event received for each linked reservation. A missing later event does not prove that a reservation is still confirmed.</p>
+    <div class="sectionrow"><h2>Provider-reported booking value at confirmation</h2><span class="muted">Not settled revenue</span></div>
+    <div class="card" id="performanceBookingValue"><div class="empty">Loading provider-reported booking values…</div></div>
+    <p class="muted" style="font-size:11px">Reporting window: <span id="performanceBookingWindow">—</span>. Start is inclusive and end is exclusive. Conversation deletions detach the attribution and exclude the retained reservation record from linked counts and booking-value totals.</p>
+   </div>
    <div class="grid">
     <div class="card"><div class="metriclabel">CONVERSATIONS · 30 DAYS</div><div class="metric" id="performanceConversations">—</div></div>
     <div class="card"><div class="metriclabel">CURRENTLY ESCALATED</div><div class="metric" id="performanceEscalated">—</div></div>
@@ -412,6 +427,18 @@ async function loadOffers(){
 }
 
 function moneyMinor(amount,currency){return (Number(amount||0)/100).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})+" "+safe(currency||"");}
+function formatMinorUnits(amountMinor,currency){
+ try{
+  const amount=BigInt(String(amountMinor||"0"));
+  const probe=new Intl.NumberFormat(undefined,{style:"currency",currency});
+  const digits=probe.resolvedOptions().maximumFractionDigits;
+  const scale=10n**BigInt(digits);
+  const major=amount/scale;
+  const fraction=(amount%scale).toString().padStart(digits,"0");
+  const formatter=new Intl.NumberFormat(undefined,{style:"currency",currency,minimumFractionDigits:digits,maximumFractionDigits:digits});
+  return formatter.formatToParts(major).map(part=>part.type==="fraction"?fraction:part.value).join("");
+ }catch{return safe(amountMinor)+" minor units "+safe(currency);}
+}
 async function loadRevenueAttributions(){
  const d=await api("/api/admin/offer-attributions");
  const rows=d.attributions||[];
@@ -449,7 +476,25 @@ async function loadConversationInsights(){
  $("insightDaily").innerHTML=render(d.daily||[],"day","conversations");
 }
 async function loadPerformanceReport(){
- const [insights,revenue]=await Promise.all([api("/api/admin/insights"),api("/api/admin/offer-attributions")]);
+ const includeBookingAttribution=["owner","admin"].includes(currentRole);
+ const requests=[api("/api/admin/insights"),api("/api/admin/offer-attributions")];
+ if(includeBookingAttribution)requests.push(api("/api/admin/booking-attribution/report"));
+ const [insights,revenue,bookingReport]=await Promise.all(requests);
+ const bookingSection=$("bookingAttributionSection");
+ if(includeBookingAttribution&&bookingReport){
+  bookingSection.classList.remove("hidden");
+  $("performanceBookingMatches").textContent=String(bookingReport.linkedConfirmedBookings||"0");
+  $("performanceBookingConversations").textContent=String(bookingReport.distinctLinkedConversations||"0");
+  $("performanceBookingDetached").textContent=String(bookingReport.retainedUnlinkedReservationRecords||"0");
+  $("performanceBookingWindow").textContent=bookingReport.window.startInclusive+" to "+bookingReport.window.endExclusive+" UTC (end exclusive)";
+  const bookingValues=bookingReport.providerReportedBookingValueByCurrency||[];
+   const reservationStatuses=bookingReport.latestRecordedReservationStatuses||[];
+   const reservationStatusLabels={confirmed:"Confirmed",checked_in:"Checked in",checked_out:"Checked out",cancelled:"Cancelled",no_show:"No-show",unknown:"Unknown",ambiguous:"Conflicting events at same timestamp"};
+   $("performanceBookingStatuses").innerHTML=reservationStatuses.length?reservationStatuses.map(x=>'<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #263449"><span>'+safe(reservationStatusLabels[x.status]||"Unrecognised status")+'</span><strong>'+safe(x.bookingCount)+'</strong></div>').join(""):'<div class="empty">No linked reservation status records in this window.</div>';
+  $("performanceBookingValue").innerHTML=bookingValues.length?bookingValues.map(x=>'<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #263449"><span>'+safe(x.currency)+' · '+safe(x.bookingCount)+' bookings</span><strong>'+formatMinorUnits(x.amountMinor,x.currency)+'</strong></div>').join(""):'<div class="empty">No provider-reported booking values in this window.</div>';
+ }else if(bookingSection){
+  bookingSection.classList.add("hidden");
+ }
  const m=insights.metrics||{},totals=revenue.totals||[];
  $("performanceConversations").textContent=String(m.conversations_30d||0);
  $("performanceEscalated").textContent=String(m.currently_escalated||0);

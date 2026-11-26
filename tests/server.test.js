@@ -515,3 +515,30 @@ test("staff handoff replies are tenant-scoped, audited and record first response
 
  assert.match(server,/percentile_cont\(0\.95\) WITHIN GROUP\(ORDER BY EXTRACT\(EPOCH FROM \(first_staff_response_at-created_at\)\)\*1000\)/);
 });
+
+
+test("provider-linked booking report fails closed when the database is unavailable", async () => {
+  const response = await fetch(`${baseUrl}/api/admin/booking-attribution/report`);
+  assert.equal(response.status, 503);
+});
+
+test("provider-linked booking report is owner/admin-only and labels booking value separately from revenue", () => {
+  const server = fs.readFileSync("server.js", "utf8");
+  const report = fs.readFileSync("booking-attribution-report.js", "utf8");
+  const dashboard = fs.readFileSync("dashboard.html", "utf8");
+  assert.ok(server.includes('app.get("/api/admin/booking-attribution/report",requireDb,auth,role("owner","admin")'));
+  assert.ok(server.includes("bookingAttributionReportStore.getReport({organizationId:q.actor.organization_id})"));
+  assert.ok(report.includes("WHERE m.organization_id=$1"));
+  assert.ok(report.includes("booking_reservation_lifecycle_events"));
+  assert.ok(report.includes("occurred_at >= $2::timestamptz"));
+  assert.ok(report.includes("occurred_at < $3::timestamptz"));
+  assert.ok(report.includes("conversation_id IS NOT NULL"));
+  assert.ok(dashboard.includes('id="bookingAttributionSection"'));
+  assert.ok(dashboard.includes("Provider-linked reservation matches"));
+  assert.ok(dashboard.includes("Latest recorded reservation status"));
+  assert.ok(dashboard.includes("not guaranteed live"));
+  assert.ok(dashboard.includes("Provider-reported booking value at confirmation is not paid revenue"));
+  assert.ok(dashboard.includes("Influenced conversations: not measured"));
+  assert.ok(dashboard.includes("Staff time saved: not calculated"));
+  assert.ok(dashboard.includes("formatMinorUnits"));
+});

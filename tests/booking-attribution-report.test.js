@@ -84,3 +84,19 @@ test("booking attribution report fails closed when the database result is malfor
     /invalid count/
   );
 });
+
+test("booking attribution report rejects unsupported lifecycle status values", async () => {
+  const store = createBookingAttributionReportStore({
+    pool: { query: async () => ({ rows: [{
+      linked_confirmed_bookings: "1",
+      distinct_linked_conversations: "1",
+      retained_unlinked_reservation_records: "0",
+      booking_value_by_currency: [],
+      latest_reservation_statuses: [{ status: "refunded", bookingCount: "1" }]
+    }] }) }
+  });
+  await assert.rejects(
+    store.getReport({ organizationId: ORGANIZATION_ID, now: new Date("2026-11-25T16:00:00.000Z") }),
+    /invalid reservation status totals/
+  );
+});

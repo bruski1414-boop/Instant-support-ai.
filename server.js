@@ -104,10 +104,8 @@ const schema=[
 "CREATE INDEX IF NOT EXISTS booking_reservation_lifecycle_match_time_idx ON booking_reservation_lifecycle_events(organization_id,provider,reservation_id,occurred_at DESC)",
 "INSERT INTO booking_reservation_lifecycle_events(organization_id,provider,provider_event_id,reservation_id,status,occurred_at,verification_method) SELECT organization_id,provider,provider_event_id,reservation_id,'confirmed',occurred_at,verification_method FROM booking_attribution_matches ON CONFLICT(organization_id,provider,provider_event_id) DO NOTHING",
 "CREATE OR REPLACE FUNCTION prevent_booking_reservation_lifecycle_mutation() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'Booking reservation lifecycle events are immutable'; END; $$",
-"DROP TRIGGER IF EXISTS booking_reservation_lifecycle_immutable ON booking_reservation_lifecycle_events",
-"CREATE TRIGGER booking_reservation_lifecycle_immutable BEFORE UPDATE OR DELETE ON booking_reservation_lifecycle_events FOR EACH ROW EXECUTE FUNCTION prevent_booking_reservation_lifecycle_mutation()",
-"DROP TRIGGER IF EXISTS booking_reservation_lifecycle_truncate_immutable ON booking_reservation_lifecycle_events",
-"CREATE TRIGGER booking_reservation_lifecycle_truncate_immutable BEFORE TRUNCATE ON booking_reservation_lifecycle_events FOR EACH STATEMENT EXECUTE FUNCTION prevent_booking_reservation_lifecycle_mutation()",
+"DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid='booking_reservation_lifecycle_events'::regclass AND tgname='booking_reservation_lifecycle_immutable') THEN EXECUTE 'CREATE TRIGGER booking_reservation_lifecycle_immutable BEFORE UPDATE OR DELETE ON booking_reservation_lifecycle_events FOR EACH ROW EXECUTE FUNCTION prevent_booking_reservation_lifecycle_mutation()'; END IF; END $$",
+"DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid='booking_reservation_lifecycle_events'::regclass AND tgname='booking_reservation_lifecycle_truncate_immutable') THEN EXECUTE 'CREATE TRIGGER booking_reservation_lifecycle_truncate_immutable BEFORE TRUNCATE ON booking_reservation_lifecycle_events FOR EACH STATEMENT EXECUTE FUNCTION prevent_booking_reservation_lifecycle_mutation()'; END IF; END $$",
 ].join(";\n")+";";
 function hash(v){return crypto.createHash("sha256").update(v).digest("hex");}
 function equal(a,b){const x=Buffer.from(String(a||"")),y=Buffer.from(String(b||""));return x.length===y.length&&crypto.timingSafeEqual(x,y);}

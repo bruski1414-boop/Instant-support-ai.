@@ -528,7 +528,8 @@ test("provider-linked booking report is owner/admin-only and labels booking valu
   const dashboard = fs.readFileSync("dashboard.html", "utf8");
   assert.ok(server.includes('app.get("/api/admin/booking-attribution/report",requireDb,auth,role("owner","admin")'));
   assert.ok(server.includes("bookingAttributionReportStore.getReport({organizationId:q.actor.organization_id})"));
-  assert.ok(report.includes("WHERE organization_id=$1"));
+  assert.ok(report.includes("WHERE m.organization_id=$1"));
+  assert.ok(report.includes("booking_reservation_lifecycle_events"));
   assert.ok(report.includes("occurred_at >= $2::timestamptz"));
   assert.ok(report.includes("occurred_at < $3::timestamptz"));
   assert.ok(report.includes("conversation_id IS NOT NULL"));
@@ -536,7 +537,7 @@ test("provider-linked booking report is owner/admin-only and labels booking valu
   assert.ok(dashboard.includes("Provider-linked reservation matches"));
   assert.ok(dashboard.includes("Latest recorded reservation status"));
   assert.ok(dashboard.includes("not guaranteed live"));
-  assert.ok(dashboard.includes("Provider-reported booking value is not paid revenue"));
+  assert.ok(dashboard.includes("Provider-reported booking value at confirmation is not paid revenue"));
   assert.ok(dashboard.includes("Influenced conversations: not measured"));
   assert.ok(dashboard.includes("Staff time saved: not calculated"));
   assert.ok(dashboard.includes("formatMinorUnits"));

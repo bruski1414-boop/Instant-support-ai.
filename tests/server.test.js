@@ -301,7 +301,12 @@ test("hotel profile email validation accepts ordinary staff email addresses", ()
 test("provider import purge requires explicit confirmation and deletes only this hotel's provider-sourced knowledge and versions", () => {
   const storage = fs.readFileSync("storage-integrations.js", "utf8");
   assert.match(storage, /router\.delete\("\/imports\/:provider", auth, role\("owner", "admin"\)/);
+  const purgeRoute = storage.slice(storage.indexOf('router.delete("/imports/:provider"'));
   assert.match(storage, /req\.body\?\.confirm !== true/);
+  assert.match(purgeRoute, /let client;/);
+  assert.match(purgeRoute, /client = await db.connect\(\)/);
+  assert.match(purgeRoute, /if \(client\) await client.query\("ROLLBACK"\)/);
+  assert.match(purgeRoute, /finally \{ if \(client\) client.release\(\); \}/);
   assert.match(storage, /WHERE organization_id=\$1 AND source_reference LIKE \$2 FOR UPDATE/);
   assert.match(storage, /DELETE FROM knowledge_document_versions WHERE organization_id=\$1 AND document_id=ANY\(\$2::uuid\[\]\)/);
   assert.match(storage, /DELETE FROM knowledge_documents WHERE organization_id=\$1 AND id=ANY\(\$2::uuid\[\]\)/);

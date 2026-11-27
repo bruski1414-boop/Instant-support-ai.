@@ -309,6 +309,20 @@ test("provider import purge requires explicit confirmation and deletes only this
 });
 
 
+test("storage disconnect removes local credentials and connection state atomically without purging imported knowledge", () => {
+  const storage = fs.readFileSync("storage-integrations.js", "utf8");
+  const route = storage.slice(storage.indexOf('router.delete("/connections/:provider"'));
+  assert.match(route, /const client = await db.connect\(\)/);
+  assert.match(route, /await client.query\("BEGIN"\)/);
+  assert.match(route, /DELETE FROM storage_connections WHERE organization_id=\$1 AND provider=\$2/);
+  assert.match(route, /DELETE FROM organization_storage_connections WHERE organization_id=\$1 AND provider=\$2/);
+  assert.match(route, /DELETE FROM storage_oauth_states WHERE organization_id=\$1 AND provider=\$2/);
+  assert.match(route, /await client.query\("COMMIT"\)/);
+  assert.match(route, /await client.query\("ROLLBACK"\)/);
+  assert.match(route, /localCredentialsDeleted: Boolean\(result.rowCount\)/);
+  assert.match(route, /importedCopiesPreserved: true/);
+});
+
 test("hotel storage dashboard distinguishes disconnect from explicit imported-copy deletion", () => {
   const dashboard = fs.readFileSync("dashboard.html", "utf8");
   assert.match(dashboard, /data-storage-purge="google"/);

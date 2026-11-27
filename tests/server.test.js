@@ -209,6 +209,13 @@ test("retention policy is tenant-controlled, disabled by default and requires ex
   assert.match(dashboard, /Permanently delete eligible resolved conversations/);
 });
 
+test("backup readiness cannot be enabled by an environment flag without verified restore evidence", () => {
+  const server = fs.readFileSync("server.js", "utf8");
+  const readiness = server.slice(server.indexOf("async function readinessSnapshot"), server.indexOf('app.get("/api/health"'));
+  assert.match(readiness, /durableBackupsVerified:false/);
+  assert.doesNotMatch(readiness, /DURABLE_BACKUPS_VERIFIED/);
+});
+
 test("health endpoint cannot report pilot readiness with missing prerequisites", async () => {
   const response = await fetch(`${baseUrl}/api/health`);
   const body = await response.json();

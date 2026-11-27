@@ -81,8 +81,9 @@ function createStorageRouter({ db, auth, role, audit }) {
     const { code, state, error } = req.query;
     if (error || typeof code !== "string" || code.length > 4096 || typeof state !== "string" || state.length > 200) return res.redirect("/dashboard.html?storage=cancelled");
     const stateHash = crypto.createHash("sha256").update(state).digest("hex");
-    const client = await db.connect();
+    let client;
     try {
+      client = await db.connect();
       await client.query("BEGIN");
       const found = await client.query(
         "DELETE FROM storage_oauth_states WHERE state_hash=$1 AND expires_at>now() RETURNING organization_id,user_id,provider,code_verifier",
@@ -299,9 +300,9 @@ function createStorageRouter({ db, auth, role, audit }) {
       await client.query("COMMIT");
       res.json({ disconnected: Boolean(result.rowCount), localCredentialsDeleted: Boolean(result.rowCount), importedCopiesPreserved: true });
     } catch (e) {
-      await client.query("ROLLBACK").catch(() => {});
+      if (client) await client.query("ROLLBACK").catch(() => {});
       res.status(500).json({ error: "Could not disconnect storage." });
-    } finally { client.release(); }
+    } finally { if (client) client.release(); }
   });
 
   return router;

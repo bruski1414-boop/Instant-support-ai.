@@ -98,6 +98,22 @@ async function readTranscript(cookie, conversationId) {
   });
 }
 
+async function seedRetentionConversation(tenant, daysOld, withOpenEscalation = false) {
+  const org = await pool.query("SELECT id FROM organizations WHERE slug=$1", [tenant.slug]);
+  const inserted = await pool.query(
+    "INSERT INTO conversations(organization_id,channel,status,started_at,last_message_at) VALUES($1,'website','resolved',now()-($2::int*interval '1 day'),now()-($2::int*interval '1 day')) RETURNING id",
+    [org.rows[0].id, daysOld]
+  );
+  const conversationId = inserted.rows[0].id;
+  if (withOpenEscalation) {
+    await pool.query(
+      "INSERT INTO escalations(organization_id,conversation_id,reason,status) VALUES($1,$2,'Retention test open handoff','open')",
+      [org.rows[0].id, conversationId]
+    );
+  }
+  return conversationId;
+}
+
 async function seedKnowledge(tenant) {
   const org = await pool.query("SELECT id FROM organizations WHERE slug=$1", [tenant.slug]);
   const title = "Private policy " + tenant.name;
@@ -349,6 +365,59 @@ try {
   assert.equal(crossAtoB.status, 404, "tenant A must not read tenant B's conversation");
   const crossBtoA = await readTranscript(cookieB, tenants[0].conversationId);
   assert.equal(crossBtoA.status, 404, "tenant B must not read tenant A's conversation");
+
+  const retentionDefaultA = await fetch(baseUrl + "/api/admin/retention", { headers: { cookie: cookieA } });
+  const retentionDefaultABody = await retentionDefaultA.json();
+  assert.equal(retentionDefaultA.status, 200);
+  assert.equal(retentionDefaultABody.retentionDays, 0, "new hotel retention must be disabled by default");
+  assert.equal(retentionDefaultABody.enabled, false, "new hotel must not run cleanup without an approved policy");
+
+  const oldEligibleA = await seedRetentionConversation(tenants[0], 45);
+  const oldProtectedA = await seedRetentionConversation(tenants[0], 45, true);
+  const oldEligibleB = await seedRetentionConversation(tenants[1], 45);
+  for (const [cookie, tenant] of [[cookieA, tenants[0]], [cookieB, tenants[1]]]) {
+    const savePolicy = await fetch(baseUrl + "/api/admin/retention", {
+      method: "PUT",
+      headers: { cookie, "X-CSRF-Token": tenant.csrfToken, "content-type": "application/json" },
+      body: JSON.stringify({ retentionDays: 30 }),
+    });
+    assert.equal(savePolicy.status, 200, "each hotel owner can save its own retention policy");
+  }
+
+  const previewA = await fetch(baseUrl + "/api/admin/retention", { headers: { cookie: cookieA } });
+  const previewABody = await previewA.json();
+  assert.equal(previewABody.eligibleConversations, 1, "tenant A preview must exclude conversations with open escalations");
+  const previewB = await fetch(baseUrl + "/api/admin/retention", { headers: { cookie: cookieB } });
+  const previewBBody = await previewB.json();
+  assert.equal(previewBBody.eligibleConversations, 1, "tenant B preview must include only its own eligible conversation");
+
+  const unconfirmedCleanup = await fetch(baseUrl + "/api/admin/retention/cleanup", {
+    method: "POST",
+    headers: { cookie: cookieA, "X-CSRF-Token": tenants[0].csrfToken, "content-type": "application/json" },
+    body: JSON.stringify({}),
+  });
+  assert.equal(unconfirmedCleanup.status, 400, "retention cleanup must require explicit confirmation");
+
+  const cleanupA = await fetch(baseUrl + "/api/admin/retention/cleanup", {
+    method: "POST",
+    headers: { cookie: cookieA, "X-CSRF-Token": tenants[0].csrfToken, "content-type": "application/json" },
+    body: JSON.stringify({ confirm: true }),
+  });
+  assert.equal(cleanupA.status, 200);
+  const cleanupABody = await cleanupA.json();
+  assert.equal(cleanupABody.deleted, 1, "tenant A cleanup must delete only its eligible resolved conversation");
+
+  const deletedEligibleA = await pool.query("SELECT id FROM conversations WHERE id=$1", [oldEligibleA]);
+  const preservedEscalatedA = await pool.query("SELECT id FROM conversations WHERE id=$1", [oldProtectedA]);
+  const preservedEligibleB = await pool.query("SELECT id FROM conversations WHERE id=$1", [oldEligibleB]);
+  assert.equal(deletedEligibleA.rowCount, 0, "eligible tenant A conversation should be deleted");
+  assert.equal(preservedEscalatedA.rowCount, 1, "conversation with an open staff escalation must be retained");
+  assert.equal(preservedEligibleB.rowCount, 1, "tenant A cleanup must never delete tenant B conversations");
+  const cleanupAudit = await pool.query(
+    "SELECT id FROM audit_logs WHERE organization_id=(SELECT id FROM organizations WHERE slug=$1) AND action='retention.cleanup_executed' AND target_type='conversation_batch' AND target_id='1'",
+    [tenants[0].slug]
+  );
+  assert.equal(cleanupAudit.rowCount, 1, "retention cleanup must leave a tenant-scoped audit record");
 
   const ownKnowledgeA = await readKnowledgeVersions(cookieA, tenants[0].knowledgeId);
   assert.equal(ownKnowledgeA.status, 200, "tenant A must read its own knowledge history");

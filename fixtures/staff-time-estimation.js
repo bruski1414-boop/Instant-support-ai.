@@ -16,7 +16,7 @@ const baseline = createHotelStaffTimeBaseline({
   sampleWindowStart: "2026-10-01T00:00:00.000Z",
   sampleWindowEnd: "2026-10-31T23:59:59.999Z",
   attestedBy,
-  attestedAt: "2026-11-01T00:00:00.000Z",
+  attestedAt: "2026-10-31T23:59:59.999Z",
   reviewDueAt: "2026-12-01T00:00:00.000Z"
 });
 

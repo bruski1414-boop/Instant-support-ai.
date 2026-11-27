@@ -324,6 +324,13 @@ test("storage disconnect removes local credentials and connection state atomical
   assert.match(route, /importedCopiesPreserved: true/);
 });
 
+test("storage disconnect warns that provider-side OAuth access and imported copies need separate removal", () => {
+  const dashboard = fs.readFileSync("dashboard.html", "utf8");
+  assert.match(dashboard, /may not revoke the app's access at Google\/Microsoft/);
+  assert.match(dashboard, /Remove Veyra from that provider's connected-app settings too/);
+  assert.match(dashboard, /Veyra credentials removed\. Check provider app access too/);
+});
+
 test("hotel storage dashboard distinguishes disconnect from explicit imported-copy deletion", () => {
   const dashboard = fs.readFileSync("dashboard.html", "utf8");
   assert.match(dashboard, /data-storage-purge="google"/);

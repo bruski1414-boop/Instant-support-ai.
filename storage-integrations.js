@@ -254,8 +254,9 @@ function createStorageRouter({ db, auth, role, audit }) {
     const provider = req.params.provider;
     if (!providerValid(provider)) return safeError(res, "Unsupported storage provider.");
     if (req.body?.confirm !== true) return safeError(res, "Explicit confirmation is required to delete imported copies.", 400);
-    const client = await db.connect();
+    let client;
     try {
+      client = await db.connect();
       await client.query("BEGIN");
       const documents = await client.query(
         "SELECT id FROM knowledge_documents WHERE organization_id=$1 AND source_reference LIKE $2 FOR UPDATE",

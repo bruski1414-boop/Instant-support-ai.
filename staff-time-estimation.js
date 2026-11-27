@@ -1,6 +1,6 @@
 "use strict";
 
-const { randomUUID } = require("node:crypto");
+const { randomUUID, createHash } = require("node:crypto");
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/;
@@ -19,7 +19,7 @@ function requiredUuid(value, field) {
 }
 
 function requiredOpaqueId(value, field) {
-  if (typeof value !== "string" || !OPAQUE_ID.test(value.trim()) || /^https?:/i.test(value.trim())) {
+  if (typeof value !== "string" || !OPAQUE_ID.test(value.trim()) || /^https?:/i.test(value.trim()) || !/[0-9._:-]/.test(value.trim())) {
     throw new Error(field + " must be an opaque, non-URL reference.");
   }
   return value.trim();
@@ -61,6 +61,7 @@ function createHotelStaffTimeBaseline(input = {}) {
   }
 
   const evidenceReference = requiredOpaqueId(input.evidenceReference, "evidenceReference");
+  const evidenceReferenceHash = createHash("sha256").update(evidenceReference).digest("hex");
   const sampleWindowStart = requiredUtc(input.sampleWindowStart, "sampleWindowStart");
   const sampleWindowEnd = requiredUtc(input.sampleWindowEnd, "sampleWindowEnd");
   const attestedAt = requiredUtc(input.attestedAt, "attestedAt");
@@ -72,7 +73,7 @@ function createHotelStaffTimeBaseline(input = {}) {
 
   const baseline = Object.freeze({
     baselineId, organizationId, category, medianActiveMinutes, sampleCount,
-    sourceType: input.sourceType, evidenceReference, sampleWindowStart,
+    sourceType: input.sourceType, evidenceReferenceHash, sampleWindowStart,
     sampleWindowEnd, attestedBy, attestedAt, reviewDueAt,
     evidenceStatus: "hotel_attested",
     methodology: "median_active_handling_minutes"
@@ -119,8 +120,8 @@ function estimatePotentialStaffTimeAvoided({ baseline, resolutionEvidence, windo
   if (resolutionEvidence.organizationId !== baseline.organizationId) throw new Error("Resolution evidence belongs to a different hotel workspace.");
   if (resolutionEvidence.category !== baseline.category) throw new Error("Resolution evidence does not match the baseline intent category.");
   const resolvedAt = Date.parse(resolutionEvidence.resolvedAt);
-  if (Date.parse(baseline.sampleWindowEnd) > resolvedAt ||
-      Date.parse(baseline.attestedAt) > resolvedAt ||
+  if (Date.parse(baseline.sampleWindowEnd) >= resolvedAt ||
+      Date.parse(baseline.attestedAt) >= resolvedAt ||
       resolvedAt >= Date.parse(baseline.reviewDueAt)) {
     throw new Error("The hotel baseline was not valid for this resolution event.");
   }
@@ -164,15 +165,15 @@ function aggregatePotentialStaffTimeAvoided({ baseline, resolutionEvidence = [],
 
   for (const evidence of resolutionEvidence) {
     if (!VERIFIED_RESOLUTIONS.has(evidence)) throw new Error("Every resolution record must be verifier-created evidence.");
+    if (evidence.organizationId !== baseline.organizationId) throw new Error("Resolution evidence belongs to a different hotel workspace.");
+    if (evidence.category !== baseline.category) throw new Error("Resolution evidence does not match the baseline intent category.");
     const occurredAt = Date.parse(evidence.resolvedAt);
     if (occurredAt < Date.parse(start) || occurredAt >= Date.parse(end)) {
       outOfWindowEvidenceCount += 1;
       continue;
     }
-    if (evidence.organizationId !== baseline.organizationId) throw new Error("Resolution evidence belongs to a different hotel workspace.");
-    if (evidence.category !== baseline.category) throw new Error("Resolution evidence does not match the baseline intent category.");
-    if (Date.parse(baseline.sampleWindowEnd) > occurredAt ||
-        Date.parse(baseline.attestedAt) > occurredAt ||
+    if (Date.parse(baseline.sampleWindowEnd) >= occurredAt ||
+        Date.parse(baseline.attestedAt) >= occurredAt ||
         occurredAt >= Date.parse(baseline.reviewDueAt)) {
       throw new Error("The hotel baseline was not valid for a resolution event in this report.");
     }

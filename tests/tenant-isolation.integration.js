@@ -372,6 +372,20 @@ try {
   assert.equal(retentionDefaultABody.retentionDays, 0, "new hotel retention must be disabled by default");
   assert.equal(retentionDefaultABody.enabled, false, "new hotel must not run cleanup without an approved policy");
 
+  const invalidRetentionPolicy = await fetch(baseUrl + "/api/admin/retention", {
+    method: "PUT",
+    headers: { cookie: cookieA, "X-CSRF-Token": tenants[0].csrfToken, "content-type": "application/json" },
+    body: JSON.stringify({ retentionDays: 31 }),
+  });
+  assert.equal(invalidRetentionPolicy.status, 400, "unsupported retention periods must be rejected");
+
+  const disabledCleanup = await fetch(baseUrl + "/api/admin/retention/cleanup", {
+    method: "POST",
+    headers: { cookie: cookieA, "X-CSRF-Token": tenants[0].csrfToken, "content-type": "application/json" },
+    body: JSON.stringify({ confirm: true }),
+  });
+  assert.equal(disabledCleanup.status, 409, "cleanup must remain blocked while retention is disabled");
+
   const oldEligibleA = await seedRetentionConversation(tenants[0], 45);
   const oldProtectedA = await seedRetentionConversation(tenants[0], 45, true);
   const oldEligibleB = await seedRetentionConversation(tenants[1], 45);

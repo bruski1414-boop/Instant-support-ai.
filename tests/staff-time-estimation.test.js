@@ -24,7 +24,7 @@ function baseline(overrides = {}) {
     evidenceReference: "SYNTHETIC-DINING-WORKLOG",
     sampleWindowStart: "2026-10-01T00:00:00.000Z",
     sampleWindowEnd: "2026-10-31T23:59:59.999Z",
-    attestedAt: "2026-11-01T00:00:00.000Z",
+    attestedAt: "2026-10-31T23:59:59.999Z",
     reviewDueAt: "2026-12-01T00:00:00.000Z",
     ...overrides
   });
@@ -55,6 +55,8 @@ test("synthetic hotel baseline is explicit, immutable and labelled as hotel-atte
   assert.equal(fixture.baseline.medianActiveMinutes, 7);
   assert.equal(fixture.baseline.sampleCount, 24);
   assert.equal(fixture.baseline.methodology, "median_active_handling_minutes");
+  assert.match(fixture.baseline.evidenceReferenceHash, /^[a-f0-9]{64}$/);
+  assert.equal("evidenceReference" in fixture.baseline, false);
 });
 
 test("baseline rejects missing samples, unsupported sources, URLs and invalid chronology", () => {
@@ -220,6 +222,22 @@ test("missing baseline or missing verified events is not reported as zero saving
   assert.equal(missingEvents.status, "not_calculated");
   assert.equal(missingEvents.estimatedMinutes, null);
   assert.equal(missingEvents.eligibleConversationCount, null);
+});
+
+test("cross-tenant evidence is rejected even when its timestamp is outside the report window", async () => {
+  const event = fixture.resolutionEvents[2];
+  const foreign = await createVerifiedAiResolutionEvidence({
+    ...event,
+    organizationId: "88888888-8888-4888-8888-888888888888",
+    resolvedAt: "2026-10-15T12:00:00.000Z",
+    verify: async () => ({ verified: true, method: "internal_event_chain" })
+  });
+  assert.throws(() => aggregatePotentialStaffTimeAvoided({
+    baseline: fixture.baseline,
+    resolutionEvidence: [foreign],
+    windowStart: WINDOW_START,
+    windowEnd: WINDOW_END
+  }), /different hotel workspace/);
 });
 
 test("report rejects incomplete or invalid reporting windows", () => {

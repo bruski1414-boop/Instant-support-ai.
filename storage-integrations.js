@@ -81,9 +81,8 @@ function createStorageRouter({ db, auth, role, audit }) {
     const { code, state, error } = req.query;
     if (error || typeof code !== "string" || code.length > 4096 || typeof state !== "string" || state.length > 200) return res.redirect("/dashboard.html?storage=cancelled");
     const stateHash = crypto.createHash("sha256").update(state).digest("hex");
-    let client;
+    const client = await db.connect();
     try {
-      client = await db.connect();
       await client.query("BEGIN");
       const found = await client.query(
         "DELETE FROM storage_oauth_states WHERE state_hash=$1 AND expires_at>now() RETURNING organization_id,user_id,provider,code_verifier",
@@ -254,9 +253,8 @@ function createStorageRouter({ db, auth, role, audit }) {
     const provider = req.params.provider;
     if (!providerValid(provider)) return safeError(res, "Unsupported storage provider.");
     if (req.body?.confirm !== true) return safeError(res, "Explicit confirmation is required to delete imported copies.", 400);
-    let client;
+    const client = await db.connect();
     try {
-      client = await db.connect();
       await client.query("BEGIN");
       const documents = await client.query(
         "SELECT id FROM knowledge_documents WHERE organization_id=$1 AND source_reference LIKE $2 FOR UPDATE",
@@ -288,8 +286,9 @@ function createStorageRouter({ db, auth, role, audit }) {
   router.delete("/connections/:provider", auth, role("owner", "admin"), async (req, res) => {
     const provider = req.params.provider;
     if (!providerValid(provider)) return safeError(res, "Unsupported storage provider.");
-    const client = await db.connect();
+    let client;
     try {
+      client = await db.connect();
       await client.query("BEGIN");
       const result = await client.query("DELETE FROM storage_connections WHERE organization_id=$1 AND provider=$2 RETURNING provider", [req.actor.organization_id, provider]);
       await client.query("DELETE FROM organization_storage_connections WHERE organization_id=$1 AND provider=$2", [req.actor.organization_id, provider === "google" ? "google_drive" : "microsoft_sharepoint"]);

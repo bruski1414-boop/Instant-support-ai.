@@ -286,13 +286,22 @@ function createStorageRouter({ db, auth, role, audit }) {
   router.delete("/connections/:provider", auth, role("owner", "admin"), async (req, res) => {
     const provider = req.params.provider;
     if (!providerValid(provider)) return safeError(res, "Unsupported storage provider.");
+    const client = await db.connect();
     try {
-      const result = await db.query("DELETE FROM storage_connections WHERE organization_id=$1 AND provider=$2 RETURNING provider", [req.actor.organization_id, provider]);
-      await db.query("DELETE FROM organization_storage_connections WHERE organization_id=$1 AND provider=$2", [req.actor.organization_id, provider === "google" ? "google_drive" : "microsoft_sharepoint"]);
-      await db.query("DELETE FROM storage_oauth_states WHERE organization_id=$1 AND provider=$2", [req.actor.organization_id, provider]);
-      await audit(req.actor, "storage." + provider + ".disconnected", "storage_connection");
-      res.json({ disconnected: Boolean(result.rowCount) });
-    } catch (e) { res.status(500).json({ error: "Could not disconnect storage." }); }
+      await client.query("BEGIN");
+      const result = await client.query("DELETE FROM storage_connections WHERE organization_id=$1 AND provider=$2 RETURNING provider", [req.actor.organization_id, provider]);
+      await client.query("DELETE FROM organization_storage_connections WHERE organization_id=$1 AND provider=$2", [req.actor.organization_id, provider === "google" ? "google_drive" : "microsoft_sharepoint"]);
+      await client.query("DELETE FROM storage_oauth_states WHERE organization_id=$1 AND provider=$2", [req.actor.organization_id, provider]);
+      await client.query(
+        "INSERT INTO audit_logs(organization_id,actor_user_id,action,target_type) VALUES($1,$2,$3,'storage_connection')",
+        [req.actor.organization_id, req.actor.user_id, "storage." + provider + ".disconnected"]
+      );
+      await client.query("COMMIT");
+      res.json({ disconnected: Boolean(result.rowCount), localCredentialsDeleted: Boolean(result.rowCount), importedCopiesPreserved: true });
+    } catch (e) {
+      await client.query("ROLLBACK").catch(() => {});
+      res.status(500).json({ error: "Could not disconnect storage." });
+    } finally { client.release(); }
   });
 
   return router;

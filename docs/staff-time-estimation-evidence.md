@@ -16,7 +16,7 @@ The estimate is intentionally conservative and requires all of the following:
 
 1. A hotel owner/admin has attested a historical median active-handling-time baseline for the exact intent category.
 2. The baseline identifies its source type, opaque evidence reference, sample count, sample window, attester, attestation time and review due time.
-3. The baseline sample period ends before the eligible resolution event; the baseline was attested before that event and has not passed its review due time.
+3. The baseline sample period ends strictly before the eligible resolution event; the baseline was attested strictly before that event and has not passed its review due time.
 4. A trusted internal event-chain verifier confirms an explicit guest-confirmed-resolved event.
 5. The same verifier confirms zero recorded staff messages/touches and zero staff escalations for that conversation.
 6. The resolution event belongs to the same hotel and category as the baseline.
@@ -26,7 +26,7 @@ The estimator never uses AI generation latency or staff first-response latency a
 
 ## Evidence and deduplication
 
-- Baselines are marked hotel_attested, not independently verified.
+- Baselines are marked hotel_attested, not independently verified. Only a SHA-256 hash of the hotel opaque evidence reference is retained by the model; callers must not supply guest or employee data as that reference.
 - Resolution evidence is a verifier-created in-process capability; a plain JSON object or client-supplied verified flag cannot be used.
 - Event IDs are deduplicated. Conflicting reuse of an event ID is excluded.
 - A conversation with multiple distinct resolution events in one reporting window is excluded as ambiguous rather than counted twice.

@@ -86,6 +86,9 @@ Do not mark `durableBackupsVerified` or `DURABLE_BACKUPS_VERIFIED=true` until al
 - The archive was stored outside GitHub in protected storage.
 - A restore into a separate empty database completed successfully.
 - Expected tables and application checks were verified.
+- The UTC restore timestamp and a non-sensitive internal evidence reference were recorded for the readiness gate. The reference must not expose credentials, guest data, or a public backup URL.
 - An authorized adult/operator reviewed and recorded the evidence.
+
+The readiness endpoint additionally requires `DURABLE_BACKUPS_VERIFIED=true`, `BACKUP_RESTORE_VERIFIED_AT` (UTC ISO-8601, no more than 90 days old and not in the future), and `BACKUP_RESTORE_EVIDENCE_REF` (a non-empty internal evidence identifier). These settings record operator-reviewed evidence; they do not independently prove that a backup exists or that a restore succeeded.
 
 **Current result: NOT VERIFIED.** This runbook documents the process only. No database backup, restore, network allowlist change, plan upgrade, or credential change has been performed by this commit.

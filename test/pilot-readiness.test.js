@@ -2,7 +2,11 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const { REQUIRED_PILOT_CHECKS, buildPilotReadiness } = require("../pilot-readiness");
 
-const allEvidence = Object.fromEntries(REQUIRED_PILOT_CHECKS.map((key) => [key, true]));
+const allEvidence = {
+  ...Object.fromEntries(REQUIRED_PILOT_CHECKS.map((key) => [key, true])),
+  backupRestoreVerifiedAt: new Date().toISOString(),
+  backupRestoreEvidenceRef: "test-record:successful-restore-drill",
+};
 
 test("pilot readiness requires every release gate", () => {
   const result = buildPilotReadiness(allEvidence);

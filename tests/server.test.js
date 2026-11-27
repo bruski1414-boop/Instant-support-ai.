@@ -312,7 +312,8 @@ test("provider import purge requires explicit confirmation and deletes only this
 test("storage disconnect removes local credentials and connection state atomically without purging imported knowledge", () => {
   const storage = fs.readFileSync("storage-integrations.js", "utf8");
   const route = storage.slice(storage.indexOf('router.delete("/connections/:provider"'));
-  assert.match(route, /const client = await db.connect\(\)/);
+  assert.match(route, /let client;/);
+  assert.match(route, /client = await db.connect\(\)/);
   assert.match(route, /await client.query\("BEGIN"\)/);
   assert.match(route, /DELETE FROM storage_connections WHERE organization_id=\$1 AND provider=\$2/);
   assert.match(route, /DELETE FROM organization_storage_connections WHERE organization_id=\$1 AND provider=\$2/);

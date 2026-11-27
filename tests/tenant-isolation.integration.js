@@ -326,7 +326,13 @@ try {
     method: "DELETE",
     headers: { cookie: cookieA, "X-CSRF-Token": tenants[0].csrfToken },
   });
-  assert.equal(crossDisconnect.status, 200, "disconnecting an unowned provider should safely report no local connection");
+  assert.equal(crossDisconnect.status, 200, "disconnecting this tenant's Google connection should succeed");
+  const crossDisconnectBody = await crossDisconnect.json();
+  assert.deepEqual(crossDisconnectBody, {
+    disconnected: true,
+    localCredentialsDeleted: true,
+    importedCopiesPreserved: true,
+  }, "disconnect should delete only local credentials and preserve imported knowledge copies");
   const storageBAfter = await readStorageConnections(cookieB);
   assert.equal(storageBAfter.status, 200);
   const storageBAfterBody = await storageBAfter.json();

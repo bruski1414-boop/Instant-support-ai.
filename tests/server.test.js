@@ -337,7 +337,7 @@ test("hotel storage dashboard distinguishes disconnect from explicit imported-co
   assert.match(dashboard, /data-storage-purge="microsoft"/);
   assert.match(dashboard, /PERMANENTLY delete this hotel's imported/);
   assert.match(dashboard, /api\("\/api\/admin\/storage\/imports\/"\+b\.dataset\.storagePurge/);
-  assert.match(dashboard, /Existing imported knowledge copies will remain in Veyra until separately deleted/);
+  assert.match(dashboard, /Imported copies remain until separately deleted/);
 });
 
 test("staff notification retries are capped and direct staff to manual fallback", () => {

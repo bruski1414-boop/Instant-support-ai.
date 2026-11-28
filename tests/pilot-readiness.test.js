@@ -64,7 +64,23 @@ test("stale, future-dated, or invalid backup restore evidence blocks readiness",
   }
 });
 
-test("backup restore timestamps must use exact canonical UTC ISO-8601 format", () => {\n  for (const timestamp of [\n    "2026-11-20T12:00:00Z",\n    "2026-11-20T12:00:00.000+00:00",\n    "2026-11-20T13:00:00.000+01:00",\n    "2026-02-30T12:00:00.000Z",\n  ]) {\n    const evidence = completeEvidence();\n    evidence.backupRestoreVerifiedAt = timestamp;\n\n    const result = buildPilotReadiness(evidence, NOW);\n    assert.equal(result.readyForPilot, false, `${timestamp} must be rejected`);\n    assert.equal(result.checks.durableBackupsVerified, false);\n  }\n});\n\ntest("blank backup evidence references are rejected", () => {
+test("backup restore timestamps must use exact canonical UTC ISO-8601 format", () => {
+  for (const timestamp of [
+    "2026-11-20T12:00:00Z",
+    "2026-11-20T12:00:00.000+00:00",
+    "2026-11-20T13:00:00.000+01:00",
+    "2026-02-30T12:00:00.000Z",
+  ]) {
+    const evidence = completeEvidence();
+    evidence.backupRestoreVerifiedAt = timestamp;
+
+    const result = buildPilotReadiness(evidence, NOW);
+    assert.equal(result.readyForPilot, false, `${timestamp} must be rejected`);
+    assert.equal(result.checks.durableBackupsVerified, false);
+  }
+});
+
+test("blank backup evidence references are rejected", () => {
   const evidence = completeEvidence();
   evidence.backupRestoreEvidenceRef = "   ";
 

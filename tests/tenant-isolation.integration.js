@@ -238,6 +238,14 @@ try {
     "INSERT INTO conversations(organization_id,channel,status,last_message_at) VALUES($1,'website','resolved',now()-interval '1 day'),($1,'website','open',now()-interval '60 days')",
     [retentionOrgA]
   );
+  const escalatedRetentionCandidate = await pool.query(
+    "INSERT INTO conversations(organization_id,channel,status,last_message_at) VALUES($1,'website','resolved',now()-interval '60 days') RETURNING id",
+    [retentionOrgA]
+  );
+  await pool.query(
+    "INSERT INTO escalations(organization_id,conversation_id,reason,status) VALUES($1,$2,'CI retention protection check','open')",
+    [retentionOrgA, escalatedRetentionCandidate.rows[0].id]
+  );
   const retentionCleanup = await fetch(baseUrl + "/api/admin/retention/cleanup", {
     method: "POST",
     headers: { cookie: cookieA, "X-CSRF-Token": tenants[0].csrfToken, "content-type": "application/json" },
@@ -279,6 +287,11 @@ try {
     [retentionOrgA, retentionDays]
   );
   assert.equal(retentionProtectedA.rows[0].count, 2, "recent resolved and open conversations must be preserved");
+  const retentionEscalationProtected = await pool.query(
+    "SELECT c.id FROM conversations c JOIN escalations e ON e.conversation_id=c.id WHERE c.id=$1 AND c.organization_id=$2 AND c.status='resolved' AND e.status<>'resolved'",
+    [escalatedRetentionCandidate.rows[0].id, retentionOrgA]
+  );
+  assert.equal(retentionEscalationProtected.rowCount, 1, "a resolved conversation with an open escalation must be preserved");
 
   await Promise.all(tenants.map(seedKnowledge));
   await Promise.all(tenants.map(seedOffer));

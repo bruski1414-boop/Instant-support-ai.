@@ -23,6 +23,12 @@ async function persistImportedKnowledge({ db, actor, provider, fileId, name, con
     client = await db.connect();
     await client.query("BEGIN");
     const source = provider + ":" + fileId;
+    // Serialize imports for the same hotel/source, including the first import
+    // where SELECT ... FOR UPDATE cannot lock a row that does not exist yet.
+    await client.query(
+      "SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2))",
+      [actor.organization_id, source]
+    );
     const existing = await client.query(
       "SELECT * FROM knowledge_documents WHERE organization_id=$1 AND source_reference=$2 FOR UPDATE",
       [actor.organization_id, source]

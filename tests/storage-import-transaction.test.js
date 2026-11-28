@@ -63,6 +63,9 @@ test("new storage imports commit document, version history, and audit together",
   assert.equal(document.approved, false);
   const statements = db.calls.map(call => call.sql);
   assert.equal(statements[0], "BEGIN");
+  assert.equal(statements[1], "SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2))");
+  const importLock = db.calls[1];
+  assert.deepEqual(importLock.params, [actor.organization_id, "google:drive-file-1"]);
   assert.ok(statements.some(sql => sql.startsWith("INSERT INTO knowledge_documents")));
   assert.ok(statements.some(sql => sql.startsWith("INSERT INTO knowledge_document_versions")));
   assert.ok(statements.some(sql => sql.startsWith("INSERT INTO audit_logs")));

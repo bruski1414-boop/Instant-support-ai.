@@ -305,7 +305,7 @@ function createPmsRegistry(adapters = []) {
       }
       const securedContext = await requireProductionCredentials(adapter, context, ["booking:read"]);
       const result = await adapter.getBookingStatus({ bookingId }, securedContext);
-      return normalizeBooking(result);
+      return normalizeBookingLookup(result);
     },
     verifyWebhook: async (provider, input) => {
       const adapter = get(provider);
@@ -336,6 +336,7 @@ module.exports = {
   normalizeAvailability,
   normalizeBookingRequest,
   normalizeBooking,
+  normalizeBookingLookup,
   normalizeWebhookEvent,
   createHmacSha256Verifier,
   recordWebhookEvent,

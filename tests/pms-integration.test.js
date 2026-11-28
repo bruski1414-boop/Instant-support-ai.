@@ -65,7 +65,7 @@ test("registry advertises sandbox mode without claiming production readiness", a
   assert.deepEqual(await registry.testConnection("sandbox"), {
     provider: "sandbox", providerName: "Veyra PMS adapter sandbox", mode: "sandbox", ok: true, productionReady: false,
   });
-  assert.deepEqual(await registry.getAvailability("sandbox", { checkIn: "2027-01-10", checkOut: "2027-01-11" }), []);
+  await assert.rejects(() => registry.getAvailability("sandbox", { checkIn: "2027-01-10", checkOut: "2027-01-11" }), error => error.code === "CAPABILITY_UNAVAILABLE");
   await assert.rejects(() => registry.createBooking("sandbox", {
     checkIn: "2027-01-10", checkOut: "2027-01-11", roomTypeId: "deluxe", guestCount: 2, idempotencyKey: "booking_req_12345",
   }), error => error.code === "CAPABILITY_UNAVAILABLE");

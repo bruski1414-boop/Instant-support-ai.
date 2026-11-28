@@ -363,8 +363,9 @@ app.post("/api/admin/bookings/:id/reconcile-pms",requireDb,auth,role("owner","ad
   const credentials=pmsCredentialVault.decrypt(connection.rows[0].encrypted_credentials);
   const lookup=await pmsRegistry.getBookingStatus(row.pms_provider,{bookingId:row.pms_booking_id},{credentials,organizationId:q.actor.organization_id});
   const result=await recordReconciledPmsOutcome(db,q.actor.organization_id,q.params.id,row.pms_provider,lookup);
-  await audit(q.actor,"booking.pms_reconciled","booking",q.params.id);
-  r.json({bookingId:q.params.id,state:result.state,duplicate:result.duplicate===true,providerStatus:lookup.status,notice:result.state==="confirmed"?"The PMS explicitly confirmed the matching reservation.":lookup.status==="not_found"?"The PMS did not find the stored reservation reference. The booking remains pending for staff investigation; Veyra will not submit another reservation automatically.":"The PMS still reports this reservation as pending; Veyra has not confirmed it."});
+  let auditRecorded=true;
+  try{await audit(q.actor,"booking.pms_reconciled","booking",q.params.id);}catch(auditError){auditRecorded=false;console.error("PMS reconciliation audit write failed.");}
+  r.json({bookingId:q.params.id,state:result.state,duplicate:result.duplicate===true,providerStatus:lookup.status,auditRecorded,notice:result.state==="confirmed"?"The PMS explicitly confirmed the matching reservation.":lookup.status==="not_found"?"The PMS did not find the stored reservation reference. The booking remains pending for staff investigation; Veyra will not submit another reservation automatically.":"The PMS still reports this reservation as pending; Veyra has not confirmed it."});
  }catch(e){
   if(e instanceof PmsIntegrationError)return r.status(e.status).json({error:e.message,code:e.code});
   if(e&&e.code&&["BOOKING_NOT_FOUND","PMS_RECONCILIATION_MISMATCH","PMS_ATTEMPT_NOT_RECONCILABLE","INVALID_PMS_RECONCILIATION","INVALID_PMS_REFERENCE"].includes(e.code))return r.status(e.status||409).json({error:e.message,code:e.code});

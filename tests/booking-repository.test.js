@@ -126,6 +126,27 @@ test("accepts a verified exact deposit and makes duplicate webhook delivery harm
   assert.deepEqual(duplicate, { accepted: false, duplicate: true, state: "already_processed" });
 });
 
+test("normalizes payment event identifiers before deduplication", async () => {
+  const db = fakeDb();
+  const booking = await createBookingRecord(db, "hotel-a", validInput());
+  const event = {
+    signatureVerified: true,
+    eventId: " evt_trimmed_123 ",
+    bookingId: ` ${booking.bookingId} `,
+    paymentId: " pay_trimmed_123 ",
+    amountMinor: 125001,
+    currency: " thb ",
+    status: "succeeded",
+  };
+  const result = await recordVerifiedDeposit(db, "hotel-a", "testpay", event);
+  assert.equal(result.state, "payment_verified");
+  const duplicate = await recordVerifiedDeposit(db, "hotel-a", "testpay", {
+    ...event, eventId: "evt_trimmed_123", bookingId: booking.bookingId,
+    paymentId: "pay_trimmed_123", currency: "THB",
+  });
+  assert.equal(duplicate.duplicate, true);
+});
+
 test("rejects payment events without verified signatures or matching tenant bookings", async () => {
   const db = fakeDb();
   const booking = await createBookingRecord(db, "hotel-a", validInput());

@@ -255,7 +255,11 @@ function createPmsRegistry(adapters = []) {
       if (!adapter.capabilities.availability) throw new PmsIntegrationError("CAPABILITY_UNAVAILABLE", "This provider adapter does not support availability lookup.", 409);
       const securedContext = await requireProductionCredentials(adapter, context, ["availability:read"]);
       const dates = validateDateRange(input);
-      const rows = await adapter.getAvailability(dates, securedContext);
+      const guestCount = input && input.guestCount !== undefined ? input.guestCount : 1;
+      if (!Number.isInteger(guestCount) || guestCount < 1 || guestCount > 20) {
+        throw new PmsIntegrationError("INVALID_GUEST_COUNT", "Guest count must be between 1 and 20.");
+      }
+      const rows = await adapter.getAvailability({ ...dates, guestCount }, securedContext);
       if (!Array.isArray(rows) || rows.length > 200) throw new PmsIntegrationError("INVALID_PROVIDER_RESPONSE", "Provider returned an invalid availability list.", 502);
       return rows.map(normalizeAvailability);
     },

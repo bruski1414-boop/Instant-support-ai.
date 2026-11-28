@@ -380,7 +380,7 @@ try {
     "INSERT INTO conversations(organization_id,channel,status,guest_token_hash) VALUES($1,'website','open',$2) RETURNING id",
     [orgResolutionA.rows[0].id, resolutionHash(randomUUID().replace(/-/g, "") + "cascade")],
   );
-  const cascadeToken = randomUUID().replace(/-/g, "") + "cascade";
+  const cascadeToken = randomUUID().replace(/-/g, "") + "cascadeevent";
   await pool.query("UPDATE conversations SET guest_token_hash=$1 WHERE id=$2", [resolutionHash(cascadeToken), cascadeConversation.rows[0].id]);
   const cascadeAssistant = await pool.query(
     "INSERT INTO messages(conversation_id,role,content,created_at) VALUES($1,'assistant','Synthetic cascade answer',clock_timestamp()) RETURNING id",

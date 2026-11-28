@@ -79,7 +79,7 @@ Perform this on a separate, empty local PostgreSQL 18 database or a separate dis
 
 ## Release gate
 
-Do not mark `durableBackupsVerified` or `DURABLE_BACKUPS_VERIFIED=true` until all of the following evidence exists:
+The health/readiness code deliberately treats `durableBackupsVerified` as **false**. It does not trust a `DURABLE_BACKUPS_VERIFIED` environment variable, because a configuration flag is not proof of a successful restore. Do not change this code gate until all of the following evidence exists:
 
 - A manual archive was created successfully.
 - Its SHA-256 checksum was recorded.

@@ -18,6 +18,7 @@ function fixture({ quote = {}, tenant = "hotel-a" } = {}) {
     tenant,
     consumed: false,
     expired: false,
+    stale: false,
     bookings: new Map(),
     calls: [],
     quote: {
@@ -41,7 +42,7 @@ function fixture({ quote = {}, tenant = "hotel-a" } = {}) {
         return { rowCount: row ? 1 : 0, rows: row ? [row] : [] };
       }
       if (sql.startsWith("SELECT id,room_type_id")) {
-        if (params[1] !== state.tenant || params[0] !== state.quote.id || state.consumed || state.expired) return { rowCount: 0, rows: [] };
+        if (params[1] !== state.tenant || params[0] !== state.quote.id || state.consumed || state.expired || state.stale) return { rowCount: 0, rows: [] };
         return { rowCount: 1, rows: [state.quote] };
       }
       if (sql.startsWith("UPDATE hotel_availability_quotes")) {
@@ -126,6 +127,12 @@ test("does not reuse expired, consumed or zero-availability quotes", async () =>
   expired.state.expired = true;
   await assert.rejects(
     () => createBookingRecordFromQuote(expired.db, "hotel-a", request()),
+    error => error.code === "QUOTE_INVALID_OR_EXPIRED"
+  );
+  const stale = fixture();
+  stale.state.stale = true;
+  await assert.rejects(
+    () => createBookingRecordFromQuote(stale.db, "hotel-a", request()),
     error => error.code === "QUOTE_INVALID_OR_EXPIRED"
   );
 });

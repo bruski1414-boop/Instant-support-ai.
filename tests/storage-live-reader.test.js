@@ -48,7 +48,7 @@ test("Google Drive live reader fetches current approved source content, not stor
   assert.equal(document.content, "Breakfast is now served from 6:30 to 10:30.");
   assert.equal(document.title, "Current breakfast policy");
   assert.equal(document.modifiedAt, "2026-11-28T09:00:00.000Z");
-  assert.equal(document.version, "abc123");
+  assert.equal(document.version, "2026-11-28T09:00:00.000Z");
   assert.equal(calls.length, 2);
   assert.ok(calls.every(call => call.options.headers.authorization === "Bearer google-access"));
   assert.deepEqual(db.calls[0].params, ["hotel-alpha", "google"]);

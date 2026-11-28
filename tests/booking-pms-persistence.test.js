@@ -5,7 +5,7 @@ const assert = require("node:assert/strict");
 const { recordPmsOutcome, claimPmsBookingAttempt } = require("../booking-repository");
 
 function makeDb(initialState = "payment_verified") {
-  const row = { id: "booking-1", state: initialState, pms_provider: null, pms_booking_id: null };
+  const row = { id: "booking-1", organization_id: "hotel-a", state: initialState, pms_provider: null, pms_booking_id: null };
   const attempt = { status: "started", pms_booking_id: null };
   const queries = [];
   const client = {
@@ -13,7 +13,8 @@ function makeDb(initialState = "payment_verified") {
       queries.push({ sql, params });
       if (["BEGIN", "COMMIT", "ROLLBACK"].includes(sql)) return { rowCount: 0, rows: [] };
       if (sql.startsWith("SELECT id,state FROM hotel_bookings")) {
-        return { rowCount: row.id === params[0] ? 1 : 0, rows: row.id === params[0] ? [{ id: row.id, state: row.state }] : [] };
+        const matches = row.id === params[0] && row.organization_id === params[1];
+        return { rowCount: matches ? 1 : 0, rows: matches ? [{ id: row.id, state: row.state }] : [] };
       }
       if (sql.startsWith("SELECT provider,status FROM hotel_pms_booking_attempts")) {
         return { rowCount: 1, rows: [{ provider: "mews", status: attempt.status }] };
@@ -53,7 +54,8 @@ test("persists confirmed PMS reference only after verified payment", async () =>
   assert.equal(db.row.state, "confirmed");
   assert.equal(db.row.pms_booking_id, "mews-res-987");
   assert.deepEqual(db.attempt, { status: "confirmed", pms_booking_id: "mews-res-987" });
-  assert.equal(db.queries.at(-1).params[3], "mews");
+  const attemptUpdate = db.queries.findLast(entry => entry.sql.startsWith("UPDATE hotel_pms_booking_attempts SET status="));
+  assert.equal(attemptUpdate.params[3], "mews");
 });
 
 test("persists uncertain PMS outcomes as pending, never confirmed", async () => {

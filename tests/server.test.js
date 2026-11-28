@@ -263,6 +263,20 @@ test("hotel website origins are allowed dynamically from each tenant's saved HTT
   assert.match(server, /u\.protocol==="https:"&&u\.origin===p\.website_url/);
 });
 
+test("guest chat uses current source-backed knowledge and fails closed when no verified live documents remain", () => {
+  const server = fs.readFileSync("server.js", "utf8");
+  const resolver = fs.readFileSync("hotel-live-knowledge.js", "utf8");
+  const storage = fs.readFileSync("storage-integrations.js", "utf8");
+  assert.match(server, /resolveLiveApprovedKnowledge\(\{db,organizationId:org\.id,documents:docs\.rows,reader:storageKnowledgeReader\}\)/);
+  assert.match(server, /liveDocuments\.map\(d=>/);
+  assert.match(resolver, /live\.version !== expectedVersion/);
+  assert.match(resolver, /Never fall back to an imported copy/);
+  assert.match(resolver, /knowledge\.source_changed_requires_review/);
+  assert.match(storage, /source_version/);
+  assert.match(storage, /meta\.modifiedTime \|\| meta\.md5Checksum/);
+  assert.match(storage, /meta\.eTag \|\| meta\.lastModifiedDateTime/);
+});
+
 test("public guest chat requires fresh tenant-specific AI, staff and storage verification", () => {
   const server = fs.readFileSync("server.js", "utf8");
   assert.match(server, /verified_at>now\(\)-interval '30 days'/);

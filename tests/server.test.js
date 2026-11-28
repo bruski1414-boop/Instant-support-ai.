@@ -425,6 +425,9 @@ test("knowledge review centre provides document search, status and category filt
   assert.match(dashboard, /function renderKnowledgeReview\(\)/);
   assert.match(dashboard, /Approve after verification/);
   assert.match(dashboard, /Approval is never automatic/);
+  assert.match(dashboard, /knowledgeReviewDate/);
+  assert.match(dashboard, /review date required/);
+  assert.match(dashboard, /Choose a review date before approving this document/);
 });
 
 test("knowledge review centre flags review dates due within fourteen days separately from overdue documents", () => {

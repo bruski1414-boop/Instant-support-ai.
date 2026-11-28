@@ -151,59 +151,67 @@ async function recordVerifiedDeposit(db, organizationId, provider, event) {
       typeof event.bookingId !== "string" || !event.bookingId ||
       typeof event.paymentId !== "string" || !event.paymentId ||
       !Number.isSafeInteger(event.amountMinor) || event.amountMinor <= 0 ||
-      typeof event.currency !== "string" || !/^[A-Z]{3}$/.test(event.currency.toUpperCase())) {
+      typeof event.currency !== "string" || !/^[A-Z]{3}$/.test(normalizedCurrency)) {
     fail("INVALID_VERIFIED_PAYMENT_EVENT", "A verified, complete payment event is required.", 400);
   }
+  const eventId = event.eventId.trim();
+  const bookingId = event.bookingId.trim();
+  const paymentId = event.paymentId.trim();
+  const normalizedCurrency = event.currency.trim().toUpperCase();
+  if (eventId.length > 200 || !bookingId || bookingId.length > 100 ||
+      !paymentId || paymentId.length > 200) {
+    fail("INVALID_VERIFIED_PAYMENT_EVENT", "Payment event identifiers are invalid.", 400);
+  }
   const payloadHash = crypto.createHash("sha256").update(JSON.stringify({
-    eventId:event.eventId,bookingId:event.bookingId,paymentId:event.paymentId,
-    amountMinor:event.amountMinor,currency:event.currency.toUpperCase(),status:event.status,
+    eventId,bookingId,paymentId,
+    amountMinor:event.amountMinor,currency:normalizedCurrency,status:event.status,
   })).digest("hex");
 
   return inTransaction(db, async client => {
     const inserted = await client.query(
       "INSERT INTO payment_webhook_events(organization_id,provider,external_event_id,payload_sha256,status) VALUES($1,$2,$3,$4,'received') ON CONFLICT(organization_id,provider,external_event_id) DO NOTHING RETURNING id",
-      [organizationId,provider,event.eventId,payloadHash]
+      [organizationId,provider,eventId,payloadHash]
     );
     if (!inserted.rowCount) {
       const prior = await client.query(
         "SELECT payload_sha256 FROM payment_webhook_events WHERE organization_id=$1 AND provider=$2 AND external_event_id=$3",
-        [organizationId,provider,event.eventId]
+        [organizationId,provider,eventId]
       );
       if (!prior.rowCount || prior.rows[0].payload_sha256 !== payloadHash) fail("PAYMENT_EVENT_ID_COLLISION", "The provider reused a payment event ID with different data.", 409);
       return { accepted:false,duplicate:true,state:"already_processed" };
     }
     if (event.status !== "succeeded") {
-      await client.query("UPDATE payment_webhook_events SET status='ignored',processed_at=now() WHERE organization_id=$1 AND provider=$2 AND external_event_id=$3",[organizationId,provider,event.eventId]);
+      await client.query("UPDATE payment_webhook_events SET status='ignored',processed_at=now() WHERE organization_id=$1 AND provider=$2 AND external_event_id=$3",[organizationId,provider,eventId]);
       return { accepted:true,duplicate:false,state:"ignored_non_success" };
     }
     const found = await client.query(
       "SELECT id,state,deposit_amount_minor,currency FROM hotel_bookings WHERE id=$1 AND organization_id=$2 FOR UPDATE",
-      [event.bookingId,organizationId]
+      [bookingId,organizationId]
     );
     if (!found.rowCount) fail("BOOKING_NOT_FOUND", "The booking was not found for this hotel.", 404);
     const booking = found.rows[0];
     if (booking.state === "payment_verified" || booking.state === "booking_pending" || booking.state === "confirmed") {
       const samePayment = await client.query(
         "SELECT id FROM hotel_bookings WHERE organization_id=$1 AND payment_provider=$2 AND payment_provider_payment_id=$3 AND id=$4",
-        [organizationId,provider,event.paymentId,event.bookingId]
+        [organizationId,provider,paymentId,bookingId]
       );
       if (samePayment.rowCount) {
-        await client.query("UPDATE payment_webhook_events SET status='processed',processed_at=now() WHERE organization_id=$1 AND provider=$2 AND external_event_id=$3",[organizationId,provider,event.eventId]);
+        await client.query("UPDATE payment_webhook_events SET status='processed',processed_at=now() WHERE organization_id=$1 AND provider=$2 AND external_event_id=$3",[organizationId,provider,eventId]);
         return { accepted:true,duplicate:true,state:booking.state };
       }
       fail("BOOKING_ALREADY_PAID", "This booking already has a verified payment.", 409);
     }
     if (!["awaiting_payment","payment_pending"].includes(booking.state)) fail("INVALID_BOOKING_PAYMENT_STATE", "This booking cannot accept a deposit in its current state.", 409);
-    if (Number(booking.deposit_amount_minor) !== event.amountMinor || booking.currency.trim() !== event.currency.toUpperCase()) {
+    if (Number(booking.deposit_amount_minor) !== event.amountMinor || booking.currency.trim() !== normalizedCurrency) {
       fail("PAYMENT_AMOUNT_MISMATCH", "The payment does not match the exact deposit amount and currency.", 409);
     }
     await client.query(
       "UPDATE hotel_bookings SET state='payment_verified',payment_provider=$3,payment_provider_payment_id=$4,payment_verified_at=now(),updated_at=now() WHERE id=$1 AND organization_id=$2",
-      [event.bookingId,organizationId,provider,event.paymentId]
+      [bookingId,organizationId,provider,paymentId]
     );
     await client.query(
       "UPDATE payment_webhook_events SET status='processed',processed_at=now() WHERE organization_id=$1 AND provider=$2 AND external_event_id=$3",
-      [organizationId,provider,event.eventId]
+      [organizationId,provider,eventId]
     );
     return { accepted:true,duplicate:false,state:"payment_verified" };
   });

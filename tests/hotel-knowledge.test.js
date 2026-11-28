@@ -4,7 +4,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const { loadApprovedKnowledge } = require("../hotel-knowledge");
 
-test("approved knowledge is scoped to one hotel and excludes documents past review date", async () => {
+test("approved knowledge is tenant-scoped and requires a current review date", async () => {
   let receivedSql;
   let receivedParams;
   const expectedRows = [{ title: "Breakfast", category: "dining", content: "7:00–10:00" }];
@@ -25,7 +25,7 @@ test("approved knowledge is scoped to one hotel and excludes documents past revi
   assert.equal(result, expectedRows);
   assert.match(receivedSql, /organization_id=\$1/);
   assert.match(receivedSql, /approved=true/);
-  assert.match(receivedSql, /review_due_at IS NULL OR review_due_at >= \$2::date/);
+  assert.match(receivedSql, /review_due_at IS NOT NULL AND review_due_at >= \$2::date/);
   assert.match(receivedSql, /ORDER BY updated_at DESC LIMIT 40/);
   assert.deepEqual(receivedParams, ["hotel-aster", "2026-11-23"]);
 });

@@ -116,6 +116,7 @@ async function createBookingRecordFromQuote(db, organizationId, input = {}) {
   }
   const guest = normalizeGuestDetails(input.guest);
   return inTransaction(db, async client => {
+    await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))", [organizationId + ":" + idempotencyKey]);
     const existing = await client.query(
       "SELECT id,quote_id,guest_name,guest_phone,guest_email,state FROM hotel_bookings WHERE organization_id=$1 AND idempotency_key=$2 FOR UPDATE",
       [organizationId,idempotencyKey]

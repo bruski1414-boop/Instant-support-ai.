@@ -414,6 +414,9 @@ app.post("/api/public/:slug/booking-requests",async(q,r,n)=>{
    bookingId:result.bookingId,
    state:result.state,
    created:result.created,
+   paymentStatus:"not_configured",
+   checkoutAvailable:false,
+   guestMessage:"Your booking request has been saved but is not confirmed. The hotel team must contact you to arrange payment and confirm availability.",
    ...(result.created?{
     currency:result.currency,
     totalAmountMinor:result.totalAmountMinor,

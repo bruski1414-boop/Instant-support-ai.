@@ -401,3 +401,21 @@ test("availability requests pass a bounded guest count to the provider adapter",
   assert.deepEqual(received, { checkIn: "2027-01-10", checkOut: "2027-01-11", guestCount: 4 });
   await assert.rejects(() => registry.getAvailability("testpms", { checkIn: "2027-01-10", checkOut: "2027-01-11", guestCount: 21 }, { credentials: { token: "test" } }), error => error.code === "INVALID_GUEST_COUNT");
 });
+
+
+test("reservation lookup distinguishes not-found from pending without weakening booking creation", () => {
+  assert.deepEqual(normalizeBookingLookup({ bookingId: "reservation-404", status: "not_found" }), {
+    bookingId: "reservation-404", status: "not_found",
+  });
+  assert.deepEqual(normalizeBookingLookup({ bookingId: "reservation-123", status: "pending" }), {
+    bookingId: "reservation-123", status: "pending",
+  });
+  assert.throws(
+    () => normalizeBookingLookup({ bookingId: "bad\\nreference", status: "confirmed" }),
+    error => error instanceof PmsIntegrationError && error.code === "INVALID_PROVIDER_RESPONSE"
+  );
+  assert.throws(
+    () => normalizeBooking({ bookingId: "reservation-404", status: "not_found" }),
+    PmsIntegrationError
+  );
+});

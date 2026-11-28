@@ -20,7 +20,8 @@ const {createPmsCredentialVault}=require("./pms-credential-vault");
 const {createPaymentWebhookSecretVault,savePaymentWebhookSecret,disablePaymentWebhookConnection}=require("./payment-credential-vault");
 const {createPaymentWebhookRequestHandler}=require("./payment-webhook");
 const {BOOKING_SCHEMA}=require("./booking-repository");
-const {createVerifiedDepositPmsOrchestrator,getHotelAvailability}=require("./booking-service");
+const {createVerifiedDepositPmsOrchestrator}=require("./booking-service");
+const {AVAILABILITY_QUOTE_SCHEMA,createAvailabilityQuotes}=require("./availability-quotes");
 const {deliverStaffEscalation}=require("./staff-notifications");
 const {encryptWebhookConfig,decryptWebhookConfig,resolvePublicWebhook,postSignedWebhook}=require("./staff-webhook-security");
 function isValidReviewDueDate(value){
@@ -108,6 +109,7 @@ const schema=[
 "CREATE INDEX IF NOT EXISTS pms_webhook_events_org_time_idx ON pms_webhook_events(organization_id,received_at DESC)",
 "CREATE TABLE IF NOT EXISTS hotel_offer_attributions(id UUID PRIMARY KEY DEFAULT gen_random_uuid(),organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,offer_id UUID NOT NULL REFERENCES hotel_offers(id) ON DELETE CASCADE,conversation_id UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,status TEXT NOT NULL DEFAULT 'enquiry',amount_minor BIGINT,currency CHAR(3),notes TEXT NOT NULL DEFAULT '',marked_by UUID REFERENCES users(id) ON DELETE SET NULL,created_at TIMESTAMPTZ NOT NULL DEFAULT now(),updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),UNIQUE(organization_id,offer_id,conversation_id))",
 ...BOOKING_SCHEMA,
+...AVAILABILITY_QUOTE_SCHEMA,
 ].join(";\n")+";";
 function hash(v){return crypto.createHash("sha256").update(v).digest("hex");}
 function equal(a,b){const x=Buffer.from(String(a||"")),y=Buffer.from(String(b||""));return x.length===y.length&&crypto.timingSafeEqual(x,y);}
@@ -384,7 +386,7 @@ app.get("/api/public/:slug/availability",async(q,r,n)=>{
   if(!db)return r.status(503).json({error:"Hotel platform is not configured.",availabilityStatus:"unknown"});
   const organization=await db.query("SELECT id,status FROM organizations WHERE slug=$1",[q.params.slug]);
   if(!organization.rowCount||organization.rows[0].status==="suspended")return r.status(404).json({error:"Hotel availability unavailable."});
-  const result=await getHotelAvailability({
+  const result=await createAvailabilityQuotes({
    db,
    vault:pmsCredentialVault,
    pmsRegistry,
@@ -393,8 +395,8 @@ app.get("/api/public/:slug/availability",async(q,r,n)=>{
    checkOut:q.query.checkOut,
    guestCount:q.query.guestCount===undefined?1:Number(q.query.guestCount)
   });
-  if(result.status!=="checked")return r.status(503).json({availabilityStatus:"unknown",reason:result.reason,rooms:[]});
-  r.json({availabilityStatus:"checked",checkedAt:result.checkedAt,rooms:result.rooms});
+  if(result.status!=="checked")return r.status(503).json({availabilityStatus:"unknown",reason:result.reason,quotes:[]});
+  r.json({availabilityStatus:"checked",checkedAt:result.checkedAt,quotes:result.quotes,reason:result.reason||null});
  }catch(e){
   if(e&&["INVALID_DATE_RANGE","DATE_RANGE_TOO_LARGE"].includes(e.code))return r.status(400).json({error:"Enter valid check-in and check-out dates."});
   if(e&&e.code==="INVALID_GUEST_COUNT")return r.status(400).json({error:"Guest count must be between 1 and 20."});

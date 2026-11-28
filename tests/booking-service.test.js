@@ -127,8 +127,44 @@ test("verified deposit with no connected PMS stays unconfirmed for staff review"
   assert.equal(db.calls[0].params[1], "hotel-a");
 });
 
+
+test("sandbox PMS connections are never used to create live guest reservations", async () => {
+  const db = orchestratorDb({ connection: null });
+  let reservationCalls = 0;
+  const orchestrate = createVerifiedDepositPmsOrchestrator({
+    db,
+    vault: { configured: true, decrypt() { throw new Error("sandbox credentials must not be decrypted"); } },
+    pmsRegistry: {},
+    async createReservation() { reservationCalls += 1; },
+  });
+  const result = await orchestrate({ organizationId: "hotel-a", bookingId: "booking-1" });
+  assert.equal(result.state, "payment_verified");
+  assert.equal(result.confirmed, false);
+  assert.equal(result.reason, "pms_production_connection_missing");
+  assert.match(db.calls[1].sql, /mode='production'/);
+  assert.equal(reservationCalls, 0);
+});
+
+test("production PMS connection without booking:write scope cannot create reservations", async () => {
+  const db = orchestratorDb({ connection: {
+    provider: "mews", mode: "production", scopes: ["availability:read"], encrypted_credentials: "ciphertext",
+  } });
+  let reservationCalls = 0;
+  const orchestrate = createVerifiedDepositPmsOrchestrator({
+    db,
+    vault: { configured: true, decrypt() { throw new Error("credentials must not be decrypted"); } },
+    pmsRegistry: {},
+    async createReservation() { reservationCalls += 1; },
+  });
+  const result = await orchestrate({ organizationId: "hotel-a", bookingId: "booking-1" });
+  assert.equal(result.state, "payment_verified");
+  assert.equal(result.confirmed, false);
+  assert.equal(result.reason, "pms_booking_write_scope_missing");
+  assert.equal(reservationCalls, 0);
+});
+
 test("connected unsupported PMS cannot confirm and is returned as pending for review", async () => {
-  const db = orchestratorDb({ connection: { provider: "unsupported_pms", encrypted_credentials: "ciphertext" } });
+  const db = orchestratorDb({ connection: { provider: "unsupported_pms", mode: "production", scopes: ["booking:write"], encrypted_credentials: "ciphertext" } });
   let received;
   const orchestrate = createVerifiedDepositPmsOrchestrator({
     db,
@@ -148,7 +184,7 @@ test("connected unsupported PMS cannot confirm and is returned as pending for re
 });
 
 test("only a confirmed reservation result from the reservation service can be surfaced as confirmed", async () => {
-  const db = orchestratorDb({ connection: { provider: "mews", encrypted_credentials: "ciphertext" } });
+  const db = orchestratorDb({ connection: { provider: "mews", mode: "production", scopes: ["booking:write"], encrypted_credentials: "ciphertext" } });
   const orchestrate = createVerifiedDepositPmsOrchestrator({
     db,
     vault: { configured: true, decrypt: () => ({ token: "hotel-token" }) },

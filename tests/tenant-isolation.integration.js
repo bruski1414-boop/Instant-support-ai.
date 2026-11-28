@@ -274,7 +274,7 @@ try {
     "INSERT INTO conversations(organization_id,channel,status,guest_token_hash) VALUES($1,'website','open',$2) RETURNING id",
     [orgResolutionA.rows[0].id, resolutionHash(staffPlainToken)],
   );
-  await pool.query("INSERT INTO messages(conversation_id,role,content) VALUES($1,'guest','Synthetic guest question')", [staffConversation.rows[0].id]);
+  const staffGuest = await pool.query("INSERT INTO messages(conversation_id,role,content) VALUES($1,'guest','Synthetic guest question') RETURNING id", [staffConversation.rows[0].id]);
   const staffAssistant = await pool.query(
     "INSERT INTO messages(conversation_id,role,content,created_at) VALUES($1,'assistant','Synthetic assistant answer',clock_timestamp()) RETURNING id",
     [staffConversation.rows[0].id],
@@ -287,6 +287,10 @@ try {
     assistantMessageId: staffAssistant.rows[0].id,
   });
   assert.equal(staffResolutionWithValidToken.status, 409, "staff-touched conversations are not self-service candidates");
+  await assert.rejects(
+    pool.query("INSERT INTO conversation_resolution_confirmations(organization_id,conversation_id,assistant_message_id) VALUES($1,$2,$3)", [orgResolutionA.rows[0].id, staffConversation.rows[0].id, staffGuest.rows[0].id]),
+    /must reference an assistant message/i,
+  );
 
   const escalatedConversation = await pool.query(
     "INSERT INTO conversations(organization_id,channel,status,guest_token_hash) VALUES($1,'website','escalated',$2) RETURNING id",
@@ -308,6 +312,38 @@ try {
     assistantMessageId: escalatedAssistant.rows[0].id,
   });
   assert.equal(escalatedResolution.status, 409, "a conversation with any escalation is not a self-service candidate");
+
+  const laterResolutionToken = randomUUID().replace(/-/g, "") + "laterresolution";
+  const laterConversation = await pool.query(
+    "INSERT INTO conversations(organization_id,channel,status,guest_token_hash) VALUES($1,'website','open',$2) RETURNING id",
+    [orgResolutionA.rows[0].id, resolutionHash(laterResolutionToken)],
+  );
+  const firstLaterAssistant = await pool.query(
+    "INSERT INTO messages(conversation_id,role,content,created_at) VALUES($1,'assistant','First synthetic answer',clock_timestamp()-interval '1 second') RETURNING id",
+    [laterConversation.rows[0].id],
+  );
+  const firstLaterResolution = await postResolution(tenants[0], {
+    conversationId: laterConversation.rows[0].id,
+    conversationToken: laterResolutionToken,
+    assistantMessageId: firstLaterAssistant.rows[0].id,
+  });
+  assert.equal(firstLaterResolution.status, 201, await firstLaterResolution.clone().text());
+  await pool.query(
+    "INSERT INTO messages(conversation_id,role,content,created_at) VALUES($1,'guest','A later question',clock_timestamp())",
+    [laterConversation.rows[0].id],
+  );
+  await new Promise(resolve => setTimeout(resolve, 5));
+  const secondLaterAssistant = await pool.query(
+    "INSERT INTO messages(conversation_id,role,content,created_at) VALUES($1,'assistant','Second synthetic answer',clock_timestamp()) RETURNING id",
+    [laterConversation.rows[0].id],
+  );
+  await new Promise(resolve => setTimeout(resolve, 5));
+  const secondLaterResolution = await postResolution(tenants[0], {
+    conversationId: laterConversation.rows[0].id,
+    conversationToken: laterResolutionToken,
+    assistantMessageId: secondLaterAssistant.rows[0].id,
+  });
+  assert.equal(secondLaterResolution.status, 201, await secondLaterResolution.clone().text());
 
   const resolutionAudit = await pool.query(
     "SELECT count(*)::int AS count FROM audit_logs WHERE organization_id=$1 AND action='conversation.guest_resolution_confirmed' AND target_id=$2",
@@ -331,9 +367,9 @@ try {
   assert.equal(resolutionReportB.status, 200);
   const resolutionReportABody = await resolutionReportA.json();
   const resolutionReportBBody = await resolutionReportB.json();
-  assert.equal(resolutionReportABody.guestReportedConversations, 1);
-  assert.equal(resolutionReportABody.selfServiceCandidates, 1);
-  assert.equal(resolutionReportABody.assistedOrAmbiguousConversations, 0);
+  assert.equal(resolutionReportABody.guestReportedConversations, 2);
+  assert.equal(resolutionReportABody.selfServiceCandidates, 1, "multiple confirmations in one conversation must not be counted as a clean self-service candidate");
+  assert.equal(resolutionReportABody.assistedOrAmbiguousConversations, 1);
   assert.equal(resolutionReportABody.potentialStaffMinutesAvoided.value, null);
   assert.equal(resolutionReportABody.influencedConversations.value, null);
   assert.equal(resolutionReportBBody.guestReportedConversations, 0, "tenant B must not see tenant A resolution events");

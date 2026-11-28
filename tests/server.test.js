@@ -192,6 +192,8 @@ test("editing approved hotel knowledge requires reapproval", () => {
   assert.match(server, /knowledge\.edited_unapproved/);
   assert.match(server, /typeof body\.approved!=="boolean"/);
   assert.match(server, /body\.content\.length>12000/);
+  assert.match(server, /Set a review date of today or later before approving hotel knowledge/);
+  assert.match(server, /isValidReviewDueDate/);
 });
 
 
@@ -400,7 +402,8 @@ test("conversation insights compare guest topics with tenant-scoped approved kno
   const server = fs.readFileSync("server.js", "utf8");
   const route = server.slice(server.indexOf('app.get("/api/admin/insights"'), server.indexOf('app.get("/api/admin/offers"'));
   assert.match(route, /FROM knowledge_documents WHERE organization_id=\$1 GROUP BY category/);
-  assert.match(route, /approved=true AND \(review_due_at IS NULL OR review_due_at>=CURRENT_DATE\)/);
+  assert.match(route, /approved=true AND review_due_at IS NOT NULL AND review_due_at>=CURRENT_DATE/);
+  assert.match(route, /review_due_at IS NULL OR review_due_at<CURRENT_DATE/);
   assert.match(route, /documents_needing_review/);
   assert.match(route, /knowledgeCoverage/);
   assert.match(route, /approved_documents/);

@@ -538,3 +538,15 @@ test("staff handoff replies are tenant-scoped, audited and record first response
 
  assert.match(server,/percentile_cont\(0\.95\) WITHIN GROUP\(ORDER BY EXTRACT\(EPOCH FROM \(first_staff_response_at-created_at\)\)\*1000\)/);
 });
+
+test("public booking requests fail closed until guest-data privacy approval is enabled", () => {
+  const server = fs.readFileSync("server.js", "utf8");
+  const start = server.indexOf('app.post("/api/public/:slug/booking-requests"');
+  const end = server.indexOf('app.post("/api/public/:slug/chat"', start);
+  assert.ok(start >= 0 && end > start, "public booking route exists");
+  const route = server.slice(start, end);
+  const privacyGate = route.indexOf('process.env.GUEST_DATA_STORAGE_ENABLED!=="true"');
+  const bookingWrite = route.indexOf("createBookingRecordFromQuote");
+  assert.ok(privacyGate >= 0, "booking route enforces guest-data privacy gate");
+  assert.ok(bookingWrite > privacyGate, "privacy gate runs before guest details are persisted");
+});

@@ -37,6 +37,7 @@ main{padding:28px clamp(16px,4vw,48px);max-width:1450px;width:100%;margin:auto}.
  <nav class="nav">
   <button class="active" data-panel="overview">◫ Overview</button>
   <button data-panel="setup">⚙ Hotel setup</button><button data-panel="storage" id="storageNav">▤ Hotel storage</button>
+  <button data-panel="bookings">▣ Bookings</button>
   <button data-panel="conversations">☷ Conversations</button>
   <button data-panel="insights">◷ Conversation insights</button><button data-panel="performance">▥ Performance report</button>
   <button data-panel="knowledge">✧ Knowledge base</button>
@@ -168,7 +169,28 @@ main{padding:28px clamp(16px,4vw,48px);max-width:1450px;width:100%;margin:auto}.
    <div class="card" id="performanceRevenue"><div class="empty">Loading recorded sales…</div></div>
    <p class="muted" style="font-size:12px">Confirmed sales are recorded by hotel staff. They are not independently audited and should not be presented as proven incremental profit or revenue caused by Veyra.</p>
   </section>
-  <section id="panel-conversations" class="panel">
+  <section id="panel-bookings" class="panel">
+  <div class="sectionrow"><h2>Hotel booking queue</h2><span class="muted">Requests and reservation status · newest first</span></div>
+  <p class="muted" style="font-size:12px">This queue shows booking records for this hotel workspace only. A deposit is not a confirmed reservation: look for the confirmed status and PMS reference before telling a guest their stay is booked.</p>
+  <div class="formrow" style="align-items:end">
+   <div class="field"><label for="bookingStateFilter">Filter by booking status</label>
+    <select id="bookingStateFilter">
+     <option value="">All booking statuses</option>
+     <option value="awaiting_payment">Awaiting payment</option>
+     <option value="payment_pending">Payment pending</option>
+     <option value="payment_verified">Payment verified</option>
+     <option value="booking_pending">PMS confirmation pending</option>
+     <option value="confirmed">Confirmed in hotel system</option>
+     <option value="payment_failed">Payment failed</option>
+     <option value="booking_failed">Booking failed</option>
+     <option value="cancelled">Cancelled</option>
+    </select>
+   </div>
+   <div class="field"><label>Latest results</label><div id="bookingQueueCount" class="muted">Not loaded</div></div>
+  </div>
+  <div class="card tablewrap"><table class="table"><thead><tr><th>GUEST</th><th>STAY</th><th>ROOM / GUESTS</th><th>TOTAL / 50% DEPOSIT</th><th>STATUS</th><th>HOTEL SYSTEM</th><th>REQUESTED</th></tr></thead><tbody id="bookingRows"><tr><td colspan="7" class="empty">Select Bookings to load requests.</td></tr></tbody></table></div>
+ </section>
+ <section id="panel-conversations" class="panel">
   <div class="sectionrow"><h2>Recent conversations</h2><span class="muted">Latest 20 · message previews</span></div>
   <div class="card tablewrap"><table class="table"><thead><tr><th>ID</th><th>LAST MESSAGE</th><th>STATUS</th><th>CHANNEL</th><th>STARTED</th><th>ACTION</th></tr></thead><tbody id="conversationRows"></tbody></table></div>
   <div id="conversationDetail" class="card hidden" style="margin-top:14px"></div>
@@ -320,7 +342,7 @@ function switchPanel(name){
  document.querySelectorAll(".panel").forEach(x=>x.classList.remove("active"));
  $("panel-"+name).classList.add("active");
  document.querySelectorAll("[data-panel]").forEach(x=>x.classList.toggle("active",x.dataset.panel===name));
- const labels={storage:["HOTEL STORAGE","Hotel storage","Connect hotel document repositories and choose source documents."],setup:["HOTEL SETUP","Hotel setup","Configure the hotel profile and review the real pre-pilot requirements."],team:["TEAM ACCESS","Team access","Invite employees and manage pending invitations."],overview:["OVERVIEW","Support overview","A live view of conversations and staff attention."],conversations:["CONVERSATIONS","Recent conversations","Review the latest guest interactions."],knowledge:["KNOWLEDGE BASE","Hotel knowledge","Control the facts the assistant is allowed to use."],offers:["REVENUE OFFERS","Revenue offers","Manage hotel-approved extras and verified availability."],revenue:["REVENUE TRACKING","Revenue attribution","Review guest enquiries and confirm actual completed sales."],insights:["CONVERSATION INSIGHTS","Guest conversation intelligence","Understand recurring topics and where staff support is needed."],performance:["PERFORMANCE REPORT","Hotel performance report","Review conversation activity and staff-confirmed offer outcomes."],escalations:["STAFF HANDOFFS","Staff handoff queue","Requests that need a member of your team."]};
+ const labels={bookings:["BOOKINGS","Hotel bookings","Review guest requests, deposit status and confirmed hotel-system references."],storage:["HOTEL STORAGE","Hotel storage","Connect hotel document repositories and choose source documents."],setup:["HOTEL SETUP","Hotel setup","Configure the hotel profile and review the real pre-pilot requirements."],team:["TEAM ACCESS","Team access","Invite employees and manage pending invitations."],overview:["OVERVIEW","Support overview","A live view of conversations and staff attention."],conversations:["CONVERSATIONS","Recent conversations","Review the latest guest interactions."],knowledge:["KNOWLEDGE BASE","Hotel knowledge","Control the facts the assistant is allowed to use."],offers:["REVENUE OFFERS","Revenue offers","Manage hotel-approved extras and verified availability."],revenue:["REVENUE TRACKING","Revenue attribution","Review guest enquiries and confirm actual completed sales."],insights:["CONVERSATION INSIGHTS","Guest conversation intelligence","Understand recurring topics and where staff support is needed."],performance:["PERFORMANCE REPORT","Hotel performance report","Review conversation activity and staff-confirmed offer outcomes."],escalations:["STAFF HANDOFFS","Staff handoff queue","Requests that need a member of your team."]};
  $("crumb").textContent="WORKSPACE / "+labels[name][0];$("heading").textContent=labels[name][1];$("subheading").textContent=labels[name][2];
  loadPanel(name);
 }
@@ -494,8 +516,33 @@ async function loadEscalations(){
  }).join("");
  $("escalationRows").innerHTML=rows||'<tr><td colspan="6" class="empty">No handoffs match this filter.</td></tr>';
 }
+async function loadHotelBookings(){
+ const filter=$("bookingStateFilter").value;
+ const query=filter?"?state="+encodeURIComponent(filter):"";
+ const d=await api("/api/admin/bookings"+query);
+ const bookings=d.bookings||[];
+ $("bookingQueueCount").textContent=bookings.length+" shown · maximum "+(d.limit||50)+" per page";
+ const stateLabels={awaiting_payment:"Awaiting payment",payment_pending:"Payment pending",payment_verified:"Payment verified",booking_pending:"PMS confirmation pending",confirmed:"Confirmed",payment_failed:"Payment failed",booking_failed:"Booking failed",cancelled:"Cancelled"};
+ const money=(minor,currency)=>{
+  const digits=(()=>{try{return new Intl.NumberFormat("en",{style:"currency",currency}).resolvedOptions().maximumFractionDigits;}catch{return 2;}})();
+  const amount=Number(minor);
+  if(!Number.isFinite(amount))return safe(currency)+" —";
+  try{return new Intl.NumberFormat(undefined,{style:"currency",currency}).format(amount/Math.pow(10,digits));}
+  catch{return safe(currency)+" "+safe(minor);}
+ };
+ const rows=bookings.map(b=>{
+  const guest='<strong>'+safe(b.guest_name)+'</strong><div class="muted" style="font-size:12px">'+safe(b.guest_phone)+'</div>'+(b.guest_email?'<div class="muted" style="font-size:12px">'+safe(b.guest_email)+'</div>':'');
+  const stay=safe(b.check_in)+ ' → '+safe(b.check_out);
+  const room=safe(b.room_type_id)+'<div class="muted" style="font-size:12px">'+safe(b.guest_count)+' guest(s)</div>';
+  const amounts='<strong>'+money(b.total_amount_minor,b.currency)+'</strong><div class="muted" style="font-size:12px">Deposit: '+money(b.deposit_amount_minor,b.currency)+'</div>';
+  const status='<span class="tag '+(b.state==="confirmed"?"good":b.state==="payment_failed"||b.state==="booking_failed"||b.state==="cancelled"?"bad":"warn")+'">'+safe(stateLabels[b.state]||b.state)+'</span>';
+  const pms=b.pms_booking_id?'<strong>'+safe(b.pms_provider||"PMS")+'</strong><div class="muted" style="font-size:12px">Ref: '+safe(b.pms_booking_id)+'</div>': '<span class="muted">No confirmed PMS reference</span>';
+  return '<tr><td>'+guest+'</td><td>'+stay+'</td><td>'+room+'</td><td>'+amounts+'</td><td>'+status+'</td><td>'+pms+(b.last_error_code?'<div class="muted" style="font-size:12px">Issue: '+safe(b.last_error_code)+'</div>':'')+'</td><td>'+date(b.created_at)+'</td></tr>';
+ }).join("");
+ $("bookingRows").innerHTML=rows||'<tr><td colspan="7" class="empty">No booking records match this filter.</td></tr>';
+}
 async function loadPanel(name){
- try{if(name==="overview"||name==="conversations")await loadOverview();if(name==="overview")await loadNotificationCentre();if(name==="knowledge")await loadKnowledge();if(name==="offers")await loadOffers();if(name==="revenue")await loadRevenueAttributions();if(name==="insights")await loadConversationInsights();if(name==="performance")await loadPerformanceReport();if(name==="escalations")await loadEscalations();if(name==="team")await loadInvitations();if(name==="setup")await loadSetup();if(name==="storage")await loadStorage();$("globalNotice").classList.add("hidden");}
+ try{if(name==="overview"||name==="conversations")await loadOverview();if(name==="bookings")await loadHotelBookings();if(name==="overview")await loadNotificationCentre();if(name==="knowledge")await loadKnowledge();if(name==="offers")await loadOffers();if(name==="revenue")await loadRevenueAttributions();if(name==="insights")await loadConversationInsights();if(name==="performance")await loadPerformanceReport();if(name==="escalations")await loadEscalations();if(name==="team")await loadInvitations();if(name==="setup")await loadSetup();if(name==="storage")await loadStorage();$("globalNotice").classList.add("hidden");}
  catch(e){notice(e.message,"error");}
 }
 async function enterWorkspace(){
@@ -505,6 +552,7 @@ async function enterWorkspace(){
 $("loginForm").addEventListener("submit",async e=>{e.preventDefault();try{const d=await api("/api/auth/login",{method:"POST",body:JSON.stringify({organizationSlug:$("workspaceSlug").value.trim().toLowerCase(),email:$("email").value,password:$("password").value})});csrfToken=d.csrfToken;await enterWorkspace();}catch(err){loginError(err.message);}});
 $("logout").addEventListener("click",async()=>{try{await api("/api/auth/logout",{method:"POST",body:"{}"});}catch{}csrfToken="";$("app").classList.add("hidden");$("login").classList.remove("hidden");$("password").value="";});
 $("refresh").addEventListener("click",()=>loadPanel(activePanel));
+$("bookingStateFilter").addEventListener("change",loadHotelBookings);
 document.querySelectorAll("[data-panel]").forEach(b=>b.addEventListener("click",()=>switchPanel(b.dataset.panel)));
 
 

@@ -31,6 +31,11 @@ function buildPmsBookingRequest(booking) {
     checkOut: booking.checkOut,
     roomTypeId: booking.roomTypeId,
     guestCount: booking.guestCount,
+    guest: {
+      name: booking.guest?.name,
+      phone: booking.guest?.phone,
+      email: booking.guest?.email || "",
+    },
     idempotencyKey: booking.idempotencyKey,
   };
 }

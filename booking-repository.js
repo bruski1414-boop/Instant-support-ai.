@@ -85,6 +85,60 @@ async function createBookingRecord(db, organizationId, input) {
 }
 
 /**
+ * Persist the outcome of the PMS call. A timeout must be recorded as pending,
+ * never as confirmed. Only a confirmed provider response with a reference can
+ * transition the booking to confirmed.
+ */
+async function recordPmsOutcome(db, organizationId, bookingId, provider, outcome) {
+  if (typeof organizationId !== "string" || !organizationId ||
+      typeof bookingId !== "string" || !bookingId ||
+      !/^[a-z][a-z0-9_-]{1,39}$/.test(provider || "") ||
+      !outcome || !["confirmed", "booking_pending"].includes(outcome.state)) {
+    fail("INVALID_PMS_OUTCOME", "A valid hotel reservation outcome is required.");
+  }
+  const pmsBookingId = typeof outcome.pmsBookingId === "string" ? outcome.pmsBookingId.trim() : "";
+  if (outcome.state === "confirmed" && !pmsBookingId) {
+    fail("PMS_CONFIRMATION_REFERENCE_REQUIRED", "A confirmed reservation must include its PMS reference.");
+  }
+  if (pmsBookingId.length > 160) fail("INVALID_PMS_REFERENCE", "The PMS reservation reference is invalid.");
+  const errorCode = typeof outcome.reason === "string" && /^[a-z0-9_]{1,80}$/.test(outcome.reason)
+    ? outcome.reason : "";
+  return inTransaction(db, async client => {
+    const found = await client.query(
+      "SELECT id,state FROM hotel_bookings WHERE id=$1 AND organization_id=$2 FOR UPDATE",
+      [bookingId, organizationId]
+    );
+    if (!found.rowCount) fail("BOOKING_NOT_FOUND", "The booking was not found for this hotel.", 404);
+    const current = found.rows[0].state;
+    if (current === "confirmed") {
+      if (outcome.state === "confirmed") {
+        const same = await client.query(
+          "SELECT id FROM hotel_bookings WHERE id=$1 AND organization_id=$2 AND pms_provider=$3 AND pms_booking_id=$4",
+          [bookingId, organizationId, provider, pmsBookingId]
+        );
+        if (same.rowCount) return { state: "confirmed", duplicate: true };
+      }
+      fail("BOOKING_ALREADY_CONFIRMED", "A confirmed reservation cannot be overwritten.", 409);
+    }
+    if (!["payment_verified", "booking_pending"].includes(current)) {
+      fail("PAYMENT_NOT_VERIFIED", "A verified deposit is required before storing a PMS outcome.", 409);
+    }
+    if (outcome.state === "confirmed") {
+      await client.query(
+        "UPDATE hotel_bookings SET state='confirmed',pms_provider=$3,pms_booking_id=$4,last_error_code='',updated_at=now() WHERE id=$1 AND organization_id=$2",
+        [bookingId, organizationId, provider, pmsBookingId]
+      );
+      return { state: "confirmed", duplicate: false };
+    }
+    await client.query(
+      "UPDATE hotel_bookings SET state='booking_pending',pms_provider=$3,pms_booking_id=$4,last_error_code=$5,updated_at=now() WHERE id=$1 AND organization_id=$2",
+      [bookingId, organizationId, provider, pmsBookingId || null, errorCode || "pms_pending"]
+    );
+    return { state: "booking_pending", duplicate: false };
+  });
+}
+
+/**
  * Call only after the provider-specific webhook signature and event schema
  * have been verified. This function independently checks tenant, amount,
  * currency, provider payment ID and booking state in one database transaction.
@@ -160,4 +214,5 @@ module.exports = {
   normalizeBookingRecord,
   createBookingRecord,
   recordVerifiedDeposit,
+  recordPmsOutcome,
 };

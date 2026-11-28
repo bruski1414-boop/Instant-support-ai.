@@ -217,6 +217,69 @@ try {
   const pmsBAfterCrossDisconnectBody = await pmsBAfterCrossDisconnect.json();
   assert.equal(pmsBAfterCrossDisconnectBody.connections.some(x => x.provider === "tenant-b-private-adapter"), true, "tenant B's PMS connection must remain intact after tenant A's disconnect attempt");
   await Promise.all(tenants.map(seedConversation));
+
+  // Exercise retention cleanup against real PostgreSQL rows for both tenants.
+  const retentionDays = 30;
+  await pool.query(
+    "INSERT INTO organization_settings(organization_id,conversation_retention_days,updated_by,updated_at) VALUES($1,$2,(SELECT id FROM users WHERE organization_id=$1 AND email=$3),now()) ON CONFLICT(organization_id) DO UPDATE SET conversation_retention_days=EXCLUDED.conversation_retention_days,updated_by=EXCLUDED.updated_by,updated_at=now()",
+    [(await pool.query("SELECT id FROM organizations WHERE slug=$1", [tenants[0].slug])).rows[0].id, retentionDays, tenants[0].email]
+  );
+  const retentionOrgA = (await pool.query("SELECT id FROM organizations WHERE slug=$1", [tenants[0].slug])).rows[0].id;
+  const retentionOrgB = (await pool.query("SELECT id FROM organizations WHERE slug=$1", [tenants[1].slug])).rows[0].id;
+  await pool.query(
+    "INSERT INTO conversations(organization_id,channel,status,last_message_at) SELECT $1,'website','resolved',now()-interval '60 days'-(g.n * interval '1 second') FROM generate_series(1,502) AS g(n)",
+    [retentionOrgA]
+  );
+  await pool.query(
+    "INSERT INTO conversations(organization_id,channel,status,last_message_at) VALUES($1,'website','resolved',now()-interval '60 days')",
+    [retentionOrgB]
+  );
+  await pool.query(
+    "INSERT INTO conversations(organization_id,channel,status,last_message_at) VALUES($1,'website','resolved',now()-interval '1 day'),($1,'website','open',now()-interval '60 days')",
+    [retentionOrgA]
+  );
+  const retentionCleanup = await fetch(baseUrl + "/api/admin/retention/cleanup", {
+    method: "POST",
+    headers: { cookie: cookieA, "X-CSRF-Token": tenants[0].csrfToken, "content-type": "application/json" },
+    body: JSON.stringify({ confirm: true }),
+  });
+  assert.equal(retentionCleanup.status, 200, "tenant A owner can execute a confirmed retention cleanup batch");
+  const retentionCleanupBody = await retentionCleanup.json();
+  assert.equal(retentionCleanupBody.deleted, 500, "retention cleanup must delete no more than the 500-row batch limit");
+  assert.equal(retentionCleanupBody.remainingEligible, 2, "retention cleanup must report the two eligible rows still awaiting a later batch");
+  assert.equal(retentionCleanupBody.hasMore, true, "retention cleanup must indicate that more eligible work remains");
+  const retentionRemainingA = await pool.query(
+    "SELECT count(*)::int AS count FROM conversations WHERE organization_id=$1 AND status='resolved' AND last_message_at<now()-($2::int*interval '1 day')",
+    [retentionOrgA, retentionDays]
+  );
+  assert.equal(retentionRemainingA.rows[0].count, 2, "exactly two eligible tenant A conversations must remain after the first batch");
+  const retentionPreservedB = await pool.query(
+    "SELECT count(*)::int AS count FROM conversations WHERE organization_id=$1 AND status='resolved' AND last_message_at<now()-($2::int*interval '1 day')",
+    [retentionOrgB, retentionDays]
+  );
+  assert.equal(retentionPreservedB.rows[0].count, 1, "tenant A cleanup must not delete tenant B's eligible conversation");
+  const retentionAudit = await pool.query(
+    "SELECT target_id FROM audit_logs WHERE organization_id=$1 AND action='retention.cleanup_batch_executed' ORDER BY created_at DESC LIMIT 1",
+    [retentionOrgA]
+  );
+  assert.equal(retentionAudit.rowCount, 1, "each cleanup batch must write a tenant-scoped audit event");
+  assert.equal(retentionAudit.rows[0].target_id, "500", "retention audit event must record the batch deletion count");
+  const retentionSecondBatch = await fetch(baseUrl + "/api/admin/retention/cleanup", {
+    method: "POST",
+    headers: { cookie: cookieA, "X-CSRF-Token": tenants[0].csrfToken, "content-type": "application/json" },
+    body: JSON.stringify({ confirm: true }),
+  });
+  assert.equal(retentionSecondBatch.status, 200);
+  const retentionSecondBody = await retentionSecondBatch.json();
+  assert.equal(retentionSecondBody.deleted, 2, "a later confirmed batch must finish the remaining eligible rows");
+  assert.equal(retentionSecondBody.remainingEligible, 0);
+  assert.equal(retentionSecondBody.hasMore, false);
+  const retentionProtectedA = await pool.query(
+    "SELECT count(*)::int AS count FROM conversations WHERE organization_id=$1 AND ((status='resolved' AND last_message_at>=now()-($2::int*interval '1 day')) OR status='open')",
+    [retentionOrgA, retentionDays]
+  );
+  assert.equal(retentionProtectedA.rows[0].count, 2, "recent resolved and open conversations must be preserved");
+
   await Promise.all(tenants.map(seedKnowledge));
   await Promise.all(tenants.map(seedOffer));
   await Promise.all(tenants.map(seedOfferAttribution));

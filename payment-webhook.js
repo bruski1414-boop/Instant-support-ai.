@@ -49,7 +49,8 @@ function createPaymentWebhookRequestHandler({ db, vault, providerVerifiers = {},
     try {
       const connection = await loadPaymentConnectionByEndpointToken({ db, endpointToken, vault });
       if (!connection) return { status: 404, body: { error: "Webhook endpoint not found." } };
-      const verify = providerVerifiers[connection.provider];
+      const hasVerifier = Object.prototype.hasOwnProperty.call(providerVerifiers, connection.provider);
+      const verify = hasVerifier ? providerVerifiers[connection.provider] : null;
       if (typeof verify !== "function") return { status: 503, body: { error: "This payment provider is not enabled yet." } };
       const result = await processPaymentWebhook({
         verify, db, organizationId: connection.organizationId,

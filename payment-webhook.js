@@ -7,8 +7,9 @@ const { loadPaymentConnectionByEndpointToken } = require("./payment-credential-v
 /**
  * Connects a provider-specific signature verifier to durable booking state.
  * The raw request body must be captured by the HTTP server before JSON parsing.
- * This layer deliberately stops at payment_verified; PMS orchestration must
- * separately load the tenant-scoped booking and persist the PMS outcome.
+ * The request handler may hand a newly verified deposit to a server-controlled
+ * orchestration callback, which must reload tenant-scoped booking data and persist
+ * the PMS outcome before any guest-facing confirmation is issued.
  */
 async function processPaymentWebhook({
   verify,

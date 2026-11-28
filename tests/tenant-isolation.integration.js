@@ -325,6 +325,16 @@ try {
   // Force the final audit insert to fail after all three disconnect DELETEs have run.
   // The endpoint must roll the entire transaction back, preserving credentials and metadata.
   const storageOrgA = (await pool.query("SELECT id FROM organizations WHERE slug=$1", [tenants[0].slug])).rows[0].id;
+  const storageUserA = (await pool.query("SELECT id FROM users WHERE organization_id=$1 AND email=$2", [storageOrgA, tenants[0].email])).rows[0].id;
+  const oauthStateHash = "disconnect-rollback-" + tag;
+  await pool.query(
+    "INSERT INTO storage_oauth_states(state_hash,organization_id,user_id,provider,expires_at,code_verifier) VALUES($1,$2,$3,'google',now()+interval '10 minutes','test-verifier')",
+    [oauthStateHash, storageOrgA, storageUserA]
+  );
+  const auditBeforeFailure = await pool.query(
+    "SELECT count(*)::int AS count FROM audit_logs WHERE organization_id=$1 AND action='storage.google.disconnected'",
+    [storageOrgA]
+  );
   const failFn = "ci_fail_storage_disconnect_" + tag;
   const failTrigger = "ci_fail_storage_disconnect_trigger_" + tag;
   await pool.query(`
@@ -354,6 +364,16 @@ try {
     );
     assert.equal(credentialsAfterFailure.rowCount, 1, "credential deletion must roll back after a later transaction failure");
     assert.equal(metadataAfterFailure.rowCount, 1, "connection metadata deletion must roll back after a later transaction failure");
+    const oauthStateAfterFailure = await pool.query(
+      "SELECT state_hash FROM storage_oauth_states WHERE state_hash=$1 AND organization_id=$2",
+      [oauthStateHash, storageOrgA]
+    );
+    assert.equal(oauthStateAfterFailure.rowCount, 1, "OAuth state deletion must roll back after a later transaction failure");
+    const auditAfterFailure = await pool.query(
+      "SELECT count(*)::int AS count FROM audit_logs WHERE organization_id=$1 AND action='storage.google.disconnected'",
+      [storageOrgA]
+    );
+    assert.equal(auditAfterFailure.rows[0].count, auditBeforeFailure.rows[0].count, "failed disconnect must not leave an audit event");
   } finally {
     await pool.query(`DROP TRIGGER IF EXISTS ${failTrigger} ON audit_logs`);
     await pool.query(`DROP FUNCTION IF EXISTS ${failFn}()`);

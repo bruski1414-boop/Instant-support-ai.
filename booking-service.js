@@ -163,7 +163,7 @@ function createVerifiedDepositPmsOrchestrator({
  * tenant-scoped connection record. An absent/invalid connection is UNKNOWN,
  * never an assertion that rooms are sold out or available.
  */
-async function getHotelAvailability({ db, vault, pmsRegistry, organizationId, checkIn, checkOut }) {
+async function getHotelAvailability({ db, vault, pmsRegistry, organizationId, checkIn, checkOut, guestCount = 1 }) {
   if (!db || typeof db.query !== "function" ||
       typeof organizationId !== "string" || !organizationId ||
       !vault || typeof vault.decrypt !== "function" ||
@@ -171,6 +171,9 @@ async function getHotelAvailability({ db, vault, pmsRegistry, organizationId, ch
     throw new PmsIntegrationError("AVAILABILITY_NOT_CONFIGURED", "Hotel availability lookup is not configured.", 503);
   }
   const dates = validateDateRange({ checkIn, checkOut });
+  if (!Number.isInteger(guestCount) || guestCount < 1 || guestCount > 20) {
+    throw new PmsIntegrationError("INVALID_GUEST_COUNT", "Guest count must be between 1 and 20.");
+  }
   const connection = await db.query(
     "SELECT provider,encrypted_credentials FROM pms_connections WHERE organization_id=$1 AND status='connected' ORDER BY connected_at DESC LIMIT 1",
     [organizationId]
@@ -187,7 +190,7 @@ async function getHotelAvailability({ db, vault, pmsRegistry, organizationId, ch
   try {
     const rooms = await pmsRegistry.getAvailability(
       connection.rows[0].provider,
-      dates,
+      { ...dates, guestCount },
       { credentials, organizationId }
     );
     return { status: "checked", reason: null, checkedAt: new Date().toISOString(), rooms };

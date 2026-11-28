@@ -16,6 +16,7 @@ const {buildPilotReadiness}=require("./pilot-readiness");
 const {PmsIntegrationError,createPmsRegistry,createSandboxAdapter}=require("./pms-integration");
 const {createPmsCredentialVault}=require("./pms-credential-vault");
 const {deliverStaffEscalation}=require("./staff-notifications");
+const {parseResolutionConfirmationInput,buildResolutionEvidenceReport}=require("./guest-resolution-evidence");
 const {encryptWebhookConfig,decryptWebhookConfig,resolvePublicWebhook,postSignedWebhook}=require("./staff-webhook-security");
 const app=express();
 const PORT=Number(process.env.PORT||3000);
@@ -30,7 +31,7 @@ const prod=process.env.NODE_ENV==="production";
 const cookie=prod?"__Host-veyra_session":"veyra_session";
 app.disable("x-powered-by");
 app.use((_q,r,n)=>{r.setHeader("X-Content-Type-Options","nosniff");r.setHeader("X-Frame-Options","DENY");r.setHeader("Referrer-Policy","strict-origin-when-cross-origin");r.setHeader("Permissions-Policy","camera=(),microphone=(),geolocation=()");n();});
-app.use(cors((req,cb)=>{const o=req.get("Origin");const common={credentials:true,allowedHeaders:["Content-Type","X-CSRF-Token","X-Bootstrap-Token","X-Platform-Provisioning-Token"],methods:["GET","POST","PATCH","DELETE","OPTIONS"]};if(!o||origins.includes(o))return cb(null,{...common,origin:true});const segments=req.path.split("/");if(segments.length!==5||segments[1]!=="api"||segments[2]!=="public"||segments[4]!=="chat"||!db)return cb(null,{...common,origin:false});let hotelSlug;try{hotelSlug=decodeURIComponent(segments[3]);}catch{return cb(null,{...common,origin:false});}db.query("SELECT 1 FROM organizations o JOIN organization_settings s ON s.organization_id=o.id WHERE o.slug=$1 AND s.website_url=$2 LIMIT 1",[hotelSlug,o]).then(x=>cb(null,{...common,origin:x.rowCount>0})).catch(()=>cb(null,{...common,origin:false}));}));
+app.use(cors((req,cb)=>{const o=req.get("Origin");const common={credentials:true,allowedHeaders:["Content-Type","X-CSRF-Token","X-Bootstrap-Token","X-Platform-Provisioning-Token"],methods:["GET","POST","PATCH","DELETE","OPTIONS"]};if(!o||origins.includes(o))return cb(null,{...common,origin:true});const segments=req.path.split("/");if(segments.length!==5||segments[1]!=="api"||segments[2]!=="public"||!["chat","resolution"].includes(segments[4])||!db)return cb(null,{...common,origin:false});let hotelSlug;try{hotelSlug=decodeURIComponent(segments[3]);}catch{return cb(null,{...common,origin:false});}db.query("SELECT 1 FROM organizations o JOIN organization_settings s ON s.organization_id=o.id WHERE o.slug=$1 AND s.website_url=$2 LIMIT 1",[hotelSlug,o]).then(x=>cb(null,{...common,origin:x.rowCount>0})).catch(()=>cb(null,{...common,origin:false}));}));
 app.use(express.json({limit:"20kb",verify:(req,res,buf)=>{req.rawBody=Buffer.from(buf);}}));
 app.use("/api/",rateLimit({windowMs:60000,limit:60,standardHeaders:"draft-7",legacyHeaders:false}));
 app.use("/api/auth/",rateLimit({windowMs:900000,limit:10,standardHeaders:"draft-7",legacyHeaders:false}));
@@ -38,11 +39,13 @@ const setupLimiter=rateLimit({windowMs:3600000,limit:5,standardHeaders:"draft-7"
 const platformProvisionLimiter=rateLimit({windowMs:3600000,limit:10,standardHeaders:"draft-7",legacyHeaders:false});
 const integrationTestLimiter=rateLimit({windowMs:3600000,limit:5,standardHeaders:"draft-7",legacyHeaders:false});
 const publicChatLimiter=rateLimit({windowMs:300000,limit:10,standardHeaders:"draft-7",legacyHeaders:false});
+const publicResolutionLimiter=rateLimit({windowMs:300000,limit:20,standardHeaders:"draft-7",legacyHeaders:false});
 const invitationAcceptLimiter=rateLimit({windowMs:3600000,limit:5,standardHeaders:"draft-7",legacyHeaders:false});
 app.use("/api/invitations/accept",invitationAcceptLimiter);
 app.use("/api/setup/organization",setupLimiter);
 app.use("/api/platform/organizations",platformProvisionLimiter);
-app.use("/api/public/",publicChatLimiter);
+app.use("/api/public/:slug/chat",publicChatLimiter);
+app.use("/api/public/:slug/resolution",publicResolutionLimiter);
 const schema=[
 "CREATE EXTENSION IF NOT EXISTS pgcrypto",
 "CREATE TABLE IF NOT EXISTS organizations(id UUID PRIMARY KEY DEFAULT gen_random_uuid(),name TEXT NOT NULL,slug TEXT NOT NULL UNIQUE,status TEXT NOT NULL DEFAULT 'trial' CHECK(status IN ('trial','active','suspended')),created_at TIMESTAMPTZ NOT NULL DEFAULT now())",
@@ -64,6 +67,16 @@ const schema=[
 "CREATE INDEX IF NOT EXISTS conversations_org_time_idx ON conversations(organization_id,started_at DESC)",
 "CREATE TABLE IF NOT EXISTS messages(id UUID PRIMARY KEY DEFAULT gen_random_uuid(),conversation_id UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,role TEXT NOT NULL CHECK(role IN ('guest','assistant','staff')),content TEXT NOT NULL,created_at TIMESTAMPTZ NOT NULL DEFAULT now())",
 "ALTER TABLE messages ADD COLUMN IF NOT EXISTS response_time_ms INTEGER",
+"CREATE UNIQUE INDEX IF NOT EXISTS conversations_org_id_unique ON conversations(organization_id,id)",
+"CREATE UNIQUE INDEX IF NOT EXISTS messages_conversation_id_id_unique ON messages(conversation_id,id)",
+"CREATE TABLE IF NOT EXISTS conversation_resolution_confirmations(id UUID PRIMARY KEY DEFAULT gen_random_uuid(),organization_id UUID NOT NULL,conversation_id UUID NOT NULL,assistant_message_id UUID NOT NULL,confirmed_at TIMESTAMPTZ NOT NULL DEFAULT now(),UNIQUE(organization_id,assistant_message_id),FOREIGN KEY(organization_id,conversation_id) REFERENCES conversations(organization_id,id) ON DELETE CASCADE,FOREIGN KEY(conversation_id,assistant_message_id) REFERENCES messages(conversation_id,id) ON DELETE CASCADE)",
+"CREATE INDEX IF NOT EXISTS resolution_confirmations_org_time_idx ON conversation_resolution_confirmations(organization_id,confirmed_at DESC)",
+"CREATE OR REPLACE FUNCTION veyra_validate_guest_resolution_confirmation() RETURNS trigger LANGUAGE plpgsql AS $veyra$ BEGIN IF NOT EXISTS(SELECT 1 FROM messages WHERE id=NEW.assistant_message_id AND conversation_id=NEW.conversation_id AND role='assistant') THEN RAISE EXCEPTION 'Resolution confirmation must reference an assistant message'; END IF; RETURN NEW; END; $veyra$",
+"DROP TRIGGER IF EXISTS guest_resolution_confirmation_validate ON conversation_resolution_confirmations",
+"CREATE TRIGGER guest_resolution_confirmation_validate BEFORE INSERT ON conversation_resolution_confirmations FOR EACH ROW EXECUTE FUNCTION veyra_validate_guest_resolution_confirmation()",
+"CREATE OR REPLACE FUNCTION veyra_guard_guest_resolution_confirmation() RETURNS trigger LANGUAGE plpgsql AS $veyra$ BEGIN IF TG_OP='DELETE' AND pg_trigger_depth()>1 THEN RETURN OLD; END IF; RAISE EXCEPTION 'Guest resolution confirmations are append-only'; END; $veyra$",
+"DROP TRIGGER IF EXISTS guest_resolution_confirmation_immutable ON conversation_resolution_confirmations",
+"CREATE TRIGGER guest_resolution_confirmation_immutable BEFORE UPDATE OR DELETE ON conversation_resolution_confirmations FOR EACH ROW EXECUTE FUNCTION veyra_guard_guest_resolution_confirmation()",
 "CREATE TABLE IF NOT EXISTS escalations(id UUID PRIMARY KEY DEFAULT gen_random_uuid(),organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,conversation_id UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,reason TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open','claimed','resolved')),assigned_to UUID REFERENCES users(id) ON DELETE SET NULL,created_at TIMESTAMPTZ NOT NULL DEFAULT now(),resolved_at TIMESTAMPTZ,notification_status TEXT NOT NULL DEFAULT 'not_configured',notification_attempts INTEGER NOT NULL DEFAULT 0,notification_last_attempt_at TIMESTAMPTZ)",
 "ALTER TABLE escalations ADD COLUMN IF NOT EXISTS first_staff_response_at TIMESTAMPTZ",
 "ALTER TABLE escalations ADD COLUMN IF NOT EXISTS notification_status TEXT NOT NULL DEFAULT 'not_configured'",
@@ -331,14 +344,59 @@ app.post("/api/public/:slug/chat",async(q,r,n)=>{
  const aiStartedAt=process.hrtime.bigint();let resolvedAnswer;try{resolvedAnswer=await generateGuestSupportAnswer({ai,model:MODEL,hotelName:org.name,approvedKnowledge:knowledge,history,message:msg.trim()});}catch(error){console.error("Guest support AI request failed:",error.message);resolvedAnswer=createAiUnavailableAnswer();}const aiResponseTimeMs=Math.max(0,Math.min(2147483647,Number((process.hrtime.bigint()-aiStartedAt)/1000000n)));
  const reply=resolvedAnswer.reply;const flagHuman=resolvedAnswer.needsHuman;
  const c=await db.connect();let cid=conversationId,eid,createdEscalation=false,existingNotificationStatus="not_configured";try{await c.query("BEGIN");if(!cid){const x=await c.query("INSERT INTO conversations(organization_id,channel,status,guest_token_hash) VALUES($1,'website',$2,$3) RETURNING id",[org.id,flagHuman?"escalated":"open",hash(guestToken)]);cid=x.rows[0].id;}else{const locked=await c.query("SELECT id FROM conversations WHERE id=$1 AND organization_id=$2 AND guest_token_hash=$3 FOR UPDATE",[cid,org.id,hash(guestToken)]);if(!locked.rowCount){await c.query("ROLLBACK");return r.status(404).json({error:"Conversation not found."});}}
- await c.query("INSERT INTO messages(conversation_id,role,content,response_time_ms) VALUES($1,'guest',$2,NULL),($1,'assistant',$3,$4)",[cid,msg.trim(),reply,aiResponseTimeMs]);for(const offer of matchedOffers){await c.query("INSERT INTO hotel_offer_attributions(organization_id,offer_id,conversation_id,status) VALUES($1,$2,$3,'enquiry') ON CONFLICT(organization_id,offer_id,conversation_id) DO NOTHING",[org.id,offer.id,cid]);}await c.query("UPDATE conversations SET last_message_at=now(),status=CASE WHEN $2 THEN 'escalated' WHEN status='resolved' THEN 'open' ELSE status END WHERE id=$1 AND organization_id=$3",[cid,flagHuman,org.id]);
+ const guestMessage=await c.query("INSERT INTO messages(conversation_id,role,content,response_time_ms,created_at) VALUES($1,'guest',$2,NULL,clock_timestamp()) RETURNING created_at",[cid,msg.trim()]);
+ const assistantMessage=await c.query("INSERT INTO messages(conversation_id,role,content,response_time_ms,created_at) VALUES($1,'assistant',$2,$3,GREATEST(clock_timestamp(),$4::timestamptz+interval '1 microsecond')) RETURNING id,created_at",[cid,reply,aiResponseTimeMs,guestMessage.rows[0].created_at]);
+ const assistantMessageId=assistantMessage.rows[0].id;for(const offer of matchedOffers){await c.query("INSERT INTO hotel_offer_attributions(organization_id,offer_id,conversation_id,status) VALUES($1,$2,$3,'enquiry') ON CONFLICT(organization_id,offer_id,conversation_id) DO NOTHING",[org.id,offer.id,cid]);}await c.query("UPDATE conversations SET last_message_at=GREATEST(last_message_at,$4),status=CASE WHEN $2 THEN 'escalated' WHEN status='resolved' THEN 'open' ELSE status END WHERE id=$1 AND organization_id=$3",[cid,flagHuman,org.id,assistantMessage.rows[0].created_at]);
  if(flagHuman){const prior=await c.query("SELECT id,notification_status FROM escalations WHERE conversation_id=$1 AND organization_id=$2 AND status<>'resolved' ORDER BY created_at DESC LIMIT 1",[cid,org.id]);if(prior.rowCount){eid=prior.rows[0].id;existingNotificationStatus=prior.rows[0].notification_status;}else{const e=await c.query("INSERT INTO escalations(organization_id,conversation_id,reason) VALUES($1,$2,$3) RETURNING id",[org.id,cid,String(resolvedAnswer.handoffReason||"Staff review required").slice(0,300)]);eid=e.rows[0].id;createdEscalation=true;}}
  await c.query("COMMIT");}catch(e){await c.query("ROLLBACK");throw e;}finally{c.release();}
  const notice=createdEscalation?await notify(org,cid,String(resolvedAnswer.handoffReason||"Staff review required").slice(0,300)):{configured:existingNotificationStatus!=="not_configured",delivered:existingNotificationStatus==="delivered",status:flagHuman?existingNotificationStatus:"not_configured"};
  if(createdEscalation)await db.query("UPDATE escalations SET notification_status=$1,notification_attempts=notification_attempts+CASE WHEN $2 THEN 1 ELSE 0 END,notification_last_attempt_at=CASE WHEN $2 THEN now() ELSE notification_last_attempt_at END WHERE id=$3 AND organization_id=$4",[notice.status,notice.configured,eid,org.id]);
- r.json({reply,needsHuman:flagHuman,handoffConfigured:notice.configured,notificationDelivered:notice.delivered,notificationStatus:notice.status,conversationId:cid,conversationToken:guestToken,escalationId:eid||null});
+ r.json({reply,needsHuman:flagHuman,handoffConfigured:notice.configured,notificationDelivered:notice.delivered,notificationStatus:notice.status,conversationId:cid,conversationToken:guestToken,assistantMessageId,escalationId:eid||null});
  }catch(e){n(e);}
 });
+
+app.post("/api/public/:slug/resolution",async(q,r,n)=>{
+ try{
+  if(!db)return r.status(503).json({error:"Hotel platform is not configured."});
+  const input=parseResolutionConfirmationInput(q.body);
+  if(!input)return r.status(400).json({error:"Invalid resolution confirmation request."});
+  const orgR=await db.query("SELECT id,slug,status FROM organizations WHERE slug=$1 AND status<>'suspended'",[q.params.slug]);
+  if(!orgR.rowCount)return r.status(404).json({error:"Assistant unavailable."});
+  const org=orgR.rows[0];
+  const c=await db.connect();
+  try{
+   await c.query("BEGIN");
+   const conversation=await c.query("SELECT id FROM conversations WHERE id=$1 AND organization_id=$2 AND guest_token_hash=$3 FOR UPDATE",[input.conversationId,org.id,hash(input.conversationToken)]);
+   if(!conversation.rowCount){await c.query("ROLLBACK");return r.status(404).json({error:"Conversation not found."});}
+   const existing=await c.query("SELECT id,confirmed_at FROM conversation_resolution_confirmations WHERE organization_id=$1 AND conversation_id=$2 AND assistant_message_id=$3",[org.id,input.conversationId,input.assistantMessageId]);
+   if(existing.rowCount){
+    await c.query("COMMIT");
+    return r.json({recorded:false,duplicate:true,confirmationId:existing.rows[0].id,confirmedAt:existing.rows[0].confirmed_at});
+   }
+   const eligible=await c.query(
+    "SELECT m.id FROM messages m WHERE m.id=$1 AND m.conversation_id=$2 AND m.role='assistant' AND NOT EXISTS(SELECT 1 FROM messages newer WHERE newer.conversation_id=m.conversation_id AND newer.id<>m.id AND newer.created_at>=m.created_at) AND NOT EXISTS(SELECT 1 FROM messages staff WHERE staff.conversation_id=m.conversation_id AND staff.role='staff') AND NOT EXISTS(SELECT 1 FROM escalations e WHERE e.organization_id=$3 AND e.conversation_id=m.conversation_id) FOR UPDATE OF m",
+    [input.assistantMessageId,input.conversationId,org.id]
+   );
+   if(!eligible.rowCount){await c.query("ROLLBACK");return r.status(409).json({error:"Only the latest assistant response in a conversation without staff messages or handoffs can be confirmed."});}
+   const inserted=await c.query("INSERT INTO conversation_resolution_confirmations(organization_id,conversation_id,assistant_message_id,confirmed_at) VALUES($1,$2,$3,clock_timestamp()) RETURNING id,confirmed_at",[org.id,input.conversationId,input.assistantMessageId]);
+   await c.query("INSERT INTO audit_logs(organization_id,actor_user_id,action,target_type,target_id) VALUES($1,NULL,'conversation.guest_resolution_confirmed','guest_resolution_confirmation',$2)",[org.id,inserted.rows[0].id]);
+   await c.query("COMMIT");
+   return r.status(201).json({recorded:true,duplicate:false,confirmationId:inserted.rows[0].id,confirmedAt:inserted.rows[0].confirmed_at});
+  }catch(e){await c.query("ROLLBACK").catch(()=>{});throw e;}finally{c.release();}
+ }catch(e){n(e);}
+});
+app.get("/api/admin/resolution-evidence",requireDb,auth,async(q,r,n)=>{
+ try{
+  const windowEnd=new Date();
+  const windowStart=new Date(windowEnd.getTime()-720*60*60*1000);
+  const result=await db.query(
+   "WITH window_events AS (SELECT rc.conversation_id,(SELECT count(*) FROM conversation_resolution_confirmations all_events WHERE all_events.organization_id=rc.organization_id AND all_events.conversation_id=rc.conversation_id)::int AS confirmation_count,EXISTS(SELECT 1 FROM messages staff WHERE staff.conversation_id=rc.conversation_id AND staff.role='staff') AS has_staff_message,EXISTS(SELECT 1 FROM escalations e WHERE e.organization_id=rc.organization_id AND e.conversation_id=rc.conversation_id) AS has_escalation,EXISTS(SELECT 1 FROM messages newer WHERE newer.conversation_id=rc.conversation_id AND newer.id<>rc.assistant_message_id AND newer.created_at>=rc.confirmed_at) AS has_later_message FROM conversation_resolution_confirmations rc WHERE rc.organization_id=$1 AND rc.confirmed_at>=$2 AND rc.confirmed_at<$3),conversation_flags AS (SELECT conversation_id,bool_and(confirmation_count=1 AND NOT has_staff_message AND NOT has_escalation AND NOT has_later_message) AS self_service_candidate FROM window_events GROUP BY conversation_id) SELECT (SELECT count(*)::int FROM window_events) AS confirmation_events,(SELECT count(*)::int FROM conversation_flags) AS guest_reported_conversations,(SELECT count(*)::int FROM conversation_flags WHERE self_service_candidate) AS self_service_candidates",
+   [q.actor.organization_id,windowStart,windowEnd]
+  );
+  r.json(buildResolutionEvidenceReport(result.rows[0],windowStart,windowEnd));
+ }catch(e){n(e);}
+});
+
 // Legacy prototype route is disabled when multi-tenant DB is active.
 app.post("/api/chat",async(q,r)=>{
  if(db)return r.status(400).json({error:"Use /api/public/:slug/chat for tenant-specific support."});

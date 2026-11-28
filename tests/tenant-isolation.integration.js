@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { randomUUID, createHash } from "node:crypto";
 import pg from "pg";
 import knowledgeLoader from "../hotel-knowledge.js";
 const { loadApprovedKnowledge } = knowledgeLoader;
@@ -217,6 +217,202 @@ try {
   const pmsBAfterCrossDisconnectBody = await pmsBAfterCrossDisconnect.json();
   assert.equal(pmsBAfterCrossDisconnectBody.connections.some(x => x.provider === "tenant-b-private-adapter"), true, "tenant B's PMS connection must remain intact after tenant A's disconnect attempt");
   await Promise.all(tenants.map(seedConversation));
+
+  // Explicit guest resolution is separate from helpfulness and is bound to the latest assistant reply.
+  const resolutionHash = value => createHash("sha256").update(value).digest("hex");
+  const resolutionTokens = tenants.map(() => randomUUID().replace(/-/g, "") + "resolutiontoken");
+  for (let i = 0; i < tenants.length; i += 1) {
+    await pool.query("UPDATE conversations SET guest_token_hash=$1 WHERE id=$2", [resolutionHash(resolutionTokens[i]), tenants[i].conversationId]);
+  }
+  const assistantA = await pool.query(
+    "INSERT INTO messages(conversation_id,role,content,created_at) VALUES($1,'assistant','Synthetic assistant answer',clock_timestamp()) RETURNING id",
+    [tenants[0].conversationId],
+  );
+  const resolutionPayloadA = {
+    conversationId: tenants[0].conversationId,
+    conversationToken: resolutionTokens[0],
+    assistantMessageId: assistantA.rows[0].id,
+  };
+  const postResolution = (tenant, payload) => fetch(baseUrl + "/api/public/" + encodeURIComponent(tenant.slug) + "/resolution", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const ownResolution = await postResolution(tenants[0], resolutionPayloadA);
+  assert.equal(ownResolution.status, 201, await ownResolution.clone().text());
+  const ownResolutionBody = await ownResolution.json();
+  assert.equal(ownResolutionBody.recorded, true);
+  assert.equal(ownResolutionBody.duplicate, false);
+  const duplicateResolution = await postResolution(tenants[0], resolutionPayloadA);
+  assert.equal(duplicateResolution.status, 200, "exact resolution retries must be idempotent");
+  assert.equal((await duplicateResolution.json()).duplicate, true);
+  const invalidResolution = await postResolution(tenants[0], { ...resolutionPayloadA, conversationToken: "invalid" });
+  assert.equal(invalidResolution.status, 400, "malformed guest tokens must be rejected");
+  const wrongTokenResolution = await postResolution(tenants[0], { ...resolutionPayloadA, conversationToken: resolutionTokens[1] });
+  assert.equal(wrongTokenResolution.status, 404, "another guest token cannot confirm this conversation");
+  const crossTenantResolution = await postResolution(tenants[1], resolutionPayloadA);
+  assert.equal(crossTenantResolution.status, 404, "a hotel cannot confirm another hotel's conversation");
+
+  const staleAssistant = await pool.query(
+    "INSERT INTO messages(conversation_id,role,content,created_at) VALUES($1,'assistant','Stale assistant response',clock_timestamp()) RETURNING id",
+    [tenants[1].conversationId],
+  );
+  await pool.query(
+    "INSERT INTO messages(conversation_id,role,content,created_at) VALUES($1,'guest','Later guest follow-up',clock_timestamp()+interval '1 millisecond')",
+    [tenants[1].conversationId],
+  );
+  const staleResolution = await postResolution(tenants[1], {
+    conversationId: tenants[1].conversationId,
+    conversationToken: resolutionTokens[1],
+    assistantMessageId: staleAssistant.rows[0].id,
+  });
+  assert.equal(staleResolution.status, 409, "a response cannot be confirmed after a later guest message");
+
+  const orgResolutionA = await pool.query("SELECT id FROM organizations WHERE slug=$1", [tenants[0].slug]);
+  const wrongRoleToken = randomUUID().replace(/-/g, "") + "wrongrole";
+  const wrongRoleConversation = await pool.query(
+    "INSERT INTO conversations(organization_id,channel,status,guest_token_hash) VALUES($1,'website','open',$2) RETURNING id",
+    [orgResolutionA.rows[0].id, resolutionHash(wrongRoleToken)],
+  );
+  const guestOnlyMessage = await pool.query(
+    "INSERT INTO messages(conversation_id,role,content,created_at) VALUES($1,'guest','A guest message is not an assistant answer',clock_timestamp()) RETURNING id",
+    [wrongRoleConversation.rows[0].id],
+  );
+  const wrongRoleResolution = await postResolution(tenants[0], {
+    conversationId: wrongRoleConversation.rows[0].id,
+    conversationToken: wrongRoleToken,
+    assistantMessageId: guestOnlyMessage.rows[0].id,
+  });
+  assert.equal(wrongRoleResolution.status, 409, "guest messages cannot be confirmed as assistant resolutions");
+
+  const staffPlainToken = randomUUID().replace(/-/g, "") + "staffresolution";
+  const staffConversation = await pool.query(
+    "INSERT INTO conversations(organization_id,channel,status,guest_token_hash) VALUES($1,'website','open',$2) RETURNING id",
+    [orgResolutionA.rows[0].id, resolutionHash(staffPlainToken)],
+  );
+  const staffGuest = await pool.query("INSERT INTO messages(conversation_id,role,content) VALUES($1,'guest','Synthetic guest question') RETURNING id", [staffConversation.rows[0].id]);
+  const staffAssistant = await pool.query(
+    "INSERT INTO messages(conversation_id,role,content,created_at) VALUES($1,'assistant','Synthetic assistant answer',clock_timestamp()) RETURNING id",
+    [staffConversation.rows[0].id],
+  );
+  await pool.query("INSERT INTO messages(conversation_id,role,content) VALUES($1,'staff','Synthetic staff reply')", [staffConversation.rows[0].id]);
+
+  const staffResolutionWithValidToken = await postResolution(tenants[0], {
+    conversationId: staffConversation.rows[0].id,
+    conversationToken: staffPlainToken,
+    assistantMessageId: staffAssistant.rows[0].id,
+  });
+  assert.equal(staffResolutionWithValidToken.status, 409, "staff-touched conversations are not self-service candidates");
+  await assert.rejects(
+    pool.query("INSERT INTO conversation_resolution_confirmations(organization_id,conversation_id,assistant_message_id) VALUES($1,$2,$3)", [orgResolutionA.rows[0].id, staffConversation.rows[0].id, staffGuest.rows[0].id]),
+    /must reference an assistant message/i,
+  );
+
+  const escalatedConversation = await pool.query(
+    "INSERT INTO conversations(organization_id,channel,status,guest_token_hash) VALUES($1,'website','escalated',$2) RETURNING id",
+    [orgResolutionA.rows[0].id, resolutionHash(randomUUID().replace(/-/g, "") + "escalated")],
+  );
+  const escalatedAssistant = await pool.query(
+    "INSERT INTO messages(conversation_id,role,content,created_at) VALUES($1,'assistant','Synthetic answer after handoff',clock_timestamp()) RETURNING id",
+    [escalatedConversation.rows[0].id],
+  );
+  await pool.query(
+    "INSERT INTO escalations(organization_id,conversation_id,reason) VALUES($1,$2,'Synthetic handoff')",
+    [orgResolutionA.rows[0].id, escalatedConversation.rows[0].id],
+  );
+  const escalatedToken = randomUUID().replace(/-/g, "") + "escalated";
+  await pool.query("UPDATE conversations SET guest_token_hash=$1 WHERE id=$2", [resolutionHash(escalatedToken), escalatedConversation.rows[0].id]);
+  const escalatedResolution = await postResolution(tenants[0], {
+    conversationId: escalatedConversation.rows[0].id,
+    conversationToken: escalatedToken,
+    assistantMessageId: escalatedAssistant.rows[0].id,
+  });
+  assert.equal(escalatedResolution.status, 409, "a conversation with any escalation is not a self-service candidate");
+
+  const laterResolutionToken = randomUUID().replace(/-/g, "") + "laterresolution";
+  const laterConversation = await pool.query(
+    "INSERT INTO conversations(organization_id,channel,status,guest_token_hash) VALUES($1,'website','open',$2) RETURNING id",
+    [orgResolutionA.rows[0].id, resolutionHash(laterResolutionToken)],
+  );
+  const firstLaterAssistant = await pool.query(
+    "INSERT INTO messages(conversation_id,role,content,created_at) VALUES($1,'assistant','First synthetic answer',clock_timestamp()-interval '1 second') RETURNING id",
+    [laterConversation.rows[0].id],
+  );
+  const firstLaterResolution = await postResolution(tenants[0], {
+    conversationId: laterConversation.rows[0].id,
+    conversationToken: laterResolutionToken,
+    assistantMessageId: firstLaterAssistant.rows[0].id,
+  });
+  assert.equal(firstLaterResolution.status, 201, await firstLaterResolution.clone().text());
+  await pool.query(
+    "INSERT INTO messages(conversation_id,role,content,created_at) VALUES($1,'guest','A later question',clock_timestamp())",
+    [laterConversation.rows[0].id],
+  );
+  await new Promise(resolve => setTimeout(resolve, 5));
+  const secondLaterAssistant = await pool.query(
+    "INSERT INTO messages(conversation_id,role,content,created_at) VALUES($1,'assistant','Second synthetic answer',clock_timestamp()) RETURNING id",
+    [laterConversation.rows[0].id],
+  );
+  await new Promise(resolve => setTimeout(resolve, 5));
+  const secondLaterResolution = await postResolution(tenants[0], {
+    conversationId: laterConversation.rows[0].id,
+    conversationToken: laterResolutionToken,
+    assistantMessageId: secondLaterAssistant.rows[0].id,
+  });
+  assert.equal(secondLaterResolution.status, 201, await secondLaterResolution.clone().text());
+
+  const resolutionAudit = await pool.query(
+    "SELECT count(*)::int AS count FROM audit_logs WHERE organization_id=$1 AND action='conversation.guest_resolution_confirmed' AND target_id=$2",
+    [orgResolutionA.rows[0].id, ownResolutionBody.confirmationId],
+  );
+  assert.equal(resolutionAudit.rows[0].count, 1, "accepted guest resolution must be audited");
+  await assert.rejects(
+    pool.query("UPDATE conversation_resolution_confirmations SET confirmed_at=now() WHERE id=$1", [ownResolutionBody.confirmationId]),
+    /append-only/i,
+  );
+  await assert.rejects(
+    pool.query("DELETE FROM conversation_resolution_confirmations WHERE id=$1", [ownResolutionBody.confirmationId]),
+    /append-only/i,
+  );
+
+  const [resolutionReportA, resolutionReportB] = await Promise.all([
+    fetch(baseUrl + "/api/admin/resolution-evidence", { headers: { cookie: cookieA } }),
+    fetch(baseUrl + "/api/admin/resolution-evidence", { headers: { cookie: cookieB } }),
+  ]);
+  assert.equal(resolutionReportA.status, 200);
+  assert.equal(resolutionReportB.status, 200);
+  const resolutionReportABody = await resolutionReportA.json();
+  const resolutionReportBBody = await resolutionReportB.json();
+  assert.equal(resolutionReportABody.guestReportedConversations, 2);
+  assert.equal(resolutionReportABody.selfServiceCandidates, 1, "multiple confirmations in one conversation must not be counted as a clean self-service candidate");
+  assert.equal(resolutionReportABody.assistedOrAmbiguousConversations, 1);
+  assert.equal(resolutionReportABody.potentialStaffMinutesAvoided.value, null);
+  assert.equal(resolutionReportABody.influencedConversations.value, null);
+  assert.equal(resolutionReportBBody.guestReportedConversations, 0, "tenant B must not see tenant A resolution events");
+  assert.equal(resolutionReportBBody.selfServiceCandidates, 0);
+  assert.equal(Date.parse(resolutionReportABody.windowEnd) - Date.parse(resolutionReportABody.windowStart), 720 * 60 * 60 * 1000);
+
+  const cascadeConversation = await pool.query(
+    "INSERT INTO conversations(organization_id,channel,status,guest_token_hash) VALUES($1,'website','open',$2) RETURNING id",
+    [orgResolutionA.rows[0].id, resolutionHash(randomUUID().replace(/-/g, "") + "cascade")],
+  );
+  const cascadeToken = randomUUID().replace(/-/g, "") + "cascadeevent";
+  await pool.query("UPDATE conversations SET guest_token_hash=$1 WHERE id=$2", [resolutionHash(cascadeToken), cascadeConversation.rows[0].id]);
+  const cascadeAssistant = await pool.query(
+    "INSERT INTO messages(conversation_id,role,content,created_at) VALUES($1,'assistant','Synthetic cascade answer',clock_timestamp()) RETURNING id",
+    [cascadeConversation.rows[0].id],
+  );
+  const cascadeResolution = await postResolution(tenants[0], {
+    conversationId: cascadeConversation.rows[0].id,
+    conversationToken: cascadeToken,
+    assistantMessageId: cascadeAssistant.rows[0].id,
+  });
+  assert.equal(cascadeResolution.status, 201, await cascadeResolution.clone().text());
+  const cascadeConfirmation = await cascadeResolution.json();
+  await pool.query("DELETE FROM conversations WHERE id=$1 AND organization_id=$2", [cascadeConversation.rows[0].id, orgResolutionA.rows[0].id]);
+  const cascadeCheck = await pool.query("SELECT id FROM conversation_resolution_confirmations WHERE id=$1", [cascadeConfirmation.confirmationId]);
+  assert.equal(cascadeCheck.rowCount, 0, "conversation retention/deletion must cascade its resolution event");
+
   await Promise.all(tenants.map(seedKnowledge));
   await Promise.all(tenants.map(seedOffer));
   await Promise.all(tenants.map(seedOfferAttribution));

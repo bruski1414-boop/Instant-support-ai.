@@ -284,9 +284,8 @@ function createSandboxAdapter() {
     id: "sandbox",
     name: "Veyra PMS adapter sandbox",
     mode: "sandbox",
-    capabilities: { availability: true, booking: false, webhooks: false },
+    capabilities: { availability: false, booking: false, webhooks: false },
     async testConnection() { return { ok: true, mode: "sandbox" }; },
-    async getAvailability() { return []; },
   };
 }
 

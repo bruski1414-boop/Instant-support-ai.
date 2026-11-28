@@ -7,6 +7,7 @@ const {
   createBookingRecord,
   recordVerifiedDeposit,
   loadVerifiedBookingForPms,
+  recordReconciledPmsOutcome,
 } = require("../booking-repository");
 
 function validInput(overrides = {}) {
@@ -201,4 +202,108 @@ test("refuses to load a booking for PMS when persisted payment is not verified",
     () => loadVerifiedBookingForPms(db, "hotel-a", "booking-pending-1"),
     e => e.code === "PAYMENT_NOT_VERIFIED"
   );
+});
+
+
+function reconciliationDb(overrides = {}) {
+  const booking = {
+    id: "booking-reconcile-1",
+    state: "booking_pending",
+    pms_provider: "hotelpms",
+    pms_booking_id: "reservation-123",
+    ...overrides.booking,
+  };
+  const attempt = {
+    provider: "hotelpms",
+    status: "pending",
+    pms_booking_id: "reservation-123",
+    ...overrides.attempt,
+  };
+  const updates = [];
+  const client = {
+    async query(sql, params = []) {
+      if (["BEGIN", "COMMIT", "ROLLBACK"].includes(sql)) return { rowCount: 0, rows: [] };
+      if (sql.startsWith("SELECT id,state,pms_provider,pms_booking_id")) {
+        const tenantMatches = params[1] === "hotel-a" && params[0] === booking.id;
+        return { rowCount: tenantMatches ? 1 : 0, rows: tenantMatches ? [booking] : [] };
+      }
+      if (sql.startsWith("SELECT provider,status,pms_booking_id")) {
+        return { rowCount: 1, rows: [attempt] };
+      }
+      if (sql.startsWith("UPDATE hotel_bookings SET state='confirmed'")) {
+        updates.push("booking");
+        booking.state = "confirmed";
+        return { rowCount: 1, rows: [] };
+      }
+      if (sql.startsWith("UPDATE hotel_pms_booking_attempts SET status='confirmed'")) {
+        updates.push("attempt");
+        attempt.status = "confirmed";
+        return { rowCount: 1, rows: [] };
+      }
+      throw new Error("Unexpected reconciliation SQL: " + sql);
+    },
+    release() {},
+  };
+  return { booking, attempt, updates, async connect() { return client; } };
+}
+
+test("reconciles a matching pending PMS reservation only after authoritative confirmation", async () => {
+  const db = reconciliationDb();
+  const result = await recordReconciledPmsOutcome(db, "hotel-a", "booking-reconcile-1", "hotelpms", {
+    bookingId: "reservation-123", status: "confirmed",
+  });
+  assert.deepEqual(result, { state: "confirmed", duplicate: false });
+  assert.equal(db.booking.state, "confirmed");
+  assert.equal(db.attempt.status, "confirmed");
+  assert.deepEqual(db.updates, ["booking", "attempt"]);
+});
+
+test("keeps a matching PMS reservation pending when lookup is still pending", async () => {
+  const db = reconciliationDb();
+  const result = await recordReconciledPmsOutcome(db, "hotel-a", "booking-reconcile-1", "hotelpms", {
+    bookingId: "reservation-123", status: "pending",
+  });
+  assert.deepEqual(result, { state: "booking_pending", duplicate: false });
+  assert.equal(db.booking.state, "booking_pending");
+  assert.deepEqual(db.updates, []);
+});
+
+test("refuses PMS reconciliation across tenants or mismatched provider references", async () => {
+  const db = reconciliationDb();
+  await assert.rejects(
+    () => recordReconciledPmsOutcome(db, "hotel-b", "booking-reconcile-1", "hotelpms", {
+      bookingId: "reservation-123", status: "confirmed",
+    }),
+    error => error.code === "BOOKING_NOT_FOUND"
+  );
+  await assert.rejects(
+    () => recordReconciledPmsOutcome(db, "hotel-a", "booking-reconcile-1", "otherpms", {
+      bookingId: "reservation-123", status: "confirmed",
+    }),
+    error => error.code === "PMS_RECONCILIATION_MISMATCH"
+  );
+  await assert.rejects(
+    () => recordReconciledPmsOutcome(db, "hotel-a", "booking-reconcile-1", "hotelpms", {
+      bookingId: "different-reservation", status: "confirmed",
+    }),
+    error => error.code === "PMS_RECONCILIATION_MISMATCH"
+  );
+  assert.deepEqual(db.updates, []);
+});
+
+test("does not reconcile unverified statuses or malformed PMS references", async () => {
+  const db = reconciliationDb();
+  await assert.rejects(
+    () => recordReconciledPmsOutcome(db, "hotel-a", "booking-reconcile-1", "hotelpms", {
+      bookingId: "reservation-123", status: "cancelled",
+    }),
+    error => error.code === "INVALID_PMS_RECONCILIATION"
+  );
+  await assert.rejects(
+    () => recordReconciledPmsOutcome(db, "hotel-a", "booking-reconcile-1", "hotelpms", {
+      bookingId: "bad\\nreference", status: "confirmed",
+    }),
+    error => error.code === "INVALID_PMS_REFERENCE"
+  );
+  assert.deepEqual(db.updates, []);
 });

@@ -4,7 +4,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const { loadApprovedKnowledge } = require("../hotel-knowledge");
 
-test("approved knowledge is scoped to one hotel and excludes documents past review date", async () => {
+test("approved knowledge is tenant-scoped and requires a current review date", async () => {
   let receivedSql;
   let receivedParams;
   const expectedRows = [{ title: "Breakfast", category: "dining", content: "7:00–10:00" }];

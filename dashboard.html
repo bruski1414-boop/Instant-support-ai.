@@ -172,6 +172,11 @@ main{padding:28px clamp(16px,4vw,48px);max-width:1450px;width:100%;margin:auto}.
   <section id="panel-bookings" class="panel">
   <div class="sectionrow"><h2>Hotel booking queue</h2><span class="muted">Requests and reservation status · newest first</span></div>
   <p class="muted" style="font-size:12px">This queue shows booking records for this hotel workspace only. A deposit is not a confirmed reservation: look for the confirmed status and PMS reference before telling a guest their stay is booked.</p>
+  <div class="card" style="margin:12px 0">
+   <div class="sectionrow"><strong>Staff notification delivery</strong><button class="btn" id="retryBookingNotifications" type="button">Process due retries</button></div>
+   <div id="bookingNotificationHealth" class="muted" role="status">Checking notification queue…</div>
+   <p class="muted" style="font-size:12px;margin:6px 0 0">Pending notifications retry automatically. Repeated failures are moved to the failed queue after eight attempts and need staff attention.</p>
+  </div>
   <div class="formrow" style="align-items:end">
    <div class="field"><label for="bookingStateFilter">Filter by booking status</label>
     <select id="bookingStateFilter">
@@ -518,7 +523,13 @@ async function loadEscalations(){
  }).join("");
  $("escalationRows").innerHTML=rows||'<tr><td colspan="6" class="empty">No handoffs match this filter.</td></tr>';
 }
+async function loadBookingNotificationHealth(){
+ const d=await api("/api/admin/booking-notifications");
+ const n=d.notifications||{};
+ $("bookingNotificationHealth").textContent="Pending: "+(n.pending||0)+" · Processing: "+(n.processing||0)+" · Delivered: "+(n.delivered||0)+" · Failed: "+(n.failed||0)+(n.last_attempt_at?" · Last attempt: "+date(n.last_attempt_at):"");
+}
 async function loadHotelBookings(){
+ await loadBookingNotificationHealth();
  const filter=$("bookingStateFilter").value;
  const query="?limit=50&offset="+bookingOffset+(filter?"&state="+encodeURIComponent(filter):"");
  const d=await api("/api/admin/bookings"+query);
@@ -562,6 +573,13 @@ $("refresh").addEventListener("click",()=>loadPanel(activePanel));
 $("bookingStateFilter").addEventListener("change",()=>{bookingOffset=0;loadHotelBookings();});
 $("bookingPrevious").addEventListener("click",()=>{bookingOffset=Math.max(0,bookingOffset-50);loadHotelBookings();});
 $("bookingNext").addEventListener("click",()=>{bookingOffset+=50;loadHotelBookings();});
+$("retryBookingNotifications").addEventListener("click",async()=>{
+ const button=$("retryBookingNotifications");
+ button.disabled=true;
+ try{await api("/api/admin/booking-notifications/process",{method:"POST",body:"{}"});await loadBookingNotificationHealth();notice("Due staff notifications have been processed.","success");}
+ catch(e){notice(e.message,"error");}
+ finally{button.disabled=false;}
+});
 document.querySelectorAll("[data-panel]").forEach(b=>b.addEventListener("click",()=>switchPanel(b.dataset.panel)));
 
 

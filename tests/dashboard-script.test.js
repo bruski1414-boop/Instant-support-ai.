@@ -12,5 +12,7 @@ test("hotel dashboard inline script parses without executing browser code", () =
   const applicationScript = scripts[scripts.length - 1][1];
   assert.match(applicationScript, /async function loadHotelBookings\(/);
   assert.match(applicationScript, /api\("\/api\/admin\/bookings/);
+  assert.match(applicationScript, /bookingOffset\+=50/);
+  assert.match(applicationScript, /bookingPrevious/);
   assert.doesNotThrow(() => new vm.Script(applicationScript, { filename: "dashboard.html:inline-script" }));
 });

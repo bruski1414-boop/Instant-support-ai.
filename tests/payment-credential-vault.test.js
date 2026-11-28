@@ -48,8 +48,9 @@ test("stores only encrypted secrets and scopes lookups to the hotel and provider
     }
     if (sql.startsWith("UPDATE organization_payment_connections")) {
       const row = rows.get(params[0] + ":" + params[1]);
-      if (row?.status === "configured") row.status = "disabled";
-      return { rowCount: row?.status === "disabled" ? 1 : 0, rows: [] };
+      const wasConfigured = row?.status === "configured";
+      if (wasConfigured) row.status = "disabled";
+      return { rowCount: wasConfigured ? 1 : 0, rows: wasConfigured ? [{ provider: params[1] }] : [] };
     }
     throw new Error("Unexpected query");
   }};
@@ -61,6 +62,7 @@ test("stores only encrypted secrets and scopes lookups to the hotel and provider
   assert.equal(await loadPaymentWebhookSecret({ db, organizationId: "hotel-c", provider: "testpay", vault }), null);
   assert.deepEqual(await disablePaymentWebhookConnection({ db, organizationId: "hotel-a", provider: "testpay", vault }), { disabled: true, provider: "testpay" });
   assert.equal(await loadPaymentWebhookSecret({ db, organizationId: "hotel-a", provider: "testpay", vault }), null);
+  assert.deepEqual(await disablePaymentWebhookConnection({ db, organizationId: "hotel-a", provider: "testpay", vault }), { disabled: false, provider: "testpay" });
 });
 
 test("refuses payment connection operations when encryption is unavailable", async () => {

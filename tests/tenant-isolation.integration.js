@@ -328,14 +328,14 @@ try {
   const failFn = "ci_fail_storage_disconnect_" + tag;
   const failTrigger = "ci_fail_storage_disconnect_trigger_" + tag;
   await pool.query(`
-    CREATE FUNCTION ${failFn}() RETURNS trigger LANGUAGE plpgsql AS $
+    CREATE FUNCTION ${failFn}() RETURNS trigger LANGUAGE plpgsql AS $func$
     BEGIN
       IF NEW.organization_id = '${storageOrgA}'::uuid AND NEW.action = 'storage.google.disconnected' THEN
         RAISE EXCEPTION 'intentional integration-test failure';
       END IF;
       RETURN NEW;
     END;
-    $;
+    $func$;
   `);
   await pool.query(`CREATE TRIGGER ${failTrigger} BEFORE INSERT ON audit_logs FOR EACH ROW EXECUTE FUNCTION ${failFn}()`);
   try {

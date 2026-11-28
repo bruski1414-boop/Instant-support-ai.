@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main, fix/knowledge-review-expiry-main]
+    branches: [main, fix/knowledge-review-expiry-main, feat/live-source-chat-review-safe]
 
 jobs:
   test:

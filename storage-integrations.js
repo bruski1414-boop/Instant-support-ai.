@@ -1,6 +1,7 @@
 const express = require("express");
 const crypto = require("node:crypto");
 const { createTokenCipher, readTextLimited, fetchMicrosoftDownload } = require("./storage-security");
+const { encodeMicrosoftSourceReference } = require("./storage-live-reader");
 
 const PROVIDERS = {
   google: {
@@ -206,22 +207,24 @@ function createStorageRouter({ db, auth, role, audit }) {
     if (!providerValid(provider) || typeof fileId !== "string" || !fileId || fileId.length > 500) return safeError(res, "Choose a valid file.");
     try {
       const token = await accessToken(req.actor.organization_id, provider);
-      let name, content = "";
+      let name, content = "", sourceVersion = "";
       if (provider === "google") {
-        const metaResponse = await fetch("https://www.googleapis.com/drive/v3/files/" + encodeURIComponent(fileId) + "?fields=id,name,mimeType,webViewLink", { headers: { authorization: "Bearer " + token }, signal: AbortSignal.timeout(12000) });
+        const metaResponse = await fetch("https://www.googleapis.com/drive/v3/files/" + encodeURIComponent(fileId) + "?fields=id,name,mimeType,webViewLink,modifiedTime,md5Checksum", { headers: { authorization: "Bearer " + token }, signal: AbortSignal.timeout(12000) });
         const meta = await metaResponse.json();
         if (!metaResponse.ok || !["text/plain", "application/vnd.google-apps.document"].includes(meta.mimeType)) return safeError(res, "Only plain-text files and Google Docs can be imported.");
         name = meta.name;
+        sourceVersion = meta.modifiedTime || meta.md5Checksum || "";
         const exportMode = meta.mimeType === "application/vnd.google-apps.document";
         const url = exportMode ? "https://www.googleapis.com/drive/v3/files/" + encodeURIComponent(fileId) + "/export?mimeType=text/plain" : "https://www.googleapis.com/drive/v3/files/" + encodeURIComponent(fileId) + "?alt=media";
         const response = await fetch(url, { headers: { authorization: "Bearer " + token }, signal: AbortSignal.timeout(20000) });
         content = await readTextLimited(response);
       } else {
         const driveBase = siteId ? "https://graph.microsoft.com/v1.0/sites/" + encodeURIComponent(siteId) + "/drive" : "https://graph.microsoft.com/v1.0/me/drive";
-        const metaResponse = await fetch(driveBase + "/items/" + encodeURIComponent(fileId) + "?$select=id,name,file,webUrl", { headers: { authorization: "Bearer " + token }, signal: AbortSignal.timeout(12000) });
+        const metaResponse = await fetch(driveBase + "/items/" + encodeURIComponent(fileId) + "?$select=id,name,file,webUrl,lastModifiedDateTime,eTag", { headers: { authorization: "Bearer " + token }, signal: AbortSignal.timeout(12000) });
         const meta = await metaResponse.json();
         if (!metaResponse.ok || meta.file?.mimeType !== "text/plain") return safeError(res, "Only plain-text files can be imported from Microsoft storage in this release.");
         name = meta.name;
+        sourceVersion = meta.eTag || meta.lastModifiedDateTime || "";
         const response = await fetch(driveBase + "/items/" + encodeURIComponent(fileId) + "/content", { headers: { authorization: "Bearer " + token }, redirect: "manual", signal: AbortSignal.timeout(20000) });
         if (![200, 302, 303].includes(response.status)) throw new Error("Could not download the selected Microsoft document.");
         const downloadUrl = response.status === 200 ? null : response.headers.get("location");
@@ -231,19 +234,19 @@ function createStorageRouter({ db, auth, role, audit }) {
       }
       if (!content.trim() || Buffer.byteLength(content, "utf8") > 12000) return safeError(res, "The selected file is empty or larger than the 12 KB knowledge-document limit.");
       name = String(name || "Imported hotel document").slice(0, 160);
-      const source = provider + ":" + fileId;
-      const existing = await db.query("SELECT * FROM knowledge_documents WHERE organization_id=$1 AND source_reference=$2", [req.actor.organization_id, source]);
+      const source = provider === "microsoft" ? encodeMicrosoftSourceReference(fileId, siteId) : provider + ":" + fileId;
+      const existing = await db.query("SELECT * FROM knowledge_documents WHERE organization_id=$1 AND (source_reference=$2 OR ($3='microsoft' AND $4='' AND source_reference=$5))", [req.actor.organization_id, source, provider, siteId, provider + ":" + fileId]);
       let document;
       if (existing.rowCount) {
         const previous = existing.rows[0];
-        await db.query("INSERT INTO knowledge_document_versions(organization_id,document_id,title,category,content,approved,source_reference,review_due_at,reviewed_at,changed_by,change_type) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'storage_refresh')", [req.actor.organization_id, previous.id, previous.title, previous.category, previous.content, previous.approved, previous.source_reference, previous.review_due_at, previous.reviewed_at, req.actor.user_id]);
-        const updated = await db.query("UPDATE knowledge_documents SET title=$1,content=$2,approved=false,reviewed_at=NULL,updated_by=$3,updated_at=now() WHERE id=$4 AND organization_id=$5 RETURNING id,title,approved,source_reference,updated_at", [name, content.trim(), req.actor.user_id, previous.id, req.actor.organization_id]);
+        await db.query("INSERT INTO knowledge_document_versions(organization_id,document_id,title,category,content,approved,source_reference,review_due_at,reviewed_at,source_version,changed_by,change_type) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'storage_refresh')", [req.actor.organization_id, previous.id, previous.title, previous.category, previous.content, previous.approved, previous.source_reference, previous.review_due_at, previous.reviewed_at, previous.source_version || "", req.actor.user_id]);
+        const updated = await db.query("UPDATE knowledge_documents SET title=$1,content=$2,approved=false,reviewed_at=NULL,source_version=$3,updated_by=$4,updated_at=now() WHERE id=$5 AND organization_id=$6 RETURNING id,title,approved,source_reference,source_version,updated_at", [name, content.trim(), sourceVersion, req.actor.user_id, previous.id, req.actor.organization_id]);
         document = updated.rows[0];
       } else {
-        const inserted = await db.query("INSERT INTO knowledge_documents(organization_id,title,category,content,approved,source_reference,updated_by) VALUES($1,$2,'imported_document',$3,false,$4,$5) RETURNING id,title,approved,source_reference,updated_at", [req.actor.organization_id, name, content.trim(), source, req.actor.user_id]);
+        const inserted = await db.query("INSERT INTO knowledge_documents(organization_id,title,category,content,approved,source_reference,source_version,updated_by) VALUES($1,$2,'imported_document',$3,false,$4,$5,$6) RETURNING id,title,approved,source_reference,source_version,updated_at", [req.actor.organization_id, name, content.trim(), source, sourceVersion, req.actor.user_id]);
         document = inserted.rows[0];
       }
-      await db.query("INSERT INTO knowledge_document_versions(organization_id,document_id,title,category,content,approved,source_reference,changed_by,change_type) VALUES($1,$2,$3,'imported_document',$4,false,$5,$6,'storage_imported')", [req.actor.organization_id, document.id, document.title, content.trim(), source, req.actor.user_id]);
+      await db.query("INSERT INTO knowledge_document_versions(organization_id,document_id,title,category,content,approved,source_reference,source_version,changed_by,change_type) VALUES($1,$2,$3,'imported_document',$4,false,$5,$6,$7,'storage_imported')", [req.actor.organization_id, document.id, document.title, content.trim(), source, sourceVersion, req.actor.user_id]);
       await audit(req.actor, "storage." + provider + ".file_imported", "knowledge_document", document.id);
       res.status(201).json({ document, approvalRequired: true, message: "Imported as unapproved hotel knowledge. A hotel manager must verify it before Veyra can use it." });
     } catch (e) { res.status(502).json({ error: e.message || "Import failed." }); }

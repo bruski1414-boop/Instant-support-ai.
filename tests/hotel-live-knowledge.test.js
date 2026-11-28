@@ -70,6 +70,7 @@ test("changed provider version invalidates approval and never returns the stale 
 
 test("legacy source-backed copies without a recorded source version fail closed", async () => {
   const db = makeDb({ rowCount: 1 });
+  let reads = 0;
   const result = await resolveLiveApprovedKnowledge({
     db,
     organizationId: "hotel-beta",
@@ -81,8 +82,9 @@ test("legacy source-backed copies without a recorded source version fail closed"
       source_reference: "google:file-3",
       source_version: "",
     }],
-    reader: { async read() { return { content: "Provider says Wi-Fi is available.", version: "v3" }; } },
+    reader: { async read() { reads += 1; return { content: "Provider says Wi-Fi is available.", version: "v3" }; } },
   });
+  assert.equal(reads, 0, "unversioned legacy copies should be invalidated without a provider request");
   assert.deepEqual(result, []);
   assert.equal(db.calls[0].params[3], "");
 });
@@ -104,6 +106,37 @@ test("unavailable provider source is excluded and never falls back to cached con
   });
   assert.deepEqual(result, []);
   assert.equal(db.calls.length, 0);
+});
+
+test("live source checks use bounded concurrency", async () => {
+  const db = makeDb();
+  let active = 0;
+  let maximum = 0;
+  const documents = Array.from({ length: 12 }, (_, index) => ({
+    id: "doc-" + index,
+    title: "Policy " + index,
+    category: "general",
+    content: "Approved copy " + index,
+    source_reference: "google:file-" + index,
+    source_version: "v" + index,
+  }));
+  const result = await resolveLiveApprovedKnowledge({
+    db,
+    organizationId: "hotel-epsilon",
+    documents,
+    reader: {
+      async read({ sourceReference }) {
+        active += 1;
+        maximum = Math.max(maximum, active);
+        await new Promise(resolve => setTimeout(resolve, 5));
+        active -= 1;
+        const index = Number(sourceReference.split("-").pop());
+        return { content: "Current policy " + index, version: "v" + index };
+      },
+    },
+  });
+  assert.equal(result.length, 12);
+  assert.equal(maximum, 4);
 });
 
 test("manually maintained approved knowledge does not require an external source reader", async () => {

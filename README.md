@@ -74,7 +74,15 @@ Important environment variables:
 - `STORAGE_TOKEN_ENCRYPTION_KEY`: base64-encoded 32-byte random key used for AES-256-GCM encryption of per-hotel OAuth tokens. Keep only in hosting secrets; never commit it.
 - `GOOGLE_OAUTH_CLIENT_ID` and `GOOGLE_OAUTH_CLIENT_SECRET`: Google OAuth web application credentials. Register callback `https://<veyra-origin>/api/admin/storage/oauth/callback` and enable the Google Drive API.
 - `MICROSOFT_OAUTH_CLIENT_ID` and `MICROSOFT_OAUTH_CLIENT_SECRET`: Microsoft Entra application credentials. Register the same callback as a Web redirect URI and grant admin-approved delegated permissions `Files.Read.All`, `Sites.Read.All`, `User.Read`, and `offline_access`.
-- `STAFF_WEBHOOK_ENCRYPTION_KEY`: base64-encoded random 32-byte key used only to encrypt each hotel's webhook URL and signing secret with AES-256-GCM. Generate with `openssl rand -base64 32`, add it only to Render's secret environment variables, and never commit or share it. Rotating this key requires a controlled re-encryption of every stored hotel webhook configuration; do not rotate it casually.\n- `DURABLE_BACKUPS_VERIFIED=true`: set only after a durable backup and restore test is documented.\n- `TENANT_ISOLATION_TESTS_PASSED=true`: set only after automated tests prove cross-hotel data isolation.\n- `PROVIDER_OAUTH_TESTED=true`: set only after Google/Microsoft OAuth and document access are tested with separate test tenants.\n- `HOTEL_PRIVACY_APPROVED=true`: set only after the pilot hotel has approved its privacy and retention arrangements in writing.\n- `STAFF_HANDOFF_TESTED=true`: set only after a real staff notification and manual fallback have both been tested.\n- `PILOT_RELEASE_APPROVED=true`: final release approval after all evidence above is reviewed. Never set these flags just to make the dashboard green.
+- `STAFF_WEBHOOK_ENCRYPTION_KEY`: base64-encoded random 32-byte key used only to encrypt each hotel's webhook URL and signing secret with AES-256-GCM. Generate with `openssl rand -base64 32`, add it only to Render's secret environment variables, and never commit or share it. Rotating this key requires a controlled re-encryption of every stored hotel webhook configuration; do not rotate it casually.
+- `DURABLE_BACKUPS_VERIFIED=true`: set only after a durable backup and restore test is documented.
+- `BACKUP_RESTORE_VERIFIED_AT`: UTC ISO-8601 timestamp of the latest successful restore drill; readiness rejects evidence older than 90 days or dated in the future.
+- `BACKUP_RESTORE_EVIDENCE_REF`: non-empty internal record/reference identifying the protected backup and restore evidence; never use a public URL containing credentials or guest data.
+- `TENANT_ISOLATION_TESTS_PASSED=true`: set only after automated tests prove cross-hotel data isolation.
+- `PROVIDER_OAUTH_TESTED=true`: set only after Google/Microsoft OAuth and document access are tested with separate test tenants.
+- `HOTEL_PRIVACY_APPROVED=true`: set only after the pilot hotel has approved its privacy and retention arrangements in writing.
+- `STAFF_HANDOFF_TESTED=true`: set only after a real staff notification and manual fallback have both been tested.
+- `PILOT_RELEASE_APPROVED=true`: final release approval after all evidence above is reviewed. Never set these flags just to make the dashboard green.
 
 Never commit secrets or place them in browser JavaScript.
 
@@ -121,14 +129,17 @@ Never commit secrets or place them in browser JavaScript.
 - `GET /api/admin/storage/sites/microsoft` — discover SharePoint sites
 - `GET /api/admin/storage/files/google|microsoft` — list supported documents (optional `siteId` for SharePoint)
 - `POST /api/admin/storage/import/google|microsoft` — import one selected document as unapproved knowledge
-- `DELETE /api/admin/storage/connections/google|microsoft` — disconnect and delete stored provider tokens\n- `DELETE /api/admin/storage/imports/google|microsoft` — owner/admin-only, requires `{ confirm: true }`, and transactionally deletes only that hotel's imported knowledge copies and their version history from the selected provider; source files in the hotel's own storage are not changed
+- `DELETE /api/admin/storage/connections/google|microsoft` — disconnect and delete stored provider tokens
+- `DELETE /api/admin/storage/imports/google|microsoft` — owner/admin-only, requires `{ confirm: true }`, and transactionally deletes only that hotel's imported knowledge copies and their version history from the selected provider; source files in the hotel's own storage are not changed
 - `GET /api/admin/audit` — latest 100 tenant-scoped audit events for owners/admins
 - `GET/PUT /api/admin/settings` — hotel profile settings (owner/admin can edit)
 - `GET /api/admin/onboarding` — live pre-pilot readiness checks
 - `POST /api/invitations/accept` — single-use invitation acceptance
 - `GET /api/auth/me`
 - `GET /api/auth/csrf`
-- `GET /api/admin/conversations/:id` — tenant-scoped conversation transcript\n- `DELETE /api/admin/conversations/:id` — owner/admin-only, tenant-scoped conversation deletion\n- `GET /api/admin/overview`
+- `GET /api/admin/conversations/:id` — tenant-scoped conversation transcript
+- `DELETE /api/admin/conversations/:id` — owner/admin-only, tenant-scoped conversation deletion
+- `GET /api/admin/overview`
 - `GET/POST /api/admin/knowledge`
 - `PATCH/DELETE /api/admin/knowledge/:id` — update, reapprove or delete knowledge; edits remove approval
 - `GET /api/admin/knowledge/:id/versions` — review history including source and review metadata

@@ -19,5 +19,11 @@ test("hotel dashboard inline script parses without executing browser code", () =
   assert.match(applicationScript, /api\("\/api\/admin\/payment-provider-capabilities"\)/);
   assert.match(applicationScript, /api\("\/api\/admin\/payment-connections"\)/);
   assert.match(applicationScript, /No supported payment providers yet/);
+  assert.match(html, /id="pmsCapabilityCards"/);
+  assert.match(html, /id="pmsConnectionsList"/);
+  assert.match(html, /id="pmsAdapterTestsList"/);
+  assert.match(applicationScript, /api\("\/api\/admin\/integrations\/pms"\)/);
+  assert.match(applicationScript, /Production PMS ready/);
+  assert.match(applicationScript, /sandbox only/);
   assert.doesNotThrow(() => new vm.Script(applicationScript, { filename: "dashboard.html:inline-script" }));
 });

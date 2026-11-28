@@ -1,6 +1,6 @@
 "use strict";
 
-const { PmsIntegrationError } = require("./pms-integration");
+const { PmsIntegrationError, validateDateRange } = require("./pms-integration");
 const { createReservationAfterVerifiedDeposit } = require("./booking-orchestration");
 const { loadVerifiedBookingForPms, claimPmsBookingAttempt, recordPmsOutcome } = require("./booking-repository");
 
@@ -153,4 +153,47 @@ function createVerifiedDepositPmsOrchestrator({
   };
 }
 
-module.exports = { createAndPersistReservation, createReservationFromStoredBooking, createVerifiedDepositPmsOrchestrator };
+
+/**
+ * Read live room inventory from the PMS connection owned by this hotel.
+ * No client-supplied provider or credentials are accepted; both come from the
+ * tenant-scoped connection record. An absent/invalid connection is UNKNOWN,
+ * never an assertion that rooms are sold out or available.
+ */
+async function getHotelAvailability({ db, vault, pmsRegistry, organizationId, checkIn, checkOut }) {
+  if (!db || typeof db.query !== "function" ||
+      typeof organizationId !== "string" || !organizationId ||
+      !vault || typeof vault.decrypt !== "function" ||
+      !pmsRegistry || typeof pmsRegistry.getAvailability !== "function") {
+    throw new PmsIntegrationError("AVAILABILITY_NOT_CONFIGURED", "Hotel availability lookup is not configured.", 503);
+  }
+  const dates = validateDateRange({ checkIn, checkOut });
+  const connection = await db.query(
+    "SELECT provider,encrypted_credentials FROM pms_connections WHERE organization_id=$1 AND status='connected' ORDER BY connected_at DESC LIMIT 1",
+    [organizationId]
+  );
+  if (!connection.rowCount) {
+    return { status: "unknown", reason: "pms_connection_missing", checkedAt: null, rooms: [] };
+  }
+  let credentials;
+  try {
+    credentials = vault.decrypt(connection.rows[0].encrypted_credentials);
+  } catch {
+    return { status: "unknown", reason: "pms_credentials_unavailable", checkedAt: null, rooms: [] };
+  }
+  try {
+    const rooms = await pmsRegistry.getAvailability(
+      connection.rows[0].provider,
+      dates,
+      { credentials, organizationId }
+    );
+    return { status: "checked", reason: null, checkedAt: new Date().toISOString(), rooms };
+  } catch (error) {
+    if (error && ["PROVIDER_UNAVAILABLE", "CAPABILITY_UNAVAILABLE", "PROVIDER_CREDENTIALS_REQUIRED", "INVALID_CREDENTIALS", "PROVIDER_SCOPE_MISSING"].includes(error.code)) {
+      return { status: "unknown", reason: "pms_availability_not_ready", checkedAt: null, rooms: [] };
+    }
+    throw error;
+  }
+}
+
+module.exports = { createAndPersistReservation, createReservationFromStoredBooking, createVerifiedDepositPmsOrchestrator, getHotelAvailability };

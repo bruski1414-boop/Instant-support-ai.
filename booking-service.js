@@ -2,6 +2,7 @@
 
 const { PmsIntegrationError } = require("./pms-integration");
 const { createReservationAfterVerifiedDeposit } = require("./booking-orchestration");
+const { loadVerifiedBookingForPms, recordPmsOutcome } = require("./booking-repository");
 
 /**
  * Application service boundary: do not return a guest-facing confirmation
@@ -52,4 +53,34 @@ async function createAndPersistReservation({
   return outcome;
 }
 
-module.exports = { createAndPersistReservation };
+
+/**
+ * Preferred server entry point: reload trusted booking/payment facts from the
+ * database, then persist the PMS outcome through the tenant-scoped repository.
+ * A booking already moved to booking_pending is not resubmitted automatically;
+ * it requires staff reconciliation to avoid duplicate reservations after an
+ * ambiguous PMS timeout.
+ */
+async function createReservationFromStoredBooking({
+  db,
+  bookingId,
+  organizationId,
+  pms,
+  provider,
+  context = {},
+}) {
+  const stored = await loadVerifiedBookingForPms(db, organizationId, bookingId);
+  return createAndPersistReservation({
+    booking: stored.booking,
+    bookingId,
+    organizationId,
+    paymentEvidence: stored.paymentEvidence,
+    pms,
+    provider,
+    context,
+    persistOutcome: (tenantId, id, pmsProvider, outcome) =>
+      recordPmsOutcome(db, tenantId, id, pmsProvider, outcome),
+  });
+}
+
+module.exports = { createAndPersistReservation, createReservationFromStoredBooking };

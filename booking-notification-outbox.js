@@ -18,7 +18,7 @@ async function enqueueBookingNotification(db, organizationId, bookingId) {
 async function claimNext(db, organizationId) {
   const result = await db.query(
     "WITH candidate AS (SELECT id FROM staff_booking_notification_outbox WHERE attempts < $1 AND ($3::uuid IS NULL OR organization_id=$3) AND ((status='pending' AND next_attempt_at<=now()) OR (status='processing' AND lease_expires_at<now())) ORDER BY next_attempt_at,created_at FOR UPDATE SKIP LOCKED LIMIT 1) UPDATE staff_booking_notification_outbox o SET status='processing',attempts=o.attempts+1,last_attempt_at=now(),lease_expires_at=now()+($2 * interval '1 second'),updated_at=now() FROM candidate c WHERE o.id=c.id RETURNING o.id,o.organization_id,o.booking_id,o.attempts",
-    [MAX_ATTEMPTS, LEASE_SECONDS]
+    [MAX_ATTEMPTS, LEASE_SECONDS, organizationId || null]
   );
   return result.rows[0] || null;
 }

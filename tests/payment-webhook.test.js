@@ -192,3 +192,39 @@ test("does not invoke PMS orchestration for an unverified or ignored payment eve
   assert.equal(result.status, 200);
   assert.equal(calls, 0);
 });
+
+test("retries PMS recovery orchestration when a duplicate payment event is already processed", async () => {
+  let orchestrationCalls = 0;
+  const handler = createPaymentWebhookRequestHandler({
+    db: { async query() {
+      return { rowCount: 1, rows: [{
+        organization_id: "tenant-a", provider: "testpay",
+        encrypted_webhook_secret: "ciphertext",
+      }] };
+    }},
+    vault: { configured: true, decrypt: () => "secret-long-enough-for-test" },
+    providerVerifiers: { testpay: () => ({
+      signatureVerified: true, eventId: "evt-retry-77",
+      bookingId: "booking-recovery-1", paymentId: "pay-recovery-1",
+      amountMinor: 125000, currency: "THB", status: "succeeded",
+    }) },
+    async recordDeposit() {
+      return { accepted: false, duplicate: true, state: "already_processed" };
+    },
+    async onVerifiedDeposit(args) {
+      orchestrationCalls += 1;
+      assert.deepEqual(args, {
+        organizationId: "tenant-a",
+        bookingId: "booking-recovery-1",
+        paymentProvider: "testpay",
+      });
+      return { state: "booking_pending", requiresStaffReview: true };
+    },
+  });
+  const result = await handler({
+    endpointToken: "F".repeat(43), headers: {}, rawBody: Buffer.from("{}"),
+  });
+  assert.equal(result.status, 200);
+  assert.equal(result.body.state, "already_processed");
+  assert.equal(orchestrationCalls, 1);
+});

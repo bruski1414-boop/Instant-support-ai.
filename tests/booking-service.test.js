@@ -28,6 +28,7 @@ test("does not return guest confirmation until PMS outcome persistence succeeds"
     pms: { async createBooking() { return { bookingId: "mews-987", status: "confirmed" }; } },
     async persistOutcome(org, id, provider, outcome) {
       persisted = { org, id, provider, outcome };
+      return { state: outcome.state, duplicate: false };
     },
   });
   assert.equal(persisted.org, "hotel-a");
@@ -60,4 +61,19 @@ test("requires tenant-scoped persistence before calling the PMS", async () => {
     pms: { async createBooking() { pmsCalls += 1; return { bookingId: "res-1", status: "confirmed" }; } },
   }), e => e.code === "BOOKING_PERSISTENCE_REQUIRED");
   assert.equal(pmsCalls, 0);
+});
+
+
+test("does not confirm a guest when the persistence adapter resolves without reporting a committed state", async () => {
+  const { booking, paymentEvidence } = fixtures();
+  const result = await createAndPersistReservation({
+    booking, bookingId: "booking-1", organizationId: "hotel-a",
+    paymentEvidence, provider: "mews",
+    pms: { async createBooking() { return { bookingId: "mews-987", status: "confirmed" }; } },
+    async persistOutcome() { return undefined; },
+  });
+  assert.equal(result.state, "booking_pending");
+  assert.equal(result.confirmed, false);
+  assert.equal(result.requiresStaffReview, true);
+  assert.equal(result.reason, "pms_outcome_persistence_unverified");
 });

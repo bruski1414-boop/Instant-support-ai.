@@ -4,7 +4,7 @@ const { createTokenCipher } = require("./storage-security");
 
 function validateWebhookSecret(value) {
   if (typeof value !== "string" || value.length < 16 || value.length > 512 ||
-      value.trim() !== value || /[\\r\\n\\0]/.test(value)) {
+      value.trim() !== value || /[\r\n\0]/.test(value)) {
     throw new Error("Payment webhook secret must be a non-empty provider secret between 16 and 512 characters.");
   }
   return value;

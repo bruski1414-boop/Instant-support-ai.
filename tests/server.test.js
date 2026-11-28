@@ -423,7 +423,7 @@ test("knowledge review centre provides document search, status and category filt
   assert.match(dashboard, /id="knowledgeStatusFilter"/);
   assert.match(dashboard, /id="knowledgeCategoryFilter"/);
   assert.match(dashboard, /function renderKnowledgeReview\(\)/);
-  assert.match(dashboard, /Approve after verification/);
+  assert.match(dashboard, /Set review date & approve/);
   assert.match(dashboard, /Approval is never automatic/);
   assert.match(dashboard, /knowledgeReviewDate/);
   assert.match(dashboard, /review date required/);

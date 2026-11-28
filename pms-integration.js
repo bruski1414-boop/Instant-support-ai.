@@ -82,6 +82,19 @@ function normalizeBooking(value) {
   return { bookingId, status };
 }
 
+function normalizeBookingLookup(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new PmsIntegrationError("INVALID_PROVIDER_RESPONSE", "Provider returned an invalid reservation lookup response.", 502);
+  }
+  const bookingId = typeof value.bookingId === "string" ? value.bookingId.trim() : "";
+  const status = typeof value.status === "string" ? value.status.trim().toLowerCase() : "";
+  if (!bookingId || bookingId.length > 160 || /[\\x00-\\x1f\\x7f]/.test(bookingId) ||
+      !["confirmed", "pending", "not_found", "cancelled", "modified", "checked_in", "checked_out"].includes(status)) {
+    throw new PmsIntegrationError("INVALID_PROVIDER_RESPONSE", "Provider returned incomplete reservation lookup details.", 502);
+  }
+  return { bookingId, status };
+}
+
 function createHmacSha256Verifier(options = {}) {
   const signatureHeader = String(options.signatureHeader || "x-pms-signature").toLowerCase();
   const timestampHeader = String(options.timestampHeader || "x-pms-timestamp").toLowerCase();

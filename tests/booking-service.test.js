@@ -193,3 +193,82 @@ test("does not retry bookings already pending or query another PMS connection", 
   assert.equal(reservationCalls, 0);
   assert.equal(db.calls.length, 1);
 });
+
+
+const { getHotelAvailability } = require("../booking-service");
+
+test("live availability uses only the tenant's connected PMS and decrypted credentials", async () => {
+  const calls = [];
+  const db = {
+    async query(sql, params) {
+      calls.push({ sql, params });
+      return { rowCount: 1, rows: [{ provider: "mews", encrypted_credentials: "ciphertext" }] };
+    },
+  };
+  let registryArgs;
+  const result = await getHotelAvailability({
+    db,
+    organizationId: "hotel-a",
+    checkIn: "2027-02-10",
+    checkOut: "2027-02-12",
+    vault: { decrypt(value) { assert.equal(value, "ciphertext"); return { accessToken: "secret" }; } },
+    pmsRegistry: {
+      async getAvailability(provider, dates, context) {
+        registryArgs = { provider, dates, context };
+        return [{ roomTypeId: "suite", roomTypeName: "Ocean Suite", currency: "THB", amountMinor: 125000, availableUnits: 2 }];
+      },
+    },
+  });
+  assert.equal(calls.length, 1);
+  assert.deepEqual(calls[0].params, ["hotel-a"]);
+  assert.match(calls[0].sql, /organization_id=\$1 AND status='connected'/);
+  assert.equal(registryArgs.provider, "mews");
+  assert.deepEqual(registryArgs.dates, { checkIn: "2027-02-10", checkOut: "2027-02-12" });
+  assert.deepEqual(registryArgs.context, { credentials: { accessToken: "secret" }, organizationId: "hotel-a" });
+  assert.equal(result.status, "checked");
+  assert.equal(result.rooms[0].availableUnits, 2);
+  assert.ok(result.checkedAt);
+});
+
+test("missing PMS connection reports unknown rather than claiming sold out or available", async () => {
+  let registryCalls = 0;
+  const result = await getHotelAvailability({
+    db: { async query(_sql, params) { assert.deepEqual(params, ["hotel-a"]); return { rowCount: 0, rows: [] }; } },
+    organizationId: "hotel-a",
+    checkIn: "2027-02-10",
+    checkOut: "2027-02-12",
+    vault: { decrypt() { throw new Error("must not decrypt"); } },
+    pmsRegistry: { async getAvailability() { registryCalls += 1; return []; } },
+  });
+  assert.equal(result.status, "unknown");
+  assert.equal(result.reason, "pms_connection_missing");
+  assert.deepEqual(result.rooms, []);
+  assert.equal(registryCalls, 0);
+});
+
+test("invalid date ranges are rejected before querying PMS connections", async () => {
+  let queries = 0;
+  await assert.rejects(() => getHotelAvailability({
+    db: { async query() { queries += 1; return { rowCount: 0, rows: [] }; } },
+    organizationId: "hotel-a",
+    checkIn: "2027-02-12",
+    checkOut: "2027-02-10",
+    vault: { decrypt() { return {}; } },
+    pmsRegistry: { async getAvailability() { return []; } },
+  }), error => error.code === "INVALID_DATE_RANGE");
+  assert.equal(queries, 0);
+});
+
+test("unavailable provider capability reports unknown instead of fake availability", async () => {
+  const result = await getHotelAvailability({
+    db: { async query() { return { rowCount: 1, rows: [{ provider: "sandbox", encrypted_credentials: "ciphertext" }] }; } },
+    organizationId: "hotel-a",
+    checkIn: "2027-02-10",
+    checkOut: "2027-02-12",
+    vault: { decrypt() { return {}; } },
+    pmsRegistry: { async getAvailability() { throw Object.assign(new Error("unsupported"), { code: "CAPABILITY_UNAVAILABLE" }); } },
+  });
+  assert.equal(result.status, "unknown");
+  assert.equal(result.reason, "pms_availability_not_ready");
+  assert.deepEqual(result.rooms, []);
+});

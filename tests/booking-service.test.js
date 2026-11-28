@@ -77,3 +77,18 @@ test("does not confirm a guest when the persistence adapter resolves without rep
   assert.equal(result.requiresStaffReview, true);
   assert.equal(result.reason, "pms_outcome_persistence_unverified");
 });
+
+
+test("does not confirm a guest when persisted state differs from the PMS outcome", async () => {
+  const { booking, paymentEvidence } = fixtures();
+  const result = await createAndPersistReservation({
+    booking, bookingId: "booking-1", organizationId: "hotel-a",
+    paymentEvidence, provider: "mews",
+    pms: { async createBooking() { return { bookingId: "mews-987", status: "confirmed" }; } },
+    async persistOutcome() { return { state: "booking_pending", duplicate: false }; },
+  });
+  assert.equal(result.state, "booking_pending");
+  assert.equal(result.confirmed, false);
+  assert.equal(result.requiresStaffReview, true);
+  assert.equal(result.reason, "pms_outcome_persistence_unverified");
+});

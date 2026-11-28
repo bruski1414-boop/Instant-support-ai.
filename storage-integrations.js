@@ -1,6 +1,7 @@
 const express = require("express");
 const crypto = require("node:crypto");
 const { createTokenCipher, readTextLimited, fetchMicrosoftDownload } = require("./storage-security");
+const { encodeMicrosoftSourceReference } = require("./storage-live-reader");
 
 const PROVIDERS = {
   google: {
@@ -231,8 +232,8 @@ function createStorageRouter({ db, auth, role, audit }) {
       }
       if (!content.trim() || Buffer.byteLength(content, "utf8") > 12000) return safeError(res, "The selected file is empty or larger than the 12 KB knowledge-document limit.");
       name = String(name || "Imported hotel document").slice(0, 160);
-      const source = provider + ":" + fileId;
-      const existing = await db.query("SELECT * FROM knowledge_documents WHERE organization_id=$1 AND source_reference=$2", [req.actor.organization_id, source]);
+      const source = provider === "microsoft" ? encodeMicrosoftSourceReference(fileId, siteId) : provider + ":" + fileId;
+      const existing = await db.query("SELECT * FROM knowledge_documents WHERE organization_id=$1 AND (source_reference=$2 OR ($3='microsoft' AND $4='' AND source_reference=$5))", [req.actor.organization_id, source, provider, siteId, provider + ":" + fileId]);
       let document;
       if (existing.rowCount) {
         const previous = existing.rows[0];

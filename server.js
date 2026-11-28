@@ -449,7 +449,8 @@ app.post("/api/public/:slug/booking-requests",async(q,r,n)=>{
   const organization=await db.query("SELECT id,name,slug,status FROM organizations WHERE slug=$1",[q.params.slug]);
   if(!organization.rowCount||organization.rows[0].status==="suspended")return r.status(404).json({error:"Hotel booking service unavailable."});
   const result=await createBookingRecordFromQuote(db,organization.rows[0].id,q.body||{});
-  if(result.created)await enqueueBookingNotification(db,organization.rows[0].id,result.bookingId);
+  // Enqueue on both new and idempotent replay paths so a transient queue-write failure can be repaired by the guest retrying the same request key.
+  await enqueueBookingNotification(db,organization.rows[0].id,result.bookingId);
   // Delivery is best-effort here; the durable queue preserves failures for retry.
   try{await processBookingNotifications();}catch{}
   const status=result.created?201:200;

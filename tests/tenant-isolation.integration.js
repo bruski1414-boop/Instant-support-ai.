@@ -269,6 +269,22 @@ try {
   assert.equal(staleResolution.status, 409, "a response cannot be confirmed after a later guest message");
 
   const orgResolutionA = await pool.query("SELECT id FROM organizations WHERE slug=$1", [tenants[0].slug]);
+  const wrongRoleToken = randomUUID().replace(/-/g, "") + "wrongrole";
+  const wrongRoleConversation = await pool.query(
+    "INSERT INTO conversations(organization_id,channel,status,guest_token_hash) VALUES($1,'website','open',$2) RETURNING id",
+    [orgResolutionA.rows[0].id, resolutionHash(wrongRoleToken)],
+  );
+  const guestOnlyMessage = await pool.query(
+    "INSERT INTO messages(conversation_id,role,content,created_at) VALUES($1,'guest','A guest message is not an assistant answer',clock_timestamp()) RETURNING id",
+    [wrongRoleConversation.rows[0].id],
+  );
+  const wrongRoleResolution = await postResolution(tenants[0], {
+    conversationId: wrongRoleConversation.rows[0].id,
+    conversationToken: wrongRoleToken,
+    assistantMessageId: guestOnlyMessage.rows[0].id,
+  });
+  assert.equal(wrongRoleResolution.status, 409, "guest messages cannot be confirmed as assistant resolutions");
+
   const staffPlainToken = randomUUID().replace(/-/g, "") + "staffresolution";
   const staffConversation = await pool.query(
     "INSERT INTO conversations(organization_id,channel,status,guest_token_hash) VALUES($1,'website','open',$2) RETURNING id",

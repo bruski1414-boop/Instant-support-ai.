@@ -132,11 +132,11 @@ test("two hotel workspaces remain isolated across live API resources", { skip: !
   );
   const alphaUser = await pool.query("SELECT id FROM users WHERE organization_id=$1 AND email='owner@alpha.test'", [alphaId]);
   const alphaDoc = await pool.query(
-    "INSERT INTO knowledge_documents(organization_id,title,category,content,approved,updated_by) VALUES($1,'Alpha breakfast','food','Alpha serves breakfast at 7am.',true,$2) RETURNING id",
+    "INSERT INTO knowledge_documents(organization_id,title,category,content,approved,review_due_at,updated_by) VALUES($1,'Alpha breakfast','food','Alpha serves breakfast at 7am.',true,CURRENT_DATE + INTERVAL '30 days',$2) RETURNING id",
     [alphaId, alphaUser.rows[0].id]
   );
   const betaDoc = await pool.query(
-    "INSERT INTO knowledge_documents(organization_id,title,category,content,approved,updated_by) VALUES($1,'Beta breakfast','food','Beta serves breakfast at 8am.',true,$2) RETURNING id",
+    "INSERT INTO knowledge_documents(organization_id,title,category,content,approved,review_due_at,updated_by) VALUES($1,'Beta breakfast','food','Beta serves breakfast at 8am.',true,CURRENT_DATE + INTERVAL '30 days',$2) RETURNING id",
     [betaId, betaUser.rows[0].id]
   );
   await pool.query(

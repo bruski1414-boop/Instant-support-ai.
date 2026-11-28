@@ -44,7 +44,7 @@ async function processPaymentWebhook({
 }
 
 
-function createPaymentWebhookRequestHandler({ db, vault, providerVerifiers = {}, recordDeposit = recordVerifiedDeposit }) {
+function createPaymentWebhookRequestHandler({ db, vault, providerVerifiers = {}, recordDeposit = recordVerifiedDeposit, onVerifiedDeposit }) {
   return async function handlePaymentWebhookRequest({ endpointToken, headers, rawBody, receivedAt }) {
     try {
       const connection = await loadPaymentConnectionByEndpointToken({ db, endpointToken, vault });
@@ -57,6 +57,19 @@ function createPaymentWebhookRequestHandler({ db, vault, providerVerifiers = {},
         provider: connection.provider, headers, rawBody,
         secret: connection.secret, receivedAt, recordDeposit,
       });
+      // The callback receives only the tenant resolved from the secret endpoint
+      // token and the booking ID from the verified provider event. It is safe to
+      // retry for duplicate deliveries because the booking service has a
+      // durable one-time PMS submission claim.
+      if (typeof onVerifiedDeposit === "function" &&
+          ["payment_verified", "booking_pending", "already_processed"].includes(result.state)) {
+        const orchestration = await onVerifiedDeposit({
+          organizationId: connection.organizationId,
+          bookingId: result.bookingId,
+          paymentProvider: connection.provider,
+        });
+        return { status: 200, body: { received: true, ...result, orchestration: orchestration || null } };
+      }
       return { status: 200, body: { received: true, ...result } };
     } catch (error) {
       // Validation/signature failures are client errors. Unexpected database or

@@ -191,8 +191,8 @@ async function notify(org,cid,reason){
  try{const webhookConfig=decryptWebhookConfig(saved.rows[0].encrypted_config,process.env.STAFF_WEBHOOK_ENCRYPTION_KEY);return deliverStaffEscalation({organization:org,conversationId:cid,reason,webhookConfig});}
  catch{return {configured:false,delivered:false,status:"not_configured"};}
 }
-async function processBookingNotifications(){
- return processBookingNotificationOutbox({db,batchSize:5,deliver:async job=>{
+async function processBookingNotifications(organizationId){
+ return processBookingNotificationOutbox({db,batchSize:5,organizationId,deliver:async job=>{
   const [org,booking]=await Promise.all([
    db.query("SELECT id,name,slug FROM organizations WHERE id=$1",[job.organization_id]),
    db.query("SELECT state FROM hotel_bookings WHERE id=$1 AND organization_id=$2",[job.booking_id,job.organization_id])
@@ -361,6 +361,10 @@ app.get("/api/admin/bookings",requireDb,auth,role("owner","admin","staff"),async
 });
 app.get("/api/admin/booking-notifications",requireDb,auth,role("owner","admin","staff"),async(q,r,n)=>{
  try{const health=await getBookingNotificationHealth(db,q.actor.organization_id);r.json({notifications:health});}
+ catch(e){n(e);}
+});
+app.post("/api/admin/booking-notifications/process",requireDb,auth,role("owner","admin","staff"),async(q,r,n)=>{
+ try{const result=await processBookingNotifications(q.actor.organization_id);r.json(result);}
  catch(e){n(e);}
 });
 app.get("/api/admin/overview",requireDb,auth,async(q,r,n)=>{try{const org=q.actor.organization_id;const [m,e,c]=await Promise.all([

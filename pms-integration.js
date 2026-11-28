@@ -188,12 +188,14 @@ function createPmsRegistry(adapters = []) {
       capabilities: Object.freeze({
         availability: adapter.capabilities.availability === true && typeof adapter.getAvailability === "function",
         booking: adapter.capabilities.booking === true && typeof adapter.createBooking === "function",
+        bookingLookup: adapter.capabilities.bookingLookup === true && typeof adapter.getBookingStatus === "function",
         webhooks: adapter.capabilities.webhooks === true && typeof adapter.verifyWebhook === "function",
       }),
       testConnection: adapter.testConnection,
       getAvailability: adapter.getAvailability,
       createBooking: adapter.createBooking,
       verifyWebhook: adapter.verifyWebhook,
+      getBookingStatus: adapter.getBookingStatus,
     }));
   }
   for (const adapter of adapters) register(adapter);
@@ -278,6 +280,19 @@ function createPmsRegistry(adapters = []) {
       const securedContext = await requireProductionCredentials(adapter, context, ["booking:write"]);
       const request = normalizeBookingRequest(input);
       return normalizeBooking(await adapter.createBooking(request, securedContext));
+    },
+    getBookingStatus: async (provider, input, context = {}) => {
+      const adapter = get(provider);
+      if (!adapter.capabilities.bookingLookup) {
+        throw new PmsIntegrationError("CAPABILITY_UNAVAILABLE", "This provider adapter does not support reservation status lookup.", 409);
+      }
+      const bookingId = input && typeof input.bookingId === "string" ? input.bookingId.trim() : "";
+      if (!bookingId || bookingId.length > 160 || [...bookingId].some(ch => ch.charCodeAt(0) < 32 || ch.charCodeAt(0) === 127)) {
+        throw new PmsIntegrationError("INVALID_BOOKING_REFERENCE", "A valid provider reservation reference is required.");
+      }
+      const securedContext = await requireProductionCredentials(adapter, context, ["booking:read"]);
+      const result = await adapter.getBookingStatus({ bookingId }, securedContext);
+      return normalizeBooking(result);
     },
     verifyWebhook: async (provider, input) => {
       const adapter = get(provider);

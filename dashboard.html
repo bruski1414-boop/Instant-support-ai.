@@ -198,6 +198,20 @@ main{padding:28px clamp(16px,4vw,48px);max-width:1450px;width:100%;margin:auto}.
   <div class="card tablewrap"><table class="table"><thead><tr><th>GUEST</th><th>STAY</th><th>ROOM / GUESTS</th><th>TOTAL / 50% DEPOSIT</th><th>STATUS</th><th>HOTEL SYSTEM</th><th>REQUESTED</th></tr></thead><tbody id="bookingRows"><tr><td colspan="7" class="empty">Select Bookings to load requests.</td></tr></tbody></table></div>
  </section>
  <section id="panel-integrations" class="panel">
+  <div class="sectionrow"><h2>Hotel system (PMS) integrations</h2><span class="muted">Live capability status</span></div>
+  <p class="muted">A sandbox adapter is for testing the integration contract only. It does not connect to a hotel's real inventory or create real reservations. Production availability and booking require a tested provider adapter and a hotel-authorized account.</p>
+  <div class="grid" id="pmsCapabilityCards"><div class="card muted">Loading PMS capabilities…</div></div>
+  <div class="card" style="margin-top:14px">
+   <strong>Connected hotel systems</strong>
+   <div id="pmsConnectionsList" class="muted" style="margin-top:8px">Loading connections…</div>
+  </div>
+  <div class="card" style="margin-top:14px">
+   <strong>Recent adapter checks</strong>
+   <div id="pmsAdapterTestsList" class="muted" style="margin-top:8px">Loading checks…</div>
+  </div>
+  <p class="muted" style="font-size:12px;margin-top:12px">A successful connection check alone does not prove live booking works. Before a hotel pilot, test real availability, booking creation, webhook verification and recovery from timeouts with the hotel's approval.</p>
+ </section>
+ <section id="panel-integrations" class="panel">
   <div class="sectionrow"><h2>Payment integrations</h2><span class="muted">Live capability status</span></div>
   <p class="muted">Veyra only enables payment providers after their signature verification, event mapping and booking flow have been implemented and tested. Do not enter live payment secrets while a provider is unsupported.</p>
   <div class="grid" id="paymentCapabilityCards"><div class="card muted">Loading payment capabilities…</div></div>
@@ -572,10 +586,13 @@ async function loadHotelBookings(){
 }
 async function loadPaymentIntegrations(){
  const cards=$("paymentCapabilityCards"),list=$("paymentConnectionsList");
+ const pmsCards=$("pmsCapabilityCards"),pmsList=$("pmsConnectionsList"),pmsTests=$("pmsAdapterTestsList");
  cards.textContent="Loading payment capabilities…";list.textContent="Loading connections…";
- const [capResult,connResult]=await Promise.allSettled([
+ pmsCards.textContent="Loading PMS capabilities…";pmsList.textContent="Loading connections…";pmsTests.textContent="Loading checks…";
+ const [capResult,connResult,pmsResult]=await Promise.allSettled([
   api("/api/admin/payment-provider-capabilities"),
-  api("/api/admin/payment-connections")
+  api("/api/admin/payment-connections"),
+  api("/api/admin/integrations/pms")
  ]);
  if(capResult.status!=="fulfilled"){
   cards.textContent="Payment capability status could not be loaded.";
@@ -590,6 +607,20 @@ async function loadPaymentIntegrations(){
  }else{
   const connections=connResult.value.connections||[];
   list.innerHTML=connections.length?connections.map(c=>'<div style="padding:8px 0;border-bottom:1px solid var(--line)"><strong>'+safe(c.provider)+'</strong> · '+statusTag(c.status)+'</div>').join(""):'No payment accounts connected.';
+ }
+ if(pmsResult.status!=="fulfilled"){
+  pmsCards.textContent="PMS capability status could not be loaded.";
+  pmsList.textContent="Connected hotel systems could not be loaded.";
+  pmsTests.textContent="Adapter checks could not be loaded.";
+ }else{
+  const pms=pmsResult.value||{};
+  const providers=Array.isArray(pms.providers)?pms.providers:[];
+  const connections=Array.isArray(pms.connections)?pms.connections:[];
+  const tests=Array.isArray(pms.tests)?pms.tests:[];
+  pmsCards.innerHTML='<div class="card"><strong>Production PMS ready</strong><div style="margin-top:8px">'+statusTag(pms.productionConnectionConfigured?"connection and recent adapter test recorded":"not ready")+'</div><p class="muted">'+safe(pms.notice||"Production readiness has not been established.")+'</p></div>'+
+   (providers.length?providers.map(p=>'<div class="card"><strong>'+safe(p.name||p.id)+'</strong><div style="margin-top:8px">'+statusTag(p.mode==="production"?"production adapter":"sandbox only")+'</div><p class="muted">Availability: '+(p.capabilities?.availability?"yes":"no")+' · Booking: '+(p.capabilities?.booking?"yes":"no")+' · Webhooks: '+(p.capabilities?.webhooks?"yes":"no")+'</p></div>').join(""):'<div class="card"><strong>No PMS adapters installed</strong><p class="muted">No provider adapter is registered.</p></div>');
+  pmsList.innerHTML=connections.length?connections.map(c=>'<div style="padding:8px 0;border-bottom:1px solid var(--line)"><strong>'+safe(c.provider)+'</strong> · '+safe(c.mode)+' · '+statusTag(c.status)+(c.has_error?' <span class="muted">· Last attempt reported an error</span>':'')+'</div>').join(""):'No hotel systems connected.';
+  pmsTests.innerHTML=tests.length?tests.map(t=>'<div style="padding:8px 0;border-bottom:1px solid var(--line)"><strong>'+safe(t.provider)+'</strong> · '+safe(t.mode)+' · '+statusTag(t.test_passed?"passed":"failed")+' <span class="muted">· '+date(t.tested_at)+'</span></div>').join(""):'No adapter checks recorded.';
  }
 }
 async function loadPanel(name){

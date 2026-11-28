@@ -570,3 +570,18 @@ test("PMS reconciliation endpoint is owner/admin-only and uses hotel-scoped stor
   assert.match(server, /recordReconciledPmsOutcome/);
   assert.match(server, /booking\.pms_reconciled/);
 });
+
+
+test("PMS reconciliation reports committed booking outcome even if its follow-up audit write fails", () => {
+  const server = fs.readFileSync("server.js", "utf8");
+  const start = server.indexOf('app.post("/api/admin/bookings/:id/reconcile-pms"');
+  const end = server.indexOf('app.get("/api/admin/bookings"', start);
+  assert.ok(start >= 0 && end > start, "PMS reconciliation route exists");
+  const route = server.slice(start, end);
+  const persisted = route.indexOf("recordReconciledPmsOutcome");
+  const auditTry = route.indexOf("try{await audit(q.actor,\"booking.pms_reconciled\"");
+  const response = route.indexOf("auditRecorded,notice:");
+  assert.ok(persisted >= 0 && auditTry > persisted, "booking outcome is persisted before the best-effort audit write");
+  assert.ok(response > auditTry, "API returns the committed outcome and audit status");
+  assert.match(route, /catch\(auditError\)\{auditRecorded=false;console\.error\("PMS reconciliation audit write failed\."\);\}/);
+});

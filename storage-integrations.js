@@ -17,6 +17,53 @@ const PROVIDERS = {
   },
 };
 
+async function persistImportedKnowledge({ db, actor, provider, fileId, name, content }) {
+  let client;
+  try {
+    client = await db.connect();
+    await client.query("BEGIN");
+    const source = provider + ":" + fileId;
+    const existing = await client.query(
+      "SELECT * FROM knowledge_documents WHERE organization_id=$1 AND source_reference=$2 FOR UPDATE",
+      [actor.organization_id, source]
+    );
+    let document;
+    if (existing.rowCount) {
+      const previous = existing.rows[0];
+      await client.query(
+        "INSERT INTO knowledge_document_versions(organization_id,document_id,title,category,content,approved,source_reference,review_due_at,reviewed_at,changed_by,change_type) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'storage_refresh')",
+        [actor.organization_id, previous.id, previous.title, previous.category, previous.content, previous.approved, previous.source_reference, previous.review_due_at, previous.reviewed_at, actor.user_id]
+      );
+      const updated = await client.query(
+        "UPDATE knowledge_documents SET title=$1,content=$2,approved=false,reviewed_at=NULL,updated_by=$3,updated_at=now() WHERE id=$4 AND organization_id=$5 RETURNING id,title,approved,source_reference,updated_at",
+        [name, content, actor.user_id, previous.id, actor.organization_id]
+      );
+      document = updated.rows[0];
+    } else {
+      const inserted = await client.query(
+        "INSERT INTO knowledge_documents(organization_id,title,category,content,approved,source_reference,updated_by) VALUES($1,$2,'imported_document',$3,false,$4,$5) RETURNING id,title,approved,source_reference,updated_at",
+        [actor.organization_id, name, content, source, actor.user_id]
+      );
+      document = inserted.rows[0];
+    }
+    await client.query(
+      "INSERT INTO knowledge_document_versions(organization_id,document_id,title,category,content,approved,source_reference,changed_by,change_type) VALUES($1,$2,$3,'imported_document',$4,false,$5,$6,'storage_imported')",
+      [actor.organization_id, document.id, document.title, content, source, actor.user_id]
+    );
+    await client.query(
+      "INSERT INTO audit_logs(organization_id,actor_user_id,action,target_type,target_id) VALUES($1,$2,$3,'knowledge_document',$4)",
+      [actor.organization_id, actor.user_id, "storage." + provider + ".file_imported", document.id]
+    );
+    await client.query("COMMIT");
+    return document;
+  } catch (error) {
+    if (client) await client.query("ROLLBACK").catch(() => {});
+    throw error;
+  } finally {
+    if (client) client.release();
+  }
+}
+
 function createStorageRouter({ db, auth, role, audit }) {
   const router = express.Router();
   const redirectBase = (process.env.STORAGE_OAUTH_REDIRECT_BASE || "").replace(/\/+$/, "");
@@ -231,20 +278,14 @@ function createStorageRouter({ db, auth, role, audit }) {
       }
       if (!content.trim() || Buffer.byteLength(content, "utf8") > 12000) return safeError(res, "The selected file is empty or larger than the 12 KB knowledge-document limit.");
       name = String(name || "Imported hotel document").slice(0, 160);
-      const source = provider + ":" + fileId;
-      const existing = await db.query("SELECT * FROM knowledge_documents WHERE organization_id=$1 AND source_reference=$2", [req.actor.organization_id, source]);
-      let document;
-      if (existing.rowCount) {
-        const previous = existing.rows[0];
-        await db.query("INSERT INTO knowledge_document_versions(organization_id,document_id,title,category,content,approved,source_reference,review_due_at,reviewed_at,changed_by,change_type) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'storage_refresh')", [req.actor.organization_id, previous.id, previous.title, previous.category, previous.content, previous.approved, previous.source_reference, previous.review_due_at, previous.reviewed_at, req.actor.user_id]);
-        const updated = await db.query("UPDATE knowledge_documents SET title=$1,content=$2,approved=false,reviewed_at=NULL,updated_by=$3,updated_at=now() WHERE id=$4 AND organization_id=$5 RETURNING id,title,approved,source_reference,updated_at", [name, content.trim(), req.actor.user_id, previous.id, req.actor.organization_id]);
-        document = updated.rows[0];
-      } else {
-        const inserted = await db.query("INSERT INTO knowledge_documents(organization_id,title,category,content,approved,source_reference,updated_by) VALUES($1,$2,'imported_document',$3,false,$4,$5) RETURNING id,title,approved,source_reference,updated_at", [req.actor.organization_id, name, content.trim(), source, req.actor.user_id]);
-        document = inserted.rows[0];
-      }
-      await db.query("INSERT INTO knowledge_document_versions(organization_id,document_id,title,category,content,approved,source_reference,changed_by,change_type) VALUES($1,$2,$3,'imported_document',$4,false,$5,$6,'storage_imported')", [req.actor.organization_id, document.id, document.title, content.trim(), source, req.actor.user_id]);
-      await audit(req.actor, "storage." + provider + ".file_imported", "knowledge_document", document.id);
+      const document = await persistImportedKnowledge({
+        db,
+        actor: req.actor,
+        provider,
+        fileId,
+        name,
+        content: content.trim(),
+      });
       res.status(201).json({ document, approvalRequired: true, message: "Imported as unapproved hotel knowledge. A hotel manager must verify it before Veyra can use it." });
     } catch (e) { res.status(502).json({ error: e.message || "Import failed." }); }
   });
@@ -298,4 +339,4 @@ function createStorageRouter({ db, auth, role, audit }) {
   return router;
 }
 
-module.exports = { createStorageRouter };
+module.exports = { createStorageRouter, persistImportedKnowledge };

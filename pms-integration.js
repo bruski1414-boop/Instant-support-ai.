@@ -54,11 +54,20 @@ function normalizeBookingRequest(input = {}) {
   const roomTypeId = typeof input.roomTypeId === "string" ? input.roomTypeId.trim() : "";
   const guestCount = input.guestCount;
   const idempotencyKey = typeof input.idempotencyKey === "string" ? input.idempotencyKey.trim() : "";
+  const sourceGuest = input.guest;
+  const guest = sourceGuest && typeof sourceGuest === "object" && !Array.isArray(sourceGuest) ? {
+    name: typeof sourceGuest.name === "string" ? sourceGuest.name.trim() : "",
+    phone: typeof sourceGuest.phone === "string" ? sourceGuest.phone.trim() : "",
+    email: typeof sourceGuest.email === "string" ? sourceGuest.email.trim() : "",
+  } : null;
   if (!roomTypeId || roomTypeId.length > 120 || !Number.isInteger(guestCount) || guestCount < 1 || guestCount > 20 ||
-      !/^[A-Za-z0-9_-]{12,100}$/.test(idempotencyKey)) {
-    throw new PmsIntegrationError("INVALID_BOOKING_REQUEST", "Room type, guest count and idempotency key are required.");
+      !/^[A-Za-z0-9_-]{12,100}$/.test(idempotencyKey) ||
+      !guest || !guest.name || guest.name.length > 120 || /[\\u0000-\\u001f\\u007f]/.test(guest.name) ||
+      !/^\\+?[0-9 ()-]{7,30}$/.test(guest.phone) ||
+      (guest.email && (guest.email.length > 254 || !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(guest.email)))) {
+    throw new PmsIntegrationError("INVALID_BOOKING_REQUEST", "Room type, guest contact details, guest count and idempotency key are required.");
   }
-  return { ...dates, roomTypeId, guestCount, idempotencyKey };
+  return { ...dates, roomTypeId, guestCount, guest, idempotencyKey };
 }
 
 function normalizeBooking(value) {

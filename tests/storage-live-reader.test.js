@@ -130,6 +130,50 @@ test("live reader refreshes expired provider credentials and persists the encryp
   }
 });
 
+test("parallel source reads share one expired OAuth token refresh per hotel", async () => {
+  const key = crypto.randomBytes(32).toString("base64");
+  const cipher = createTokenCipher(key);
+  const db = fakeDatabase(cipher.encrypt({
+    access_token: "expired-access",
+    refresh_token: "refresh-token",
+    expires_at: Date.now() - 1000,
+  }));
+  const oldId = process.env.GOOGLE_OAUTH_CLIENT_ID;
+  const oldSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET;
+  process.env.GOOGLE_OAUTH_CLIENT_ID = "test-client";
+  process.env.GOOGLE_OAUTH_CLIENT_SECRET = "test-secret";
+  let refreshCalls = 0;
+  const fetchImpl = async url => {
+    const value = String(url);
+    if (value === "https://oauth2.googleapis.com/token") {
+      refreshCalls += 1;
+      await new Promise(resolve => setTimeout(resolve, 10));
+      return response(JSON.stringify({ access_token: "fresh-access", expires_in: 3600 }));
+    }
+    if (value.includes("alt=media")) return response("Current source text.");
+    if (value.includes("?fields=")) {
+      const id = decodeURIComponent(value.split("/files/")[1].split("?")[0]);
+      return response(JSON.stringify({ id, name: id, mimeType: "text/plain" }));
+    }
+    throw new Error("Unexpected provider request: " + value);
+  };
+  try {
+    const reader = createStorageKnowledgeReader({ db, fetchImpl, encryptionKey: key });
+    const documents = await Promise.all([
+      reader.read({ organizationId: "hotel-zeta", sourceReference: "google:file-a" }),
+      reader.read({ organizationId: "hotel-zeta", sourceReference: "google:file-b" }),
+    ]);
+    assert.equal(documents.length, 2);
+    assert.equal(refreshCalls, 1);
+    assert.equal(db.calls.filter(call => call.sql.startsWith("UPDATE storage_connections")).length, 1);
+  } finally {
+    if (oldId === undefined) delete process.env.GOOGLE_OAUTH_CLIENT_ID;
+    else process.env.GOOGLE_OAUTH_CLIENT_ID = oldId;
+    if (oldSecret === undefined) delete process.env.GOOGLE_OAUTH_CLIENT_SECRET;
+    else process.env.GOOGLE_OAUTH_CLIENT_SECRET = oldSecret;
+  }
+});
+
 test("source reference parsing rejects malformed and unsupported providers", () => {
   assert.deepEqual(parseSourceReference("google:drive-123"), {
     provider: "google",

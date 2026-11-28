@@ -23,7 +23,7 @@ const {BOOKING_SCHEMA,createBookingRecordFromQuote}=require("./booking-repositor
 const {listHotelBookings,parseBookingListQuery}=require("./booking-admin");
 const {createVerifiedDepositPmsOrchestrator}=require("./booking-service");
 const {AVAILABILITY_QUOTE_SCHEMA,createAvailabilityQuotes}=require("./availability-quotes");
-const {deliverStaffEscalation}=require("./staff-notifications");
+const {deliverStaffEscalation,deliverStaffBookingNotification}=require("./staff-notifications");
 const {encryptWebhookConfig,decryptWebhookConfig,resolvePublicWebhook,postSignedWebhook}=require("./staff-webhook-security");
 function isValidReviewDueDate(value){
  if(typeof value!=="string"||!/^\d{4}-\d{2}-\d{2}$/.test(value))return false;
@@ -188,6 +188,12 @@ async function notify(org,cid,reason){
  const saved=await db.query("SELECT encrypted_config FROM organization_staff_webhooks WHERE organization_id=$1 AND status='configured'",[org.id]);
  if(!saved.rowCount||!process.env.STAFF_WEBHOOK_ENCRYPTION_KEY)return {configured:false,delivered:false,status:"not_configured"};
  try{const webhookConfig=decryptWebhookConfig(saved.rows[0].encrypted_config,process.env.STAFF_WEBHOOK_ENCRYPTION_KEY);return deliverStaffEscalation({organization:org,conversationId:cid,reason,webhookConfig});}
+ catch{return {configured:false,delivered:false,status:"not_configured"};}
+}
+async function notifyBooking(org,bookingId,state){
+ const saved=await db.query("SELECT encrypted_config FROM organization_staff_webhooks WHERE organization_id=$1 AND status='configured'",[org.id]);
+ if(!saved.rowCount||!process.env.STAFF_WEBHOOK_ENCRYPTION_KEY)return {configured:false,delivered:false,status:"not_configured"};
+ try{const webhookConfig=decryptWebhookConfig(saved.rows[0].encrypted_config,process.env.STAFF_WEBHOOK_ENCRYPTION_KEY);return deliverStaffBookingNotification({organization:org,bookingId,state,webhookConfig});}
  catch{return {configured:false,delivered:false,status:"not_configured"};}
 }
 async function readinessSnapshot(){let database="not-configured",humanHandoff=false;if(db){try{await db.query("SELECT 1");database="connected";const handoff=await db.query("SELECT EXISTS(SELECT 1 FROM organization_staff_webhooks w JOIN organization_integration_checks c ON c.organization_id=w.organization_id AND c.integration='staff_webhook' WHERE w.status='configured' AND c.verified_at>now()-interval '30 days') AS configured");humanHandoff=handoff.rows[0]?.configured===true;}catch{database="unavailable";}}const guestDataStorage=process.env.GUEST_DATA_STORAGE_ENABLED==="true";const gate=buildPilotReadiness({databaseConnected:database==="connected",aiConfigured:Boolean(ai),guestDataStorageEnabled:guestDataStorage,staffWebhookConfigured:humanHandoff,durableBackupsVerified:process.env.DURABLE_BACKUPS_VERIFIED==="true",tenantIsolationTestsPassed:process.env.TENANT_ISOLATION_TESTS_PASSED==="true",providerOAuthTested:process.env.PROVIDER_OAUTH_TESTED==="true",hotelPrivacyApproved:process.env.HOTEL_PRIVACY_APPROVED==="true",staffHandoffTested:process.env.STAFF_HANDOFF_TESTED==="true",pilotReleaseApproved:process.env.PILOT_RELEASE_APPROVED==="true"});return{service:"Veyra AI",mode:ai?"ai-configured":"demo-no-api-key",model:ai?MODEL:null,database,multiTenant:database==="connected",guestDataStorage,humanHandoff:humanHandoff?"hotel-webhook-verified":"not-configured",readyForPilot:gate.readyForPilot,checks:gate.checks};}
@@ -422,9 +428,12 @@ app.post("/api/public/:slug/booking-requests",async(q,r,n)=>{
  try{
   if(!db)return r.status(503).json({error:"Hotel booking service is not configured."});
   if(process.env.GUEST_DATA_STORAGE_ENABLED!=="true")return r.status(503).json({error:"Guest data storage is disabled until the hotel has approved its privacy notice, retention period and data-processing terms."});
-  const organization=await db.query("SELECT id,status FROM organizations WHERE slug=$1",[q.params.slug]);
+  const organization=await db.query("SELECT id,name,slug,status FROM organizations WHERE slug=$1",[q.params.slug]);
   if(!organization.rowCount||organization.rows[0].status==="suspended")return r.status(404).json({error:"Hotel booking service unavailable."});
   const result=await createBookingRecordFromQuote(db,organization.rows[0].id,q.body||{});
+  const staffNotification=result.created
+   ?await notifyBooking(organization.rows[0],result.bookingId,result.state)
+   :{configured:false,delivered:false,status:"not_needed"};
   const status=result.created?201:200;
   r.status(status).json({
    bookingId:result.bookingId,
@@ -432,6 +441,7 @@ app.post("/api/public/:slug/booking-requests",async(q,r,n)=>{
    created:result.created,
    paymentStatus:"not_configured",
    checkoutAvailable:false,
+   staffNotification,
    guestMessage:"Your booking request has been saved but is not confirmed. The hotel team must contact you to arrange payment and confirm availability.",
    ...(result.created?{
     currency:result.currency,

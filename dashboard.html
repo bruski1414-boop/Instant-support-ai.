@@ -38,6 +38,7 @@ main{padding:28px clamp(16px,4vw,48px);max-width:1450px;width:100%;margin:auto}.
   <button class="active" data-panel="overview">◫ Overview</button>
   <button data-panel="setup">⚙ Hotel setup</button><button data-panel="storage" id="storageNav">▤ Hotel storage</button>
   <button data-panel="bookings" id="bookingsNav">▣ Bookings</button>
+  <button data-panel="integrations" id="integrationsNav">⇄ Integrations</button>
   <button data-panel="conversations">☷ Conversations</button>
   <button data-panel="insights">◷ Conversation insights</button><button data-panel="performance">▥ Performance report</button>
   <button data-panel="knowledge">✧ Knowledge base</button>
@@ -196,6 +197,16 @@ main{padding:28px clamp(16px,4vw,48px);max-width:1450px;width:100%;margin:auto}.
   <div class="actions" style="margin:12px 0"><button class="btn" id="bookingPrevious" type="button" disabled>← Previous 50</button><button class="btn" id="bookingNext" type="button" disabled>Next 50 →</button></div>
   <div class="card tablewrap"><table class="table"><thead><tr><th>GUEST</th><th>STAY</th><th>ROOM / GUESTS</th><th>TOTAL / 50% DEPOSIT</th><th>STATUS</th><th>HOTEL SYSTEM</th><th>REQUESTED</th></tr></thead><tbody id="bookingRows"><tr><td colspan="7" class="empty">Select Bookings to load requests.</td></tr></tbody></table></div>
  </section>
+ <section id="panel-integrations" class="panel">
+  <div class="sectionrow"><h2>Payment integrations</h2><span class="muted">Live capability status</span></div>
+  <p class="muted">Veyra only enables payment providers after their signature verification, event mapping and booking flow have been implemented and tested. Do not enter live payment secrets while a provider is unsupported.</p>
+  <div class="grid" id="paymentCapabilityCards"><div class="card muted">Loading payment capabilities…</div></div>
+  <div class="card" style="margin-top:14px">
+   <strong>Connected payment accounts</strong>
+   <div id="paymentConnectionsList" class="muted" style="margin-top:8px">Loading connections…</div>
+  </div>
+  <p class="muted" style="font-size:12px;margin-top:12px">A verified deposit is only one step. A reservation is confirmed only after the hotel's PMS returns a confirmed reservation reference and Veyra persists it.</p>
+ </section>
  <section id="panel-conversations" class="panel">
   <div class="sectionrow"><h2>Recent conversations</h2><span class="muted">Latest 20 · message previews</span></div>
   <div class="card tablewrap"><table class="table"><thead><tr><th>ID</th><th>LAST MESSAGE</th><th>STATUS</th><th>CHANNEL</th><th>STARTED</th><th>ACTION</th></tr></thead><tbody id="conversationRows"></tbody></table></div>
@@ -349,7 +360,7 @@ function switchPanel(name){
  document.querySelectorAll(".panel").forEach(x=>x.classList.remove("active"));
  $("panel-"+name).classList.add("active");
  document.querySelectorAll("[data-panel]").forEach(x=>x.classList.toggle("active",x.dataset.panel===name));
- const labels={bookings:["BOOKINGS","Hotel bookings","Review guest requests, deposit status and confirmed hotel-system references."],storage:["HOTEL STORAGE","Hotel storage","Connect hotel document repositories and choose source documents."],setup:["HOTEL SETUP","Hotel setup","Configure the hotel profile and review the real pre-pilot requirements."],team:["TEAM ACCESS","Team access","Invite employees and manage pending invitations."],overview:["OVERVIEW","Support overview","A live view of conversations and staff attention."],conversations:["CONVERSATIONS","Recent conversations","Review the latest guest interactions."],knowledge:["KNOWLEDGE BASE","Hotel knowledge","Control the facts the assistant is allowed to use."],offers:["REVENUE OFFERS","Revenue offers","Manage hotel-approved extras and verified availability."],revenue:["REVENUE TRACKING","Revenue attribution","Review guest enquiries and confirm actual completed sales."],insights:["CONVERSATION INSIGHTS","Guest conversation intelligence","Understand recurring topics and where staff support is needed."],performance:["PERFORMANCE REPORT","Hotel performance report","Review conversation activity and staff-confirmed offer outcomes."],escalations:["STAFF HANDOFFS","Staff handoff queue","Requests that need a member of your team."]};
+ const labels={bookings:["BOOKINGS","Hotel bookings","Review guest requests, deposit status and confirmed hotel-system references."],integrations:["INTEGRATIONS","Payment integrations","Review which payment capabilities are actually implemented and enabled."],storage:["HOTEL STORAGE","Hotel storage","Connect hotel document repositories and choose source documents."],setup:["HOTEL SETUP","Hotel setup","Configure the hotel profile and review the real pre-pilot requirements."],team:["TEAM ACCESS","Team access","Invite employees and manage pending invitations."],overview:["OVERVIEW","Support overview","A live view of conversations and staff attention."],conversations:["CONVERSATIONS","Recent conversations","Review the latest guest interactions."],knowledge:["KNOWLEDGE BASE","Hotel knowledge","Control the facts the assistant is allowed to use."],offers:["REVENUE OFFERS","Revenue offers","Manage hotel-approved extras and verified availability."],revenue:["REVENUE TRACKING","Revenue attribution","Review guest enquiries and confirm actual completed sales."],insights:["CONVERSATION INSIGHTS","Guest conversation intelligence","Understand recurring topics and where staff support is needed."],performance:["PERFORMANCE REPORT","Hotel performance report","Review conversation activity and staff-confirmed offer outcomes."],escalations:["STAFF HANDOFFS","Staff handoff queue","Requests that need a member of your team."]};
  $("crumb").textContent="WORKSPACE / "+labels[name][0];$("heading").textContent=labels[name][1];$("subheading").textContent=labels[name][2];
  loadPanel(name);
 }
@@ -559,12 +570,34 @@ async function loadHotelBookings(){
  }).join("");
  $("bookingRows").innerHTML=rows||'<tr><td colspan="7" class="empty">No booking records match this filter.</td></tr>';
 }
+async function loadPaymentIntegrations(){
+ const cards=$("paymentCapabilityCards"),list=$("paymentConnectionsList");
+ cards.textContent="Loading payment capabilities…";list.textContent="Loading connections…";
+ const [capResult,connResult]=await Promise.allSettled([
+  api("/api/admin/payment-provider-capabilities"),
+  api("/api/admin/payment-connections")
+ ]);
+ if(capResult.status!=="fulfilled"){
+  cards.textContent="Payment capability status could not be loaded.";
+ }else{
+  const caps=capResult.value;
+  const providers=Array.isArray(caps.providers)?caps.providers:[];
+  cards.innerHTML='<div class="card"><strong>Live checkout</strong><div style="margin-top:8px">'+statusTag(caps.liveCheckoutAvailable?"enabled":"not available")+'</div><p class="muted">Guest checkout sessions are '+(caps.liveCheckoutAvailable?"available.":"not implemented yet.")+'</p></div><div class="card"><strong>Webhook verification</strong><div style="margin-top:8px">'+statusTag(caps.livePaymentWebhookAvailable?"enabled":"not available")+'</div><p class="muted">Only provider-specific verified adapters appear here.</p></div>'+
+   (providers.length?providers.map(p=>'<div class="card"><strong>'+safe(p.provider)+'</strong><div style="margin-top:8px">'+statusTag(p.webhookVerification?"webhook verification implemented":"not verified")+'</div></div>').join(""):'<div class="card"><strong>No supported payment providers yet</strong><p class="muted">The provider registry is intentionally empty. Veyra will reject connection attempts until a complete provider integration is tested.</p></div>');
+ }
+ if(connResult.status!=="fulfilled"){
+  list.textContent="Connected payment accounts could not be loaded.";
+ }else{
+  const connections=connResult.value.connections||[];
+  list.innerHTML=connections.length?connections.map(c=>'<div style="padding:8px 0;border-bottom:1px solid var(--line)"><strong>'+safe(c.provider)+'</strong> · '+statusTag(c.status)+'</div>').join(""):'No payment accounts connected.';
+ }
+}
 async function loadPanel(name){
- try{if(name==="overview"||name==="conversations")await loadOverview();if(name==="bookings")await loadHotelBookings();if(name==="overview")await loadNotificationCentre();if(name==="knowledge")await loadKnowledge();if(name==="offers")await loadOffers();if(name==="revenue")await loadRevenueAttributions();if(name==="insights")await loadConversationInsights();if(name==="performance")await loadPerformanceReport();if(name==="escalations")await loadEscalations();if(name==="team")await loadInvitations();if(name==="setup")await loadSetup();if(name==="storage")await loadStorage();$("globalNotice").classList.add("hidden");}
+ try{if(name==="overview"||name==="conversations")await loadOverview();if(name==="bookings")await loadHotelBookings();if(name==="integrations")await loadPaymentIntegrations();if(name==="overview")await loadNotificationCentre();if(name==="knowledge")await loadKnowledge();if(name==="offers")await loadOffers();if(name==="revenue")await loadRevenueAttributions();if(name==="insights")await loadConversationInsights();if(name==="performance")await loadPerformanceReport();if(name==="escalations")await loadEscalations();if(name==="team")await loadInvitations();if(name==="setup")await loadSetup();if(name==="storage")await loadStorage();$("globalNotice").classList.add("hidden");}
  catch(e){notice(e.message,"error");}
 }
 async function enterWorkspace(){
- try{const c=await api("/api/auth/csrf");csrfToken=c.csrfToken;const d=await api("/api/auth/me");currentRole=d.user.role;$("teamNav").classList.toggle("hidden",!["owner","admin"].includes(currentRole));$("offersNav").classList.toggle("hidden",!["owner","admin"].includes(currentRole));$("revenueNav").classList.toggle("hidden",!["owner","admin","staff"].includes(currentRole));$("bookingsNav").classList.toggle("hidden",!["owner","admin","staff"].includes(currentRole));$("storageNav").classList.toggle("hidden",!["owner","admin"].includes(currentRole));$("settingsForm").classList.toggle("hidden",!["owner","admin"].includes(currentRole));$("orgName").textContent=d.organization.name;$("userRole").textContent=d.user.role+" · "+d.user.email;$("login").classList.add("hidden");$("app").classList.remove("hidden");switchPanel("overview");}
+ try{const c=await api("/api/auth/csrf");csrfToken=c.csrfToken;const d=await api("/api/auth/me");currentRole=d.user.role;$("teamNav").classList.toggle("hidden",!["owner","admin"].includes(currentRole));$("offersNav").classList.toggle("hidden",!["owner","admin"].includes(currentRole));$("revenueNav").classList.toggle("hidden",!["owner","admin","staff"].includes(currentRole));$("bookingsNav").classList.toggle("hidden",!["owner","admin","staff"].includes(currentRole));$("integrationsNav").classList.toggle("hidden",!["owner","admin"].includes(currentRole));$("storageNav").classList.toggle("hidden",!["owner","admin"].includes(currentRole));$("settingsForm").classList.toggle("hidden",!["owner","admin"].includes(currentRole));$("orgName").textContent=d.organization.name;$("userRole").textContent=d.user.role+" · "+d.user.email;$("login").classList.add("hidden");$("app").classList.remove("hidden");switchPanel("overview");}
  catch(e){$("login").classList.remove("hidden");$("app").classList.add("hidden");}
 }
 $("loginForm").addEventListener("submit",async e=>{e.preventDefault();try{const d=await api("/api/auth/login",{method:"POST",body:JSON.stringify({organizationSlug:$("workspaceSlug").value.trim().toLowerCase(),email:$("email").value,password:$("password").value})});csrfToken=d.csrfToken;await enterWorkspace();}catch(err){loginError(err.message);}});

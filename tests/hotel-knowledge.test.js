@@ -25,7 +25,8 @@ test("approved knowledge is scoped to one hotel and excludes documents past revi
   assert.equal(result, expectedRows);
   assert.match(receivedSql, /organization_id=\$1/);
   assert.match(receivedSql, /approved=true/);
-  assert.match(receivedSql, /review_due_at IS NULL OR review_due_at >= \$2::date/);
+  assert.match(receivedSql, /review_due_at IS NOT NULL AND review_due_at >= \$2::date/);
+  assert.match(receivedSql, /source_reference,source_version/);
   assert.match(receivedSql, /ORDER BY updated_at DESC LIMIT 40/);
   assert.deepEqual(receivedParams, ["hotel-aster", "2026-11-23"]);
 });

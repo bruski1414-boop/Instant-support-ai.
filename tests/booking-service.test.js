@@ -38,6 +38,29 @@ test("does not return guest confirmation until PMS outcome persistence succeeds"
   assert.equal(result.confirmed, true);
 });
 
+test("a PMS timeout is persisted as pending so webhook retries cannot resubmit it", async () => {
+  const { booking, paymentEvidence } = fixtures();
+  let persisted;
+  const result = await createAndPersistReservation({
+    booking, bookingId: "booking-timeout", organizationId: "hotel-a",
+    paymentEvidence, provider: "mews",
+    pms: { async createBooking() { throw new Error("network timeout"); } },
+    async persistOutcome(org, id, provider, outcome) {
+      persisted = { org, id, provider, outcome };
+      return { state: outcome.state, duplicate: false };
+    },
+  });
+  assert.equal(persisted.org, "hotel-a");
+  assert.equal(persisted.id, "booking-timeout");
+  assert.equal(persisted.provider, "mews");
+  assert.equal(persisted.outcome.state, "booking_pending");
+  assert.equal(persisted.outcome.reason, "pms_result_unknown");
+  assert.equal(result.state, "booking_pending");
+  assert.equal(result.confirmed, false);
+  assert.equal(result.requiresStaffReview, true);
+  assert.equal(result.pmsBookingId, undefined);
+});
+
 test("a database failure after PMS confirmation keeps guest status pending for staff review", async () => {
   const { booking, paymentEvidence } = fixtures();
   const result = await createAndPersistReservation({

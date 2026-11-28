@@ -230,6 +230,11 @@ function reconciliationDb(overrides = {}) {
       if (sql.startsWith("SELECT provider,status,pms_booking_id")) {
         return { rowCount: 1, rows: [attempt] };
       }
+      if (sql.startsWith("UPDATE hotel_bookings SET last_error_code='pms_lookup_not_found'")) {
+        updates.push("not_found");
+        booking.last_error_code = "pms_lookup_not_found";
+        return { rowCount: 1, rows: [] };
+      }
       if (sql.startsWith("UPDATE hotel_bookings SET state='confirmed'")) {
         updates.push("booking");
         booking.state = "confirmed";
@@ -306,4 +311,17 @@ test("does not reconcile unverified statuses or malformed PMS references", async
     error => error.code === "INVALID_PMS_REFERENCE"
   );
   assert.deepEqual(db.updates, []);
+});
+
+
+test("PMS not-found lookup stays pending and records manual-review reason without resubmitting", async () => {
+  const db = reconciliationDb();
+  const result = await recordReconciledPmsOutcome(db, "hotel-a", "booking-reconcile-1", "hotelpms", {
+    bookingId: "reservation-123", status: "not_found",
+  });
+  assert.deepEqual(result, { state: "booking_pending", duplicate: false, lookupStatus: "not_found" });
+  assert.equal(db.booking.state, "booking_pending");
+  assert.equal(db.booking.last_error_code, "pms_lookup_not_found");
+  assert.deepEqual(db.updates, ["not_found"]);
+  assert.equal(db.attempt.status, "pending");
 });

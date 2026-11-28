@@ -188,6 +188,7 @@ main{padding:28px clamp(16px,4vw,48px);max-width:1450px;width:100%;margin:auto}.
    </div>
    <div class="field"><label>Latest results</label><div id="bookingQueueCount" class="muted">Not loaded</div></div>
   </div>
+  <div class="actions" style="margin:12px 0"><button class="btn" id="bookingPrevious" type="button" disabled>← Previous 50</button><button class="btn" id="bookingNext" type="button" disabled>Next 50 →</button></div>
   <div class="card tablewrap"><table class="table"><thead><tr><th>GUEST</th><th>STAY</th><th>ROOM / GUESTS</th><th>TOTAL / 50% DEPOSIT</th><th>STATUS</th><th>HOTEL SYSTEM</th><th>REQUESTED</th></tr></thead><tbody id="bookingRows"><tr><td colspan="7" class="empty">Select Bookings to load requests.</td></tr></tbody></table></div>
  </section>
  <section id="panel-conversations" class="panel">
@@ -323,6 +324,7 @@ main{padding:28px clamp(16px,4vw,48px);max-width:1450px;width:100%;margin:auto}.
 let csrfToken="";
 let currentRole="";
 let activePanel="overview";
+let bookingOffset=0;
 const $=id=>document.getElementById(id);
 const safe=(v)=>String(v==null?"":v).replace(/[&<>"\']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","\'":"&#39;"}[c];});
 function showToast(s){const e=$("toast");e.textContent=s;e.classList.remove("hidden");setTimeout(()=>e.classList.add("hidden"),3200);}
@@ -518,10 +520,15 @@ async function loadEscalations(){
 }
 async function loadHotelBookings(){
  const filter=$("bookingStateFilter").value;
- const query=filter?"?state="+encodeURIComponent(filter):"";
+ const query="?limit=50&offset="+bookingOffset+(filter?"&state="+encodeURIComponent(filter):"");
  const d=await api("/api/admin/bookings"+query);
  const bookings=d.bookings||[];
- $("bookingQueueCount").textContent=bookings.length+" shown · maximum "+(d.limit||50)+" per page";
+ const pageSize=d.limit||50;
+ const first=bookings.length?bookingOffset+1:0;
+ const last=bookingOffset+bookings.length;
+ $("bookingQueueCount").textContent="Showing "+first+"–"+last+" · 50 per page";
+ $("bookingPrevious").disabled=bookingOffset===0;
+ $("bookingNext").disabled=bookings.length<pageSize;
  const stateLabels={awaiting_payment:"Awaiting payment",payment_pending:"Payment pending",payment_verified:"Payment verified",booking_pending:"PMS confirmation pending",confirmed:"Confirmed",payment_failed:"Payment failed",booking_failed:"Booking failed",cancelled:"Cancelled"};
  const money=(minor,currency)=>{
   const digits=(()=>{try{return new Intl.NumberFormat("en",{style:"currency",currency}).resolvedOptions().maximumFractionDigits;}catch{return 2;}})();
@@ -552,7 +559,9 @@ async function enterWorkspace(){
 $("loginForm").addEventListener("submit",async e=>{e.preventDefault();try{const d=await api("/api/auth/login",{method:"POST",body:JSON.stringify({organizationSlug:$("workspaceSlug").value.trim().toLowerCase(),email:$("email").value,password:$("password").value})});csrfToken=d.csrfToken;await enterWorkspace();}catch(err){loginError(err.message);}});
 $("logout").addEventListener("click",async()=>{try{await api("/api/auth/logout",{method:"POST",body:"{}"});}catch{}csrfToken="";$("app").classList.add("hidden");$("login").classList.remove("hidden");$("password").value="";});
 $("refresh").addEventListener("click",()=>loadPanel(activePanel));
-$("bookingStateFilter").addEventListener("change",loadHotelBookings);
+$("bookingStateFilter").addEventListener("change",()=>{bookingOffset=0;loadHotelBookings();});
+$("bookingPrevious").addEventListener("click",()=>{bookingOffset=Math.max(0,bookingOffset-50);loadHotelBookings();});
+$("bookingNext").addEventListener("click",()=>{bookingOffset+=50;loadHotelBookings();});
 document.querySelectorAll("[data-panel]").forEach(b=>b.addEventListener("click",()=>switchPanel(b.dataset.panel)));
 
 

@@ -201,8 +201,15 @@ async function recordPmsOutcome(db, organizationId, bookingId, provider, outcome
       }
       fail("BOOKING_ALREADY_CONFIRMED", "A confirmed reservation cannot be overwritten.", 409);
     }
-    if (!["payment_verified", "booking_pending"].includes(current)) {
-      fail("PAYMENT_NOT_VERIFIED", "A verified deposit is required before storing a PMS outcome.", 409);
+    if (current !== "payment_verified") {
+      fail("PAYMENT_NOT_VERIFIED", "A verified deposit and active PMS attempt are required before storing a PMS outcome.", 409);
+    }
+    const attempt = await client.query(
+      "SELECT provider,status FROM hotel_pms_booking_attempts WHERE organization_id=$1 AND booking_id=$2 FOR UPDATE",
+      [organizationId, bookingId]
+    );
+    if (!attempt.rowCount || attempt.rows[0].provider !== provider || attempt.rows[0].status !== "started") {
+      fail("PMS_ATTEMPT_NOT_ACTIVE", "The matching PMS submission attempt is not active.", 409);
     }
     if (outcome.state === "confirmed") {
       await client.query(

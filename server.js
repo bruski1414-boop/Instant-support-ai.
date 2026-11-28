@@ -20,7 +20,7 @@ const {createPmsCredentialVault}=require("./pms-credential-vault");
 const {createPaymentWebhookSecretVault,savePaymentWebhookSecret,disablePaymentWebhookConnection}=require("./payment-credential-vault");
 const {createPaymentWebhookRequestHandler}=require("./payment-webhook");
 const {BOOKING_SCHEMA}=require("./booking-repository");
-const {createVerifiedDepositPmsOrchestrator}=require("./booking-service");
+const {createVerifiedDepositPmsOrchestrator,getHotelAvailability}=require("./booking-service");
 const {deliverStaffEscalation}=require("./staff-notifications");
 const {encryptWebhookConfig,decryptWebhookConfig,resolvePublicWebhook,postSignedWebhook}=require("./staff-webhook-security");
 function isValidReviewDueDate(value){
@@ -43,7 +43,7 @@ const prod=process.env.NODE_ENV==="production";
 const cookie=prod?"__Host-veyra_session":"veyra_session";
 app.disable("x-powered-by");
 app.use((_q,r,n)=>{r.setHeader("X-Content-Type-Options","nosniff");r.setHeader("X-Frame-Options","DENY");r.setHeader("Referrer-Policy","strict-origin-when-cross-origin");r.setHeader("Permissions-Policy","camera=(),microphone=(),geolocation=()");n();});
-app.use(cors((req,cb)=>{const o=req.get("Origin");const common={credentials:true,allowedHeaders:["Content-Type","X-CSRF-Token","X-Bootstrap-Token","X-Platform-Provisioning-Token"],methods:["GET","POST","PUT","PATCH","DELETE","OPTIONS"]};if(!o||origins.includes(o))return cb(null,{...common,origin:true});const segments=req.path.split("/");if(segments.length!==5||segments[1]!=="api"||segments[2]!=="public"||segments[4]!=="chat"||!db)return cb(null,{...common,origin:false});let hotelSlug;try{hotelSlug=decodeURIComponent(segments[3]);}catch{return cb(null,{...common,origin:false});}db.query("SELECT 1 FROM organizations o JOIN organization_settings s ON s.organization_id=o.id WHERE o.slug=$1 AND s.website_url=$2 LIMIT 1",[hotelSlug,o]).then(x=>cb(null,{...common,origin:x.rowCount>0})).catch(()=>cb(null,{...common,origin:false}));}));
+app.use(cors((req,cb)=>{const o=req.get("Origin");const common={credentials:true,allowedHeaders:["Content-Type","X-CSRF-Token","X-Bootstrap-Token","X-Platform-Provisioning-Token"],methods:["GET","POST","PUT","PATCH","DELETE","OPTIONS"]};if(!o||origins.includes(o))return cb(null,{...common,origin:true});const segments=req.path.split("/");if(segments.length!==5||segments[1]!=="api"||segments[2]!=="public"||!["chat","availability"].includes(segments[4])||!db)return cb(null,{...common,origin:false});let hotelSlug;try{hotelSlug=decodeURIComponent(segments[3]);}catch{return cb(null,{...common,origin:false});}db.query("SELECT 1 FROM organizations o JOIN organization_settings s ON s.organization_id=o.id WHERE o.slug=$1 AND s.website_url=$2 LIMIT 1",[hotelSlug,o]).then(x=>cb(null,{...common,origin:x.rowCount>0})).catch(()=>cb(null,{...common,origin:false}));}));
 app.use(express.json({limit:"20kb",verify:(req,res,buf)=>{req.rawBody=Buffer.from(buf);}}));
 app.use("/api/",rateLimit({windowMs:60000,limit:60,standardHeaders:"draft-7",legacyHeaders:false}));
 app.use("/api/auth/",rateLimit({windowMs:900000,limit:10,standardHeaders:"draft-7",legacyHeaders:false}));
@@ -379,6 +379,26 @@ app.post("/api/admin/escalations/:id/reply",requireDb,auth,role("owner","admin",
  app.patch("/api/admin/escalations/:id",requireDb,auth,role("owner","admin","staff"),async(q,r,n)=>{try{const s=q.body?.status;if(!["open","claimed","resolved"].includes(s))return r.status(400).json({error:"Invalid status."});
  const x=await db.query("UPDATE escalations SET status=$1,assigned_to=CASE WHEN $1='claimed' THEN $2 WHEN $1='open' THEN NULL ELSE assigned_to END,resolved_at=CASE WHEN $1='resolved' THEN now() ELSE NULL END WHERE id=$3 AND organization_id=$4 RETURNING id,status,assigned_to,resolved_at",[s,q.actor.user_id,q.params.id,q.actor.organization_id]);if(!x.rowCount)return r.status(404).json({error:"Escalation not found."});
  await db.query("UPDATE conversations SET status=$1 WHERE organization_id=$3 AND id=(SELECT conversation_id FROM escalations WHERE id=$2 AND organization_id=$3)",[s==="resolved"?"resolved":"escalated",q.params.id,q.actor.organization_id]);await audit(q.actor,"escalation."+s,"escalation",q.params.id);r.json({escalation:x.rows[0]});}catch(e){n(e);}});
+app.get("/api/public/:slug/availability",async(q,r,n)=>{
+ try{
+  if(!db)return r.status(503).json({error:"Hotel platform is not configured.",availabilityStatus:"unknown"});
+  const organization=await db.query("SELECT id,status FROM organizations WHERE slug=$1",[q.params.slug]);
+  if(!organization.rowCount||organization.rows[0].status==="suspended")return r.status(404).json({error:"Hotel availability unavailable."});
+  const result=await getHotelAvailability({
+   db,
+   vault:pmsCredentialVault,
+   pmsRegistry,
+   organizationId:organization.rows[0].id,
+   checkIn:q.query.checkIn,
+   checkOut:q.query.checkOut
+  });
+  if(result.status!=="checked")return r.status(503).json({availabilityStatus:"unknown",reason:result.reason,rooms:[]});
+  r.json({availabilityStatus:"checked",checkedAt:result.checkedAt,rooms:result.rooms});
+ }catch(e){
+  if(e&&["INVALID_DATE_RANGE","DATE_RANGE_TOO_LARGE"].includes(e.code))return r.status(400).json({error:"Enter valid check-in and check-out dates."});
+  n(e);
+ }
+});
 app.post("/api/public/:slug/chat",async(q,r,n)=>{
  try{if(!db)return r.status(503).json({error:"Hotel platform is not configured."});const releaseGate=await readinessSnapshot();if(!releaseGate.readyForPilot)return r.status(503).json({error:"Hotel pilot release gates are not all verified. Please contact hotel staff.",readyForPilot:false});const msg=q.body?.message;if(typeof msg!=="string"||!msg.trim()||msg.length>4000)return r.status(400).json({error:"Enter a message under 4,000 characters."});
  const orgR=await db.query("SELECT id,name,slug,status FROM organizations WHERE slug=$1",[q.params.slug]);if(!orgR.rowCount||orgR.rows[0].status==="suspended")return r.status(404).json({error:"Assistant unavailable."});const org=orgR.rows[0];

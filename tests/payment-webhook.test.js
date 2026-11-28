@@ -92,3 +92,32 @@ test("endpoint handler rejects unknown tokens and providers without an adapter",
   });
   assert.equal((await unsupported({ endpointToken: token, headers: {}, rawBody: Buffer.from("{}") })).status, 503);
 });
+
+
+test("returns a retryable server error for transient database failures without leaking internals", async () => {
+  const token = "C".repeat(43);
+  const handler = createPaymentWebhookRequestHandler({
+    db: { async query() { throw new Error("database password or connection details"); } },
+    vault: { configured: true },
+    providerVerifiers: {},
+  });
+  const result = await handler({ endpointToken: token, headers: {}, rawBody: Buffer.from("{}") });
+  assert.equal(result.status, 500);
+  assert.deepEqual(result.body, {
+    error: "Payment webhook could not be processed.",
+    code: "PAYMENT_WEBHOOK_REJECTED",
+  });
+  assert.equal(JSON.stringify(result.body).includes("database password"), false);
+});
+
+test("preserves explicit retryable configuration status codes", async () => {
+  const token = "D".repeat(43);
+  const handler = createPaymentWebhookRequestHandler({
+    db: { async query() { throw Object.assign(new Error("vault unavailable"), { status: 503, code: "PAYMENT_WEBHOOK_NOT_CONFIGURED" }); } },
+    vault: { configured: true },
+    providerVerifiers: {},
+  });
+  const result = await handler({ endpointToken: token, headers: {}, rawBody: Buffer.from("{}") });
+  assert.equal(result.status, 503);
+  assert.equal(result.body.code, "PAYMENT_WEBHOOK_REJECTED");
+});

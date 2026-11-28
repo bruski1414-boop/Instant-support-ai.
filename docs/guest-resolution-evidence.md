@@ -1,6 +1,6 @@
 # Guest-confirmed resolution evidence
 
-Status: implemented as an explicit guest action, tenant-scoped event record, aggregate report and dashboard section on `feature/guest-confirmed-resolution-evidence-v1`. Synthetic CI integration is required before considering the feature validated. No live hotel data is included.
+Status: implemented as an explicit guest action, tenant-scoped event record, aggregate report and dashboard section on `feature/guest-confirmed-resolution-evidence-v1`. Unit tests and PostgreSQL tenant-isolation integration passed on 28 November 2026 (GitHub Actions run #2083). Live hotel verification remains outstanding; no live hotel data is included.
 
 ## What the guest action means
 
@@ -51,6 +51,13 @@ The owner/staff performance report uses a rolling 720-hour UTC window with inclu
 - **Potential staff minutes avoided:** not calculated. The hotel-specific historical active-handling-time baseline and the PR #40 estimator are not connected to this event store.
 
 Counts are aggregate only; no guest or conversation identifiers are returned.
+
+## Validation — 28 November 2026
+
+- GitHub Actions run [#2083](https://github.com/bruski1414-boop/Instant-support-ai./actions/runs/46133100409): `npm test` passed **153 tests, 0 failed, 0 skipped**.
+- PostgreSQL 16 tenant-isolation integration: **passed**.
+- Integration coverage exercises valid guest-token binding, duplicate retries, malformed/wrong/cross-tenant tokens, latest-message enforcement, assistant-role enforcement, staff/escalation exclusion, repeated confirmations, later-message invalidation, audit insertion, append-only enforcement, tenant-scoped aggregates and retention cascade.
+- The test database is the dedicated CI PostgreSQL container. No production database or hotel data was accessed.
 
 ## Limitations and next gates
 

@@ -272,6 +272,7 @@ module.exports = {
   BOOKING_SCHEMA,
   normalizeBookingRecord,
   createBookingRecord,
+  loadVerifiedBookingForPms,
   recordVerifiedDeposit,
   recordPmsOutcome,
 };

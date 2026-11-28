@@ -130,12 +130,23 @@ function createVerifiedDepositPmsOrchestrator({
       return { state: current.rows[0].state, confirmed: false, requiresStaffReview: true, reason: "payment_not_verified" };
     }
 
+    // Guest deposits must never trigger a reservation in a sandbox PMS.
+    // Only a hotel-authorized production connection with the booking:write
+    // permission may be used for this irreversible operation.
     const connection = await db.query(
-      "SELECT provider,encrypted_credentials FROM pms_connections WHERE organization_id=$1 AND status='connected' ORDER BY connected_at DESC LIMIT 1",
+      "SELECT provider,mode,scopes,encrypted_credentials FROM pms_connections WHERE organization_id=$1 AND status='connected' AND mode='production' ORDER BY connected_at DESC LIMIT 1",
       [organizationId]
     );
     if (!connection.rowCount) {
-      return { state: "payment_verified", confirmed: false, requiresStaffReview: true, reason: "pms_connection_missing" };
+      return { state: "payment_verified", confirmed: false, requiresStaffReview: true, reason: "pms_production_connection_missing" };
+    }
+    if (connection.rows[0].mode !== "production" ||
+        !Array.isArray(connection.rows[0].scopes) ||
+        !connection.rows[0].scopes.includes("booking:write")) {
+      return { state: "payment_verified", confirmed: false, requiresStaffReview: true, reason: "pms_booking_write_scope_missing" };
+    }
+    if (vault.configured !== true || typeof vault.decrypt !== "function") {
+      return { state: "payment_verified", confirmed: false, requiresStaffReview: true, reason: "pms_credentials_unavailable" };
     }
 
     let credentials;

@@ -59,10 +59,17 @@ function createPaymentWebhookRequestHandler({ db, vault, providerVerifiers = {},
       });
       return { status: 200, body: { received: true, ...result } };
     } catch (error) {
-      const status = Number.isInteger(error?.status) && error.status >= 400 && error.status <= 499 ? error.status : 400;
+      // Validation/signature failures are client errors. Unexpected database or
+      // infrastructure failures must remain server errors so providers retry
+      // delivery instead of treating a transient outage as a permanent rejection.
+      const status = Number.isInteger(error?.status) && error.status >= 400 && error.status <= 499
+        ? error.status
+        : Number.isInteger(error?.status) && error.status >= 500 && error.status <= 599
+          ? error.status
+          : 500;
       const allowed = new Set(["INVALID_PAYMENT_WEBHOOK_CONTEXT","INVALID_PAYMENT_WEBHOOK_TIMESTAMP","STALE_PAYMENT_WEBHOOK","INVALID_PAYMENT_WEBHOOK_SIGNATURE","INVALID_PAYMENT_WEBHOOK_BODY","INVALID_PAYMENT_WEBHOOK_EVENT","INVALID_VERIFIED_PAYMENT_EVENT","PAYMENT_AMOUNT_MISMATCH","BOOKING_NOT_FOUND","BOOKING_ALREADY_PAID","INVALID_BOOKING_PAYMENT_STATE"]);
       const code = typeof error?.code === "string" && allowed.has(error.code) ? error.code : "PAYMENT_WEBHOOK_REJECTED";
-      return { status, body: { error: "Payment webhook was rejected.", code } };
+      return { status, body: { error: status >= 500 ? "Payment webhook could not be processed." : "Payment webhook was rejected.", code } };
     }
   };
 }

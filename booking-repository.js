@@ -296,6 +296,64 @@ async function recordPmsOutcome(db, organizationId, bookingId, provider, outcome
 }
 
 /**
+ * Reconcile an uncertain PMS submission using an authoritative, normalized
+ * lookup result. This never creates or resubmits a provider reservation.
+ * The stored provider/reference must match the lookup result exactly.
+ */
+async function recordReconciledPmsOutcome(db, organizationId, bookingId, provider, lookup) {
+  if (typeof organizationId !== "string" || !organizationId ||
+      typeof bookingId !== "string" || !bookingId ||
+      !/^[a-z][a-z0-9_-]{1,39}$/.test(provider || "") ||
+      !lookup || typeof lookup.bookingId !== "string" ||
+      !lookup.bookingId.trim() || lookup.bookingId.length > 160 ||
+      !["confirmed", "pending"].includes(lookup.status)) {
+    fail("INVALID_PMS_RECONCILIATION", "A valid authoritative PMS lookup result is required.");
+  }
+  const reference = lookup.bookingId.trim();
+  if (/[\\x00-\\x1f\\x7f]/.test(reference)) {
+    fail("INVALID_PMS_REFERENCE", "The PMS reservation reference is invalid.");
+  }
+  return inTransaction(db, async client => {
+    const found = await client.query(
+      "SELECT id,state,pms_provider,pms_booking_id FROM hotel_bookings WHERE id=$1 AND organization_id=$2 FOR UPDATE",
+      [bookingId, organizationId]
+    );
+    if (!found.rowCount) fail("BOOKING_NOT_FOUND", "The booking was not found for this hotel.", 404);
+    const row = found.rows[0];
+    if (row.state === "confirmed") {
+      if (row.pms_provider === provider && row.pms_booking_id === reference && lookup.status === "confirmed") {
+        return { state: "confirmed", duplicate: true };
+      }
+      fail("BOOKING_ALREADY_CONFIRMED", "A confirmed reservation cannot be overwritten.", 409);
+    }
+    if (row.state !== "booking_pending" || row.pms_provider !== provider ||
+        row.pms_booking_id !== reference) {
+      fail("PMS_RECONCILIATION_MISMATCH", "The lookup does not match this booking's stored pending PMS reservation.", 409);
+    }
+    const attempt = await client.query(
+      "SELECT provider,status,pms_booking_id FROM hotel_pms_booking_attempts WHERE organization_id=$1 AND booking_id=$2 FOR UPDATE",
+      [organizationId, bookingId]
+    );
+    if (!attempt.rowCount || attempt.rows[0].provider !== provider ||
+        attempt.rows[0].status !== "pending" || attempt.rows[0].pms_booking_id !== reference) {
+      fail("PMS_ATTEMPT_NOT_RECONCILABLE", "The matching pending PMS attempt could not be verified.", 409);
+    }
+    if (lookup.status === "confirmed") {
+      await client.query(
+        "UPDATE hotel_bookings SET state='confirmed',last_error_code='',updated_at=now() WHERE id=$1 AND organization_id=$2 AND state='booking_pending' AND pms_provider=$3 AND pms_booking_id=$4",
+        [bookingId, organizationId, provider, reference]
+      );
+      await client.query(
+        "UPDATE hotel_pms_booking_attempts SET status='confirmed',updated_at=now() WHERE organization_id=$1 AND booking_id=$2 AND provider=$3 AND status='pending' AND pms_booking_id=$4",
+        [organizationId, bookingId, provider, reference]
+      );
+      return { state: "confirmed", duplicate: false };
+    }
+    return { state: "booking_pending", duplicate: false };
+  });
+}
+
+/**
  * Call only after the provider-specific webhook signature and event schema
  * have been verified. This function independently checks tenant, amount,
  * currency, provider payment ID and booking state in one database transaction.
@@ -383,4 +441,5 @@ module.exports = {
   claimPmsBookingAttempt,
   recordVerifiedDeposit,
   recordPmsOutcome,
+  recordReconciledPmsOutcome,
 };

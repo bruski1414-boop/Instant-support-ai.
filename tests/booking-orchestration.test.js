@@ -13,6 +13,7 @@ function fixtures() {
       roomTypeId: "ocean-villa",
       guestCount: 2,
       currency: "THB",
+      totalAmountMinor: 250000,
       depositAmountMinor: 125000,
       idempotencyKey: "booking_req_12345",
     },
@@ -108,6 +109,18 @@ test("missing PMS booking reference cannot confirm a reservation", async () => {
   assert.equal(result.state, "booking_pending");
   assert.equal(result.confirmed, false);
   assert.equal(result.requiresStaffReview, true);
+});
+
+test("rejects a stored deposit that is not exactly 50 percent of the quoted total", async () => {
+  const { booking, paymentEvidence } = fixtures();
+  let calls = 0;
+  await assert.rejects(() => createReservationAfterVerifiedDeposit({
+    booking: { ...booking, depositAmountMinor: 100000 },
+    paymentEvidence: { ...paymentEvidence, amountMinor: 100000 },
+    provider: "hotel-pms",
+    pms: { async createBooking() { calls += 1; return { bookingId: "res-1", status: "confirmed" }; } },
+  }), error => error.code === "INVALID_BOOKING_RECORD");
+  assert.equal(calls, 0);
 });
 
 test("missing PMS configuration fails closed", async () => {

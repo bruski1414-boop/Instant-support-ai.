@@ -149,7 +149,7 @@ function createStorageKnowledgeReader({ db, fetchImpl = globalThis.fetch, encryp
       title: String(metadata.name || "Hotel document").slice(0, 160),
       content: content.trim(),
       modifiedAt: metadata.modifiedTime || metadata.lastModifiedDateTime || null,
-      version: metadata.md5Checksum || metadata.eTag || null,
+      version: metadata.modifiedTime || metadata.md5Checksum || metadata.eTag || metadata.lastModifiedDateTime || null,
       webUrl: typeof metadata.webViewLink === "string" ? metadata.webViewLink : (typeof metadata.webUrl === "string" ? metadata.webUrl : ""),
     };
   }

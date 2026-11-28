@@ -24,6 +24,7 @@ const {listHotelBookings,parseBookingListQuery}=require("./booking-admin");
 const {createVerifiedDepositPmsOrchestrator}=require("./booking-service");
 const {AVAILABILITY_QUOTE_SCHEMA,createAvailabilityQuotes}=require("./availability-quotes");
 const {deliverStaffEscalation,deliverStaffBookingNotification}=require("./staff-notifications");
+const {enqueueBookingNotification,processBookingNotificationOutbox,getBookingNotificationHealth}=require("./booking-notification-outbox");
 const {encryptWebhookConfig,decryptWebhookConfig,resolvePublicWebhook,postSignedWebhook}=require("./staff-webhook-security");
 function isValidReviewDueDate(value){
  if(typeof value!=="string"||!/^\d{4}-\d{2}-\d{2}$/.test(value))return false;
@@ -190,11 +191,20 @@ async function notify(org,cid,reason){
  try{const webhookConfig=decryptWebhookConfig(saved.rows[0].encrypted_config,process.env.STAFF_WEBHOOK_ENCRYPTION_KEY);return deliverStaffEscalation({organization:org,conversationId:cid,reason,webhookConfig});}
  catch{return {configured:false,delivered:false,status:"not_configured"};}
 }
-async function notifyBooking(org,bookingId,state){
- const saved=await db.query("SELECT encrypted_config FROM organization_staff_webhooks WHERE organization_id=$1 AND status='configured'",[org.id]);
- if(!saved.rowCount||!process.env.STAFF_WEBHOOK_ENCRYPTION_KEY)return {configured:false,delivered:false,status:"not_configured"};
- try{const webhookConfig=decryptWebhookConfig(saved.rows[0].encrypted_config,process.env.STAFF_WEBHOOK_ENCRYPTION_KEY);return deliverStaffBookingNotification({organization:org,bookingId,state,webhookConfig});}
- catch{return {configured:false,delivered:false,status:"not_configured"};}
+async function processBookingNotifications(){
+ return processBookingNotificationOutbox({db,batchSize:5,deliver:async job=>{
+  const [org,booking]=await Promise.all([
+   db.query("SELECT id,name,slug FROM organizations WHERE id=$1",[job.organization_id]),
+   db.query("SELECT state FROM hotel_bookings WHERE id=$1 AND organization_id=$2",[job.booking_id,job.organization_id])
+  ]);
+  if(!org.rowCount||!booking.rowCount)return {configured:false,delivered:false,status:"not_configured"};
+  const saved=await db.query("SELECT encrypted_config FROM organization_staff_webhooks WHERE organization_id=$1 AND status='configured'",[job.organization_id]);
+  if(!saved.rowCount||!process.env.STAFF_WEBHOOK_ENCRYPTION_KEY)return {configured:false,delivered:false,status:"not_configured"};
+  try{
+   const webhookConfig=decryptWebhookConfig(saved.rows[0].encrypted_config,process.env.STAFF_WEBHOOK_ENCRYPTION_KEY);
+   return deliverStaffBookingNotification({organization:org.rows[0],bookingId:job.booking_id,state:booking.rows[0].state,webhookConfig});
+  }catch{return {configured:false,delivered:false,status:"not_configured"};}
+ }});
 }
 async function readinessSnapshot(){let database="not-configured",humanHandoff=false;if(db){try{await db.query("SELECT 1");database="connected";const handoff=await db.query("SELECT EXISTS(SELECT 1 FROM organization_staff_webhooks w JOIN organization_integration_checks c ON c.organization_id=w.organization_id AND c.integration='staff_webhook' WHERE w.status='configured' AND c.verified_at>now()-interval '30 days') AS configured");humanHandoff=handoff.rows[0]?.configured===true;}catch{database="unavailable";}}const guestDataStorage=process.env.GUEST_DATA_STORAGE_ENABLED==="true";const gate=buildPilotReadiness({databaseConnected:database==="connected",aiConfigured:Boolean(ai),guestDataStorageEnabled:guestDataStorage,staffWebhookConfigured:humanHandoff,durableBackupsVerified:process.env.DURABLE_BACKUPS_VERIFIED==="true",tenantIsolationTestsPassed:process.env.TENANT_ISOLATION_TESTS_PASSED==="true",providerOAuthTested:process.env.PROVIDER_OAUTH_TESTED==="true",hotelPrivacyApproved:process.env.HOTEL_PRIVACY_APPROVED==="true",staffHandoffTested:process.env.STAFF_HANDOFF_TESTED==="true",pilotReleaseApproved:process.env.PILOT_RELEASE_APPROVED==="true"});return{service:"Veyra AI",mode:ai?"ai-configured":"demo-no-api-key",model:ai?MODEL:null,database,multiTenant:database==="connected",guestDataStorage,humanHandoff:humanHandoff?"hotel-webhook-verified":"not-configured",readyForPilot:gate.readyForPilot,checks:gate.checks};}
 app.get("/api/health",async(_q,r)=>{const state=await readinessSnapshot();r.status(200).json({status:state.readyForPilot?"ready":"degraded",...state});});
@@ -349,6 +359,10 @@ app.get("/api/admin/bookings",requireDb,auth,role("owner","admin","staff"),async
   n(e);
  }
 });
+app.get("/api/admin/booking-notifications",requireDb,auth,role("owner","admin","staff"),async(q,r,n)=>{
+ try{const health=await getBookingNotificationHealth(db,q.actor.organization_id);r.json({notifications:health});}
+ catch(e){n(e);}
+});
 app.get("/api/admin/overview",requireDb,auth,async(q,r,n)=>{try{const org=q.actor.organization_id;const [m,e,c]=await Promise.all([
  db.query("SELECT count(*) FILTER(WHERE started_at>=date_trunc('day',now()))::int AS conversations_today,count(*) FILTER(WHERE started_at>=now()-interval '7 days')::int AS conversations_7d,count(*) FILTER(WHERE status='resolved')::int AS resolved_total FROM conversations WHERE organization_id=$1",[org]),
  db.query("SELECT count(*)::int AS open_escalations FROM escalations WHERE organization_id=$1 AND status<>'resolved'",[org]),
@@ -431,9 +445,9 @@ app.post("/api/public/:slug/booking-requests",async(q,r,n)=>{
   const organization=await db.query("SELECT id,name,slug,status FROM organizations WHERE slug=$1",[q.params.slug]);
   if(!organization.rowCount||organization.rows[0].status==="suspended")return r.status(404).json({error:"Hotel booking service unavailable."});
   const result=await createBookingRecordFromQuote(db,organization.rows[0].id,q.body||{});
-  const staffNotification=result.created
-   ?await notifyBooking(organization.rows[0],result.bookingId,result.state)
-   :{configured:false,delivered:false,status:"not_needed"};
+  if(result.created)await enqueueBookingNotification(db,organization.rows[0].id,result.bookingId);
+  // Delivery is best-effort here; the durable queue preserves failures for retry.
+  try{await processBookingNotifications();}catch{}
   const status=result.created?201:200;
   r.status(status).json({
    bookingId:result.bookingId,

@@ -19,7 +19,7 @@ const {PmsIntegrationError,createPmsRegistry,createSandboxAdapter}=require("./pm
 const {createPmsCredentialVault}=require("./pms-credential-vault");
 const {createPaymentWebhookSecretVault,savePaymentWebhookSecret,disablePaymentWebhookConnection}=require("./payment-credential-vault");
 const {createPaymentWebhookRequestHandler}=require("./payment-webhook");
-const {BOOKING_SCHEMA}=require("./booking-repository");
+const {BOOKING_SCHEMA,createBookingRecordFromQuote}=require("./booking-repository");
 const {createVerifiedDepositPmsOrchestrator}=require("./booking-service");
 const {AVAILABILITY_QUOTE_SCHEMA,createAvailabilityQuotes}=require("./availability-quotes");
 const {deliverStaffEscalation}=require("./staff-notifications");
@@ -44,7 +44,7 @@ const prod=process.env.NODE_ENV==="production";
 const cookie=prod?"__Host-veyra_session":"veyra_session";
 app.disable("x-powered-by");
 app.use((_q,r,n)=>{r.setHeader("X-Content-Type-Options","nosniff");r.setHeader("X-Frame-Options","DENY");r.setHeader("Referrer-Policy","strict-origin-when-cross-origin");r.setHeader("Permissions-Policy","camera=(),microphone=(),geolocation=()");n();});
-app.use(cors((req,cb)=>{const o=req.get("Origin");const common={credentials:true,allowedHeaders:["Content-Type","X-CSRF-Token","X-Bootstrap-Token","X-Platform-Provisioning-Token"],methods:["GET","POST","PUT","PATCH","DELETE","OPTIONS"]};if(!o||origins.includes(o))return cb(null,{...common,origin:true});const segments=req.path.split("/");if(segments.length!==5||segments[1]!=="api"||segments[2]!=="public"||!["chat","availability"].includes(segments[4])||!db)return cb(null,{...common,origin:false});let hotelSlug;try{hotelSlug=decodeURIComponent(segments[3]);}catch{return cb(null,{...common,origin:false});}db.query("SELECT 1 FROM organizations o JOIN organization_settings s ON s.organization_id=o.id WHERE o.slug=$1 AND s.website_url=$2 LIMIT 1",[hotelSlug,o]).then(x=>cb(null,{...common,origin:x.rowCount>0})).catch(()=>cb(null,{...common,origin:false}));}));
+app.use(cors((req,cb)=>{const o=req.get("Origin");const common={credentials:true,allowedHeaders:["Content-Type","X-CSRF-Token","X-Bootstrap-Token","X-Platform-Provisioning-Token"],methods:["GET","POST","PUT","PATCH","DELETE","OPTIONS"]};if(!o||origins.includes(o))return cb(null,{...common,origin:true});const segments=req.path.split("/");if(segments.length!==5||segments[1]!=="api"||segments[2]!=="public"||!["chat","availability","booking-requests"].includes(segments[4])||!db)return cb(null,{...common,origin:false});let hotelSlug;try{hotelSlug=decodeURIComponent(segments[3]);}catch{return cb(null,{...common,origin:false});}db.query("SELECT 1 FROM organizations o JOIN organization_settings s ON s.organization_id=o.id WHERE o.slug=$1 AND s.website_url=$2 LIMIT 1",[hotelSlug,o]).then(x=>cb(null,{...common,origin:x.rowCount>0})).catch(()=>cb(null,{...common,origin:false}));}));
 app.use(express.json({limit:"20kb",verify:(req,res,buf)=>{req.rawBody=Buffer.from(buf);}}));
 app.use("/api/",rateLimit({windowMs:60000,limit:60,standardHeaders:"draft-7",legacyHeaders:false}));
 app.use("/api/auth/",rateLimit({windowMs:900000,limit:10,standardHeaders:"draft-7",legacyHeaders:false}));
@@ -400,6 +400,30 @@ app.get("/api/public/:slug/availability",async(q,r,n)=>{
  }catch(e){
   if(e&&["INVALID_DATE_RANGE","DATE_RANGE_TOO_LARGE"].includes(e.code))return r.status(400).json({error:"Enter valid check-in and check-out dates."});
   if(e&&e.code==="INVALID_GUEST_COUNT")return r.status(400).json({error:"Guest count must be between 1 and 20."});
+  n(e);
+ }
+});
+app.post("/api/public/:slug/booking-requests",async(q,r,n)=>{
+ try{
+  if(!db)return r.status(503).json({error:"Hotel booking service is not configured."});
+  const organization=await db.query("SELECT id,status FROM organizations WHERE slug=$1",[q.params.slug]);
+  if(!organization.rowCount||organization.rows[0].status==="suspended")return r.status(404).json({error:"Hotel booking service unavailable."});
+  const result=await createBookingRecordFromQuote(db,organization.rows[0].id,q.body||{});
+  const status=result.created?201:200;
+  r.status(status).json({
+   bookingId:result.bookingId,
+   state:result.state,
+   created:result.created,
+   ...(result.created?{
+    currency:result.currency,
+    totalAmountMinor:result.totalAmountMinor,
+    depositAmountMinor:result.depositAmountMinor,
+    balanceAmountMinor:result.balanceAmountMinor
+   }:{})
+  });
+ }catch(e){
+  const clientErrors=new Set(["INVALID_BOOKING_TENANT","INVALID_BOOKING_REQUEST","INVALID_GUEST_DETAILS","INVALID_GUEST_NAME","INVALID_GUEST_PHONE","INVALID_GUEST_EMAIL","BOOKING_IDEMPOTENCY_COLLISION","QUOTE_INVALID_OR_EXPIRED","QUOTE_ALREADY_USED","INVALID_STORED_QUOTE"]);
+  if(clientErrors.has(e?.code))return r.status(e.statusCode|| (e.code==="INVALID_BOOKING_TENANT"?400:409)).json({error:e.message,code:e.code});
   n(e);
  }
 });

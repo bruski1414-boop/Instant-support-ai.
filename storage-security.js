@@ -57,10 +57,10 @@ function validateMicrosoftDownloadUrl(value) {
   return url.toString();
 }
 
-async function fetchMicrosoftDownload(value, options = {}) {
+async function fetchMicrosoftDownload(value, options = {}, fetchImpl = globalThis.fetch) {
   let url = validateMicrosoftDownloadUrl(value);
   for (let redirects = 0; redirects <= 3; redirects += 1) {
-    const response = await fetch(url, { ...options, redirect: "manual" });
+    const response = await fetchImpl(url, { ...options, redirect: "manual" });
     if (![301, 302, 303, 307, 308].includes(response.status)) return response;
     if (redirects === 3) throw new Error("Microsoft document download exceeded the redirect limit.");
     const location = response.headers.get("location");

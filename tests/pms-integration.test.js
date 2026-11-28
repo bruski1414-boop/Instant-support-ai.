@@ -35,9 +35,9 @@ test("availability normalizer accepts only bounded, typed provider fields", () =
 
 test("booking requests require an idempotency key and bounded guest count", () => {
   assert.deepEqual(normalizeBookingRequest({
-    checkIn: "2027-01-10", checkOut: "2027-01-12", roomTypeId: "deluxe", guestCount: 2, idempotencyKey: "booking_req_12345",
+    checkIn: "2027-01-10", checkOut: "2027-01-12", roomTypeId: "deluxe", guestCount: 2, guest: { name: "Alex Guest", phone: "+66812345678" }, idempotencyKey: "booking_req_12345",
   }), {
-    checkIn: "2027-01-10", checkOut: "2027-01-12", roomTypeId: "deluxe", guestCount: 2, idempotencyKey: "booking_req_12345",
+    checkIn: "2027-01-10", checkOut: "2027-01-12", roomTypeId: "deluxe", guestCount: 2, guest: { name: "Alex Guest", phone: "+66812345678" }, idempotencyKey: "booking_req_12345",
   });
   assert.throws(() => normalizeBookingRequest({
     checkIn: "2027-01-10", checkOut: "2027-01-12", roomTypeId: "deluxe", guestCount: 2,

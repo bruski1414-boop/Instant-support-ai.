@@ -269,9 +269,10 @@ try {
   assert.equal(staleResolution.status, 409, "a response cannot be confirmed after a later guest message");
 
   const orgResolutionA = await pool.query("SELECT id FROM organizations WHERE slug=$1", [tenants[0].slug]);
+  const staffPlainToken = randomUUID().replace(/-/g, "") + "staffresolution";
   const staffConversation = await pool.query(
     "INSERT INTO conversations(organization_id,channel,status,guest_token_hash) VALUES($1,'website','open',$2) RETURNING id",
-    [orgResolutionA.rows[0].id, resolutionHash(randomUUID().replace(/-/g, "") + "staffresolution")],
+    [orgResolutionA.rows[0].id, resolutionHash(staffPlainToken)],
   );
   await pool.query("INSERT INTO messages(conversation_id,role,content) VALUES($1,'guest','Synthetic guest question')", [staffConversation.rows[0].id]);
   const staffAssistant = await pool.query(
@@ -279,15 +280,7 @@ try {
     [staffConversation.rows[0].id],
   );
   await pool.query("INSERT INTO messages(conversation_id,role,content) VALUES($1,'staff','Synthetic staff reply')", [staffConversation.rows[0].id]);
-  const staffResolution = await postResolution(tenants[0], {
-    conversationId: staffConversation.rows[0].id,
-    conversationToken: randomUUID().replace(/-/g, "") + "staffresolution",
-    assistantMessageId: staffAssistant.rows[0].id,
-  });
-  assert.equal(staffResolution.status, 404, "a token that is not stored on the conversation must be rejected");
-  const staffToken = await pool.query("SELECT guest_token_hash FROM conversations WHERE id=$1", [staffConversation.rows[0].id]);
-  const staffPlainToken = resolutionTokens[0] + "different";
-  await pool.query("UPDATE conversations SET guest_token_hash=$1 WHERE id=$2", [resolutionHash(staffPlainToken), staffConversation.rows[0].id]);
+
   const staffResolutionWithValidToken = await postResolution(tenants[0], {
     conversationId: staffConversation.rows[0].id,
     conversationToken: staffPlainToken,

@@ -53,6 +53,8 @@ function createStorageKnowledgeReader({ db, fetchImpl = globalThis.fetch, encryp
   const decrypt = cipher.decrypt;
   const encrypt = cipher.encrypt;
 
+  const refreshes = new Map();
+
   async function accessToken(organizationId, provider) {
     const stored = await db.query(
       "SELECT encrypted_tokens FROM storage_connections WHERE organization_id=$1 AND provider=$2 AND status='connected'",
@@ -62,38 +64,52 @@ function createStorageKnowledgeReader({ db, fetchImpl = globalThis.fetch, encryp
     const tokens = decrypt(stored.rows[0].encrypted_tokens);
     if (typeof tokens.access_token !== "string" || !tokens.access_token) throw new Error("Storage authorization must be renewed.");
     if (Number(tokens.expires_at) > Date.now() + 60000) return tokens.access_token;
-    if (!tokens.refresh_token) throw new Error("Storage authorization must be renewed.");
-    const clientId = provider === "google" ? process.env.GOOGLE_OAUTH_CLIENT_ID : process.env.MICROSOFT_OAUTH_CLIENT_ID;
-    const clientSecret = provider === "google" ? process.env.GOOGLE_OAUTH_CLIENT_SECRET : process.env.MICROSOFT_OAUTH_CLIENT_SECRET;
-    if (!clientId || !clientSecret) throw new Error("Storage authorization must be renewed.");
-    const form = new URLSearchParams({
-      client_id: clientId,
-      client_secret: clientSecret,
-      refresh_token: tokens.refresh_token,
-      grant_type: "refresh_token",
-    });
-    if (provider === "microsoft") form.set("scope", PROVIDERS.microsoft.scope);
-    const response = await fetchImpl(PROVIDERS[provider].token, {
-      method: "POST",
-      headers: { "content-type": "application/x-www-form-urlencoded" },
-      body: form,
-      signal: AbortSignal.timeout(12000),
-    });
-    const next = await response.json().catch(() => ({}));
-    if (!response.ok || typeof next.access_token !== "string" || !next.access_token) {
-      throw new Error("Storage authorization must be renewed.");
+
+    const refreshKey = organizationId + ":" + provider;
+    const pending = refreshes.get(refreshKey);
+    if (pending) return pending;
+
+    const refreshPromise = (async () => {
+      if (!tokens.refresh_token) throw new Error("Storage authorization must be renewed.");
+      const clientId = provider === "google" ? process.env.GOOGLE_OAUTH_CLIENT_ID : process.env.MICROSOFT_OAUTH_CLIENT_ID;
+      const clientSecret = provider === "google" ? process.env.GOOGLE_OAUTH_CLIENT_SECRET : process.env.MICROSOFT_OAUTH_CLIENT_SECRET;
+      if (!clientId || !clientSecret) throw new Error("Storage authorization must be renewed.");
+      const form = new URLSearchParams({
+        client_id: clientId,
+        client_secret: clientSecret,
+        refresh_token: tokens.refresh_token,
+        grant_type: "refresh_token",
+      });
+      if (provider === "microsoft") form.set("scope", PROVIDERS.microsoft.scope);
+      const response = await fetchImpl(PROVIDERS[provider].token, {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: form,
+        signal: AbortSignal.timeout(12000),
+      });
+      const next = await response.json().catch(() => ({}));
+      if (!response.ok || typeof next.access_token !== "string" || !next.access_token) {
+        throw new Error("Storage authorization must be renewed.");
+      }
+      const merged = {
+        ...tokens,
+        access_token: next.access_token,
+        refresh_token: next.refresh_token || tokens.refresh_token,
+        expires_at: Date.now() + Number(next.expires_in || 3600) * 1000,
+      };
+      await db.query(
+        "UPDATE storage_connections SET encrypted_tokens=$1 WHERE organization_id=$2 AND provider=$3 AND status='connected'",
+        [encrypt(merged), organizationId, provider]
+      );
+      return merged.access_token;
+    })();
+
+    refreshes.set(refreshKey, refreshPromise);
+    try {
+      return await refreshPromise;
+    } finally {
+      if (refreshes.get(refreshKey) === refreshPromise) refreshes.delete(refreshKey);
     }
-    const merged = {
-      ...tokens,
-      access_token: next.access_token,
-      refresh_token: next.refresh_token || tokens.refresh_token,
-      expires_at: Date.now() + Number(next.expires_in || 3600) * 1000,
-    };
-    await db.query(
-      "UPDATE storage_connections SET encrypted_tokens=$1 WHERE organization_id=$2 AND provider=$3 AND status='connected'",
-      [encrypt(merged), organizationId, provider]
-    );
-    return merged.access_token;
   }
 
   async function read({ organizationId, sourceReference }) {

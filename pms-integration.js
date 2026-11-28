@@ -88,7 +88,7 @@ function normalizeBookingLookup(value) {
   }
   const bookingId = typeof value.bookingId === "string" ? value.bookingId.trim() : "";
   const status = typeof value.status === "string" ? value.status.trim().toLowerCase() : "";
-  if (!bookingId || bookingId.length > 160 || /[\\x00-\\x1f\\x7f]/.test(bookingId) ||
+  if (!bookingId || bookingId.length > 160 || /[\x00-\x1f\x7f]/.test(bookingId) ||
       !["confirmed", "pending", "not_found", "cancelled", "modified", "checked_in", "checked_out"].includes(status)) {
     throw new PmsIntegrationError("INVALID_PROVIDER_RESPONSE", "Provider returned incomplete reservation lookup details.", 502);
   }

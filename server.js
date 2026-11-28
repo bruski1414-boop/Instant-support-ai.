@@ -366,7 +366,7 @@ app.post("/api/public/:slug/resolution",async(q,r,n)=>{
    await c.query("BEGIN");
    const conversation=await c.query("SELECT id FROM conversations WHERE id=$1 AND organization_id=$2 AND guest_token_hash=$3 FOR UPDATE",[input.conversationId,org.id,hash(input.conversationToken)]);
    if(!conversation.rowCount){await c.query("ROLLBACK");return r.status(404).json({error:"Conversation not found."});}
-   const existing=await c.query("SELECT id,confirmed_at FROM conversation_resolution_confirmations WHERE organization_id=$1 AND assistant_message_id=$2",[org.id,input.assistantMessageId]);
+   const existing=await c.query("SELECT id,confirmed_at FROM conversation_resolution_confirmations WHERE organization_id=$1 AND conversation_id=$2 AND assistant_message_id=$3",[org.id,input.conversationId,input.assistantMessageId]);
    if(existing.rowCount){
     await c.query("COMMIT");
     return r.json({recorded:false,duplicate:true,confirmationId:existing.rows[0].id,confirmedAt:existing.rows[0].confirmed_at});

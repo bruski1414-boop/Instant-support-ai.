@@ -390,12 +390,14 @@ app.get("/api/public/:slug/availability",async(q,r,n)=>{
    pmsRegistry,
    organizationId:organization.rows[0].id,
    checkIn:q.query.checkIn,
-   checkOut:q.query.checkOut
+   checkOut:q.query.checkOut,
+   guestCount:q.query.guestCount===undefined?1:Number(q.query.guestCount)
   });
   if(result.status!=="checked")return r.status(503).json({availabilityStatus:"unknown",reason:result.reason,rooms:[]});
   r.json({availabilityStatus:"checked",checkedAt:result.checkedAt,rooms:result.rooms});
  }catch(e){
   if(e&&["INVALID_DATE_RANGE","DATE_RANGE_TOO_LARGE"].includes(e.code))return r.status(400).json({error:"Enter valid check-in and check-out dates."});
+  if(e&&e.code==="INVALID_GUEST_COUNT")return r.status(400).json({error:"Guest count must be between 1 and 20."});
   n(e);
  }
 });

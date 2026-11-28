@@ -17,6 +17,11 @@ const {selectRelevantOffers,buildOfferContext}=require("./hotel-offers");
 const {buildPilotReadiness}=require("./pilot-readiness");
 const {PmsIntegrationError,createPmsRegistry,createSandboxAdapter}=require("./pms-integration");
 const {createPmsCredentialVault}=require("./pms-credential-vault");
+const {createPaymentWebhookSecretVault,savePaymentWebhookSecret,disablePaymentWebhookConnection}=require("./payment-credential-vault");
+const {createPaymentWebhookRequestHandler}=require("./payment-webhook");
+const {BOOKING_SCHEMA,createBookingRecordFromQuote}=require("./booking-repository");
+const {createVerifiedDepositPmsOrchestrator}=require("./booking-service");
+const {AVAILABILITY_QUOTE_SCHEMA,createAvailabilityQuotes}=require("./availability-quotes");
 const {deliverStaffEscalation}=require("./staff-notifications");
 const {encryptWebhookConfig,decryptWebhookConfig,resolvePublicWebhook,postSignedWebhook}=require("./staff-webhook-security");
 function isValidReviewDueDate(value){
@@ -33,12 +38,13 @@ const db=process.env.DATABASE_URL?new Pool({connectionString:process.env.DATABAS
 const storageKnowledgeReader=db?createStorageKnowledgeReader({db}):null;
 const pmsRegistry=createPmsRegistry([createSandboxAdapter()]);
 const pmsCredentialVault=createPmsCredentialVault();
+const paymentWebhookSecretVault=createPaymentWebhookSecretVault();
 const scrypt=promisify(crypto.scrypt);
 const prod=process.env.NODE_ENV==="production";
 const cookie=prod?"__Host-veyra_session":"veyra_session";
 app.disable("x-powered-by");
 app.use((_q,r,n)=>{r.setHeader("X-Content-Type-Options","nosniff");r.setHeader("X-Frame-Options","DENY");r.setHeader("Referrer-Policy","strict-origin-when-cross-origin");r.setHeader("Permissions-Policy","camera=(),microphone=(),geolocation=()");n();});
-app.use(cors((req,cb)=>{const o=req.get("Origin");const common={credentials:true,allowedHeaders:["Content-Type","X-CSRF-Token","X-Bootstrap-Token","X-Platform-Provisioning-Token"],methods:["GET","POST","PATCH","DELETE","OPTIONS"]};if(!o||origins.includes(o))return cb(null,{...common,origin:true});const segments=req.path.split("/");if(segments.length!==5||segments[1]!=="api"||segments[2]!=="public"||segments[4]!=="chat"||!db)return cb(null,{...common,origin:false});let hotelSlug;try{hotelSlug=decodeURIComponent(segments[3]);}catch{return cb(null,{...common,origin:false});}db.query("SELECT 1 FROM organizations o JOIN organization_settings s ON s.organization_id=o.id WHERE o.slug=$1 AND s.website_url=$2 LIMIT 1",[hotelSlug,o]).then(x=>cb(null,{...common,origin:x.rowCount>0})).catch(()=>cb(null,{...common,origin:false}));}));
+app.use(cors((req,cb)=>{const o=req.get("Origin");const common={credentials:true,allowedHeaders:["Content-Type","X-CSRF-Token","X-Bootstrap-Token","X-Platform-Provisioning-Token"],methods:["GET","POST","PUT","PATCH","DELETE","OPTIONS"]};if(!o||origins.includes(o))return cb(null,{...common,origin:true});const segments=req.path.split("/");if(segments.length!==5||segments[1]!=="api"||segments[2]!=="public"||!["chat","availability","booking-requests"].includes(segments[4])||!db)return cb(null,{...common,origin:false});let hotelSlug;try{hotelSlug=decodeURIComponent(segments[3]);}catch{return cb(null,{...common,origin:false});}db.query("SELECT 1 FROM organizations o JOIN organization_settings s ON s.organization_id=o.id WHERE o.slug=$1 AND s.website_url=$2 LIMIT 1",[hotelSlug,o]).then(x=>cb(null,{...common,origin:x.rowCount>0})).catch(()=>cb(null,{...common,origin:false}));}));
 app.use(express.json({limit:"20kb",verify:(req,res,buf)=>{req.rawBody=Buffer.from(buf);}}));
 app.use("/api/",rateLimit({windowMs:60000,limit:60,standardHeaders:"draft-7",legacyHeaders:false}));
 app.use("/api/auth/",rateLimit({windowMs:900000,limit:10,standardHeaders:"draft-7",legacyHeaders:false}));
@@ -102,6 +108,8 @@ const schema=[
 "CREATE TABLE IF NOT EXISTS pms_webhook_events(id UUID PRIMARY KEY DEFAULT gen_random_uuid(),organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,provider TEXT NOT NULL,external_event_id TEXT NOT NULL,event_type TEXT NOT NULL,payload_sha256 CHAR(64) NOT NULL,received_at TIMESTAMPTZ NOT NULL DEFAULT now(),status TEXT NOT NULL DEFAULT 'received' CHECK(status IN ('received','processed','ignored','failed')),processed_at TIMESTAMPTZ,UNIQUE(organization_id,provider,external_event_id))",
 "CREATE INDEX IF NOT EXISTS pms_webhook_events_org_time_idx ON pms_webhook_events(organization_id,received_at DESC)",
 "CREATE TABLE IF NOT EXISTS hotel_offer_attributions(id UUID PRIMARY KEY DEFAULT gen_random_uuid(),organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,offer_id UUID NOT NULL REFERENCES hotel_offers(id) ON DELETE CASCADE,conversation_id UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,status TEXT NOT NULL DEFAULT 'enquiry',amount_minor BIGINT,currency CHAR(3),notes TEXT NOT NULL DEFAULT '',marked_by UUID REFERENCES users(id) ON DELETE SET NULL,created_at TIMESTAMPTZ NOT NULL DEFAULT now(),updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),UNIQUE(organization_id,offer_id,conversation_id))",
+...BOOKING_SCHEMA,
+...AVAILABILITY_QUOTE_SCHEMA,
 ].join(";\n")+";";
 function hash(v){return crypto.createHash("sha256").update(v).digest("hex");}
 function equal(a,b){const x=Buffer.from(String(a||"")),y=Buffer.from(String(b||""));return x.length===y.length&&crypto.timingSafeEqual(x,y);}
@@ -124,6 +132,56 @@ async function auth(q,r,n){
 function role(){const ok=Array.from(arguments);return(q,r,n)=>ok.includes(q.actor.role)?n():r.status(403).json({error:"Insufficient permissions."});}
 async function audit(a,action,type,id){await db.query("INSERT INTO audit_logs(organization_id,actor_user_id,action,target_type,target_id) VALUES($1,$2,$3,$4,$5)",[a.organization_id,a.user_id,action,type||null,id||null]);}
 app.use("/api/admin/storage",requireDb,createStorageRouter({db,auth,role,audit}));
+const paymentWebhookRequestHandler=createPaymentWebhookRequestHandler({
+ db,
+ vault:paymentWebhookSecretVault,
+ providerVerifiers:{},
+ onVerifiedDeposit:createVerifiedDepositPmsOrchestrator({
+  db,
+  vault:pmsCredentialVault,
+  pmsRegistry,
+ })
+});
+const paymentWebhookLimiter=rateLimit({windowMs:60000,limit:30,standardHeaders:"draft-7",legacyHeaders:false});
+app.post("/api/public/payments/:endpointToken",requireDb,paymentWebhookLimiter,async(q,r)=>{
+ const result=await paymentWebhookRequestHandler({endpointToken:q.params.endpointToken,headers:q.headers,rawBody:q.rawBody});
+ r.status(result.status).json(result.body);
+});
+const paymentConnectionLimiter=rateLimit({windowMs:900000,limit:10,standardHeaders:"draft-7",legacyHeaders:false});
+app.use("/api/admin/payment-connections",paymentConnectionLimiter);
+app.get("/api/admin/payment-connections",requireDb,auth,role("owner","admin"),async(q,r,n)=>{
+ try{
+  const x=await db.query("SELECT provider,status,connected_at,updated_at FROM organization_payment_connections WHERE organization_id=$1 ORDER BY provider",[q.actor.organization_id]);
+  r.json({connections:x.rows.map(row=>({provider:row.provider,status:row.status,connectedAt:row.connected_at,updatedAt:row.updated_at}))});
+ }catch(e){n(e);}
+});
+app.put("/api/admin/payment-connections/:provider",requireDb,auth,role("owner","admin"),async(q,r,n)=>{
+ try{
+  const provider=String(q.params.provider||"");
+  const secret=q.body?.webhookSecret;
+  if(!/^[a-z][a-z0-9_-]{1,39}$/.test(provider))return r.status(400).json({error:"Invalid payment provider identifier."});
+  if(typeof secret!=="string")return r.status(400).json({error:"A provider webhook secret is required."});
+  const result=await savePaymentWebhookSecret({db,organizationId:q.actor.organization_id,provider,secret,connectedBy:q.actor.user_id,vault:paymentWebhookSecretVault});
+  await audit(q.actor,"payment_connection.configured","payment_connection",provider);
+  r.json({configured:true,provider,webhookEndpointToken:result.endpointToken,message:"Save this webhook endpoint token securely; it is shown only once. The provider secret itself is never returned."});
+ }catch(e){
+  if(/PAYMENT_WEBHOOK_ENCRYPTION_KEY|encryption key/i.test(e.message||""))return r.status(503).json({error:"Payment credential encryption is not configured."});
+  if(/webhook secret/i.test(e.message||""))return r.status(400).json({error:"The provider webhook secret is invalid."});
+  n(e);
+ }
+});
+app.delete("/api/admin/payment-connections/:provider",requireDb,auth,role("owner","admin"),async(q,r,n)=>{
+ try{
+  const provider=String(q.params.provider||"");
+  if(!/^[a-z][a-z0-9_-]{1,39}$/.test(provider))return r.status(400).json({error:"Invalid payment provider identifier."});
+  const result=await disablePaymentWebhookConnection({db,organizationId:q.actor.organization_id,provider,actorUserId:q.actor.user_id,vault:paymentWebhookSecretVault});
+  if(result.disabled)await audit(q.actor,"payment_connection.disabled","payment_connection",provider);
+  r.json({disabled:result.disabled,provider});
+ }catch(e){
+  if(/PAYMENT_WEBHOOK_ENCRYPTION_KEY|encryption key/i.test(e.message||""))return r.status(503).json({error:"Payment credential encryption is not configured."});
+  n(e);
+ }
+});
 const escalate=requiresStaffEscalation;
 async function notify(org,cid,reason){
  const saved=await db.query("SELECT encrypted_config FROM organization_staff_webhooks WHERE organization_id=$1 AND status='configured'",[org.id]);
@@ -323,6 +381,56 @@ app.post("/api/admin/escalations/:id/reply",requireDb,auth,role("owner","admin",
  app.patch("/api/admin/escalations/:id",requireDb,auth,role("owner","admin","staff"),async(q,r,n)=>{try{const s=q.body?.status;if(!["open","claimed","resolved"].includes(s))return r.status(400).json({error:"Invalid status."});
  const x=await db.query("UPDATE escalations SET status=$1,assigned_to=CASE WHEN $1='claimed' THEN $2 WHEN $1='open' THEN NULL ELSE assigned_to END,resolved_at=CASE WHEN $1='resolved' THEN now() ELSE NULL END WHERE id=$3 AND organization_id=$4 RETURNING id,status,assigned_to,resolved_at",[s,q.actor.user_id,q.params.id,q.actor.organization_id]);if(!x.rowCount)return r.status(404).json({error:"Escalation not found."});
  await db.query("UPDATE conversations SET status=$1 WHERE organization_id=$3 AND id=(SELECT conversation_id FROM escalations WHERE id=$2 AND organization_id=$3)",[s==="resolved"?"resolved":"escalated",q.params.id,q.actor.organization_id]);await audit(q.actor,"escalation."+s,"escalation",q.params.id);r.json({escalation:x.rows[0]});}catch(e){n(e);}});
+app.get("/api/public/:slug/availability",async(q,r,n)=>{
+ try{
+  if(!db)return r.status(503).json({error:"Hotel platform is not configured.",availabilityStatus:"unknown"});
+  const organization=await db.query("SELECT id,status FROM organizations WHERE slug=$1",[q.params.slug]);
+  if(!organization.rowCount||organization.rows[0].status==="suspended")return r.status(404).json({error:"Hotel availability unavailable."});
+  const result=await createAvailabilityQuotes({
+   db,
+   vault:pmsCredentialVault,
+   pmsRegistry,
+   organizationId:organization.rows[0].id,
+   checkIn:q.query.checkIn,
+   checkOut:q.query.checkOut,
+   guestCount:q.query.guestCount===undefined?1:Number(q.query.guestCount)
+  });
+  if(result.status!=="checked")return r.status(503).json({availabilityStatus:"unknown",reason:result.reason,quotes:[]});
+  r.json({availabilityStatus:"checked",checkedAt:result.checkedAt,quotes:result.quotes,reason:result.reason||null});
+ }catch(e){
+  if(e&&["INVALID_DATE_RANGE","DATE_RANGE_TOO_LARGE"].includes(e.code))return r.status(400).json({error:"Enter valid check-in and check-out dates."});
+  if(e&&e.code==="INVALID_GUEST_COUNT")return r.status(400).json({error:"Guest count must be between 1 and 20."});
+  n(e);
+ }
+});
+app.post("/api/public/:slug/booking-requests",async(q,r,n)=>{
+ try{
+  if(!db)return r.status(503).json({error:"Hotel booking service is not configured."});
+  if(process.env.GUEST_DATA_STORAGE_ENABLED!=="true")return r.status(503).json({error:"Guest data storage is disabled until the hotel has approved its privacy notice, retention period and data-processing terms."});
+  const organization=await db.query("SELECT id,status FROM organizations WHERE slug=$1",[q.params.slug]);
+  if(!organization.rowCount||organization.rows[0].status==="suspended")return r.status(404).json({error:"Hotel booking service unavailable."});
+  const result=await createBookingRecordFromQuote(db,organization.rows[0].id,q.body||{});
+  const status=result.created?201:200;
+  r.status(status).json({
+   bookingId:result.bookingId,
+   state:result.state,
+   created:result.created,
+   paymentStatus:"not_configured",
+   checkoutAvailable:false,
+   guestMessage:"Your booking request has been saved but is not confirmed. The hotel team must contact you to arrange payment and confirm availability.",
+   ...(result.created?{
+    currency:result.currency,
+    totalAmountMinor:result.totalAmountMinor,
+    depositAmountMinor:result.depositAmountMinor,
+    balanceAmountMinor:result.balanceAmountMinor
+   }:{})
+  });
+ }catch(e){
+  const clientErrors=new Set(["INVALID_BOOKING_TENANT","INVALID_BOOKING_REQUEST","INVALID_GUEST_DETAILS","INVALID_GUEST_NAME","INVALID_GUEST_PHONE","INVALID_GUEST_EMAIL","BOOKING_IDEMPOTENCY_COLLISION","QUOTE_INVALID_OR_EXPIRED","QUOTE_ALREADY_USED","INVALID_STORED_QUOTE"]);
+  if(clientErrors.has(e?.code))return r.status(e.status|| (e.code==="INVALID_BOOKING_TENANT"?400:409)).json({error:e.message,code:e.code});
+  n(e);
+ }
+});
 app.post("/api/public/:slug/chat",async(q,r,n)=>{
  try{if(!db)return r.status(503).json({error:"Hotel platform is not configured."});const releaseGate=await readinessSnapshot();if(!releaseGate.readyForPilot)return r.status(503).json({error:"Hotel pilot release gates are not all verified. Please contact hotel staff.",readyForPilot:false});const msg=q.body?.message;if(typeof msg!=="string"||!msg.trim()||msg.length>4000)return r.status(400).json({error:"Enter a message under 4,000 characters."});
  const orgR=await db.query("SELECT id,name,slug,status FROM organizations WHERE slug=$1",[q.params.slug]);if(!orgR.rowCount||orgR.rows[0].status==="suspended")return r.status(404).json({error:"Assistant unavailable."});const org=orgR.rows[0];

@@ -6,6 +6,7 @@ const fs = require("node:fs");
 const vm = require("node:vm");
 let child;
 let baseUrl;
+let childStderr = "";
 async function getFreePort() {
   const server = net.createServer();
   await new Promise((resolve, reject) => { server.once("error", reject); server.listen(0, "127.0.0.1", resolve); });
@@ -16,10 +17,12 @@ async function getFreePort() {
 before(async () => {
   const port = await getFreePort();
   baseUrl = `http://127.0.0.1:${port}`;
-  child = spawn(process.execPath, ["server.js"], { cwd: process.cwd(), env: { ...process.env, PORT: String(port), OPENAI_API_KEY: "", ALLOWED_ORIGINS: "http://localhost:3000" }, stdio: "ignore" });
+  child = spawn(process.execPath, ["server.js"], { cwd: process.cwd(), env: { ...process.env, PORT: String(port), OPENAI_API_KEY: "", ALLOWED_ORIGINS: "http://localhost:3000" }, stdio: ["ignore", "ignore", "pipe"] });
+  child.stderr.setEncoding("utf8");
+  child.stderr.on("data", chunk => { childStderr += chunk; });
   let ready = false;
   for (let attempt = 0; attempt < 60; attempt += 1) {
-    if (child.exitCode !== null) throw new Error("Veyra server exited before tests started");
+    if (child.exitCode !== null) throw new Error("Veyra server exited before tests started: " + childStderr.slice(-3000));
     try { const response = await fetch(`${baseUrl}/api/health`); if (response.ok || response.status === 503) { ready = true; break; } } catch {}
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
@@ -534,4 +537,16 @@ test("staff handoff replies are tenant-scoped, audited and record first response
  assert.match(dashboardHtml,/api\("\/api\/admin\/escalations\/".*\/reply/);
 
  assert.match(server,/percentile_cont\(0\.95\) WITHIN GROUP\(ORDER BY EXTRACT\(EPOCH FROM \(first_staff_response_at-created_at\)\)\*1000\)/);
+});
+
+test("public booking requests fail closed until guest-data privacy approval is enabled", () => {
+  const server = fs.readFileSync("server.js", "utf8");
+  const start = server.indexOf('app.post("/api/public/:slug/booking-requests"');
+  const end = server.indexOf('app.post("/api/public/:slug/chat"', start);
+  assert.ok(start >= 0 && end > start, "public booking route exists");
+  const route = server.slice(start, end);
+  const privacyGate = route.indexOf('process.env.GUEST_DATA_STORAGE_ENABLED!=="true"');
+  const bookingWrite = route.indexOf("createBookingRecordFromQuote");
+  assert.ok(privacyGate >= 0, "booking route enforces guest-data privacy gate");
+  assert.ok(bookingWrite > privacyGate, "privacy gate runs before guest details are persisted");
 });

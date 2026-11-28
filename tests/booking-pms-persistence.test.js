@@ -15,6 +15,9 @@ function makeDb(initialState = "payment_verified") {
       if (sql.startsWith("SELECT id,state FROM hotel_bookings")) {
         return { rowCount: row.id === params[0] ? 1 : 0, rows: row.id === params[0] ? [{ id: row.id, state: row.state }] : [] };
       }
+      if (sql.startsWith("SELECT provider,status FROM hotel_pms_booking_attempts")) {
+        return { rowCount: 1, rows: [{ provider: "mews", status: attempt.status }] };
+      }
       if (sql.startsWith("SELECT id FROM hotel_bookings WHERE id=$1 AND organization_id=$2 AND pms_provider")) {
         return { rowCount: row.pms_provider === params[2] && row.pms_booking_id === params[3] ? 1 : 0, rows: [] };
       }
@@ -83,6 +86,25 @@ test("confirmed records cannot be overwritten by a pending result", async () => 
     () => recordPmsOutcome(db, "hotel-a", "booking-1", "mews", { state: "booking_pending", reason: "timeout" }),
     e => e.code === "BOOKING_ALREADY_CONFIRMED"
   );
+});
+
+test("refuses to persist a PMS result without the matching active attempt", async () => {
+  const db = makeDb();
+  db.attempt.status = "pending";
+  await assert.rejects(
+    () => recordPmsOutcome(db, "hotel-a", "booking-1", "mews", { state: "confirmed", pmsBookingId: "res-1" }),
+    e => e.code === "PMS_ATTEMPT_NOT_ACTIVE"
+  );
+  assert.equal(db.row.state, "payment_verified");
+});
+
+test("refuses a PMS result from a different provider than the claimed attempt", async () => {
+  const db = makeDb();
+  await assert.rejects(
+    () => recordPmsOutcome(db, "hotel-a", "booking-1", "otherpms", { state: "confirmed", pmsBookingId: "res-1" }),
+    e => e.code === "PMS_ATTEMPT_NOT_ACTIVE"
+  );
+  assert.equal(db.row.state, "payment_verified");
 });
 
 

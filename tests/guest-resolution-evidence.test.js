@@ -68,6 +68,6 @@ test("server, widget and dashboard expose only explicit guest-confirmed resoluti
   assert.match(server, /guest_token_hash=\$3/);
   assert.match(widget, /My question is resolved/);
   assert.match(dashboard, /Guest-confirmed resolution evidence/);
-  assert.match(dashboard, /Potential staff minutes avoided/);
+  assert.match(dashboard, /potential staff minutes avoided/i);
   assert.match(dashboard, /Influenced conversations: not measured/);
 });

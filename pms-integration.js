@@ -54,11 +54,20 @@ function normalizeBookingRequest(input = {}) {
   const roomTypeId = typeof input.roomTypeId === "string" ? input.roomTypeId.trim() : "";
   const guestCount = input.guestCount;
   const idempotencyKey = typeof input.idempotencyKey === "string" ? input.idempotencyKey.trim() : "";
+  const sourceGuest = input.guest;
+  const guest = sourceGuest && typeof sourceGuest === "object" && !Array.isArray(sourceGuest) ? {
+    name: typeof sourceGuest.name === "string" ? sourceGuest.name.trim() : "",
+    phone: typeof sourceGuest.phone === "string" ? sourceGuest.phone.trim() : "",
+    email: typeof sourceGuest.email === "string" ? sourceGuest.email.trim() : "",
+  } : null;
   if (!roomTypeId || roomTypeId.length > 120 || !Number.isInteger(guestCount) || guestCount < 1 || guestCount > 20 ||
-      !/^[A-Za-z0-9_-]{12,100}$/.test(idempotencyKey)) {
-    throw new PmsIntegrationError("INVALID_BOOKING_REQUEST", "Room type, guest count and idempotency key are required.");
+      !/^[A-Za-z0-9_-]{12,100}$/.test(idempotencyKey) ||
+      !guest || !guest.name || guest.name.length > 120 || /[\x00-\x1f\x7f]/.test(guest.name) ||
+      !/^\+?[0-9 ()-]{7,30}$/.test(guest.phone) ||
+      (guest.email && (guest.email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(guest.email)))) {
+    throw new PmsIntegrationError("INVALID_BOOKING_REQUEST", "Room type, guest contact details, guest count and idempotency key are required.");
   }
-  return { ...dates, roomTypeId, guestCount, idempotencyKey };
+  return { ...dates, roomTypeId, guestCount, guest, idempotencyKey };
 }
 
 function normalizeBooking(value) {
@@ -69,6 +78,19 @@ function normalizeBooking(value) {
   const status = typeof value.status === "string" ? value.status.trim().toLowerCase() : "";
   if (!bookingId || bookingId.length > 160 || !BOOKING_STATUSES.has(status)) {
     throw new PmsIntegrationError("INVALID_PROVIDER_RESPONSE", "Provider returned incomplete booking details.", 502);
+  }
+  return { bookingId, status };
+}
+
+function normalizeBookingLookup(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new PmsIntegrationError("INVALID_PROVIDER_RESPONSE", "Provider returned an invalid reservation lookup response.", 502);
+  }
+  const bookingId = typeof value.bookingId === "string" ? value.bookingId.trim() : "";
+  const status = typeof value.status === "string" ? value.status.trim().toLowerCase() : "";
+  if (!bookingId || bookingId.length > 160 || /[\x00-\x1f\x7f]/.test(bookingId) ||
+      !["confirmed", "pending", "not_found", "cancelled", "modified", "checked_in", "checked_out"].includes(status)) {
+    throw new PmsIntegrationError("INVALID_PROVIDER_RESPONSE", "Provider returned incomplete reservation lookup details.", 502);
   }
   return { bookingId, status };
 }
@@ -179,12 +201,16 @@ function createPmsRegistry(adapters = []) {
       capabilities: Object.freeze({
         availability: adapter.capabilities.availability === true && typeof adapter.getAvailability === "function",
         booking: adapter.capabilities.booking === true && typeof adapter.createBooking === "function",
+        bookingLookup: adapter.capabilities.bookingLookup === true && typeof adapter.getBookingStatus === "function",
+        bookingLookupByIdempotencyKey: adapter.capabilities.bookingLookupByIdempotencyKey === true && typeof adapter.getBookingByIdempotencyKey === "function",
         webhooks: adapter.capabilities.webhooks === true && typeof adapter.verifyWebhook === "function",
       }),
       testConnection: adapter.testConnection,
       getAvailability: adapter.getAvailability,
       createBooking: adapter.createBooking,
       verifyWebhook: adapter.verifyWebhook,
+      getBookingStatus: adapter.getBookingStatus,
+      getBookingByIdempotencyKey: adapter.getBookingByIdempotencyKey,
     }));
   }
   for (const adapter of adapters) register(adapter);
@@ -270,6 +296,33 @@ function createPmsRegistry(adapters = []) {
       const request = normalizeBookingRequest(input);
       return normalizeBooking(await adapter.createBooking(request, securedContext));
     },
+    getBookingStatus: async (provider, input, context = {}) => {
+      const adapter = get(provider);
+      if (!adapter.capabilities.bookingLookup) {
+        throw new PmsIntegrationError("CAPABILITY_UNAVAILABLE", "This provider adapter does not support reservation status lookup.", 409);
+      }
+      const bookingId = input && typeof input.bookingId === "string" ? input.bookingId.trim() : "";
+      if (!bookingId || bookingId.length > 160 || [...bookingId].some(ch => ch.charCodeAt(0) < 32 || ch.charCodeAt(0) === 127)) {
+        throw new PmsIntegrationError("INVALID_BOOKING_REFERENCE", "A valid provider reservation reference is required.");
+      }
+      const securedContext = await requireProductionCredentials(adapter, context, ["booking:read"]);
+      const result = await adapter.getBookingStatus({ bookingId }, securedContext);
+      return normalizeBookingLookup(result);
+    },
+    getBookingByIdempotencyKey: async (provider, input, context = {}) => {
+      const adapter = get(provider);
+      if (!adapter.capabilities.bookingLookupByIdempotencyKey) {
+        throw new PmsIntegrationError("CAPABILITY_UNAVAILABLE", "This provider adapter does not support reservation lookup by idempotency key.", 409);
+      }
+      const idempotencyKey = input && typeof input.idempotencyKey === "string" ? input.idempotencyKey.trim() : "";
+      if (!/^[A-Za-z0-9_-]{12,100}$/.test(idempotencyKey)) {
+        throw new PmsIntegrationError("INVALID_IDEMPOTENCY_KEY", "A valid reservation idempotency key is required.");
+      }
+      const securedContext = await requireProductionCredentials(adapter, context, ["booking:read"]);
+      const result = await adapter.getBookingByIdempotencyKey({ idempotencyKey }, securedContext);
+      if (result === null || (result && result.status === "not_found")) return { bookingId: "", status: "not_found" };
+      return normalizeBookingLookup(result);
+    },
     verifyWebhook: async (provider, input) => {
       const adapter = get(provider);
       if (!adapter.capabilities.webhooks) throw new PmsIntegrationError("CAPABILITY_UNAVAILABLE", "This provider adapter does not support webhooks.", 409);
@@ -299,6 +352,7 @@ module.exports = {
   normalizeAvailability,
   normalizeBookingRequest,
   normalizeBooking,
+  normalizeBookingLookup,
   normalizeWebhookEvent,
   createHmacSha256Verifier,
   recordWebhookEvent,

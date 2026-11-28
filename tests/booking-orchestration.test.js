@@ -8,6 +8,7 @@ function fixtures() {
   return {
     booking: {
       state: "payment_verified",
+      guest: { name: "Alex Guest", phone: "+66812345678", email: "" },
       checkIn: "2027-02-10",
       checkOut: "2027-02-12",
       roomTypeId: "ocean-villa",

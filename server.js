@@ -19,10 +19,13 @@ const {PmsIntegrationError,createPmsRegistry,createSandboxAdapter}=require("./pm
 const {createPmsCredentialVault}=require("./pms-credential-vault");
 const {createPaymentWebhookSecretVault,savePaymentWebhookSecret,disablePaymentWebhookConnection}=require("./payment-credential-vault");
 const {createPaymentWebhookRequestHandler}=require("./payment-webhook");
-const {BOOKING_SCHEMA,createBookingRecordFromQuote}=require("./booking-repository");
+const {PAYMENT_PROVIDER_ADAPTERS,listPaymentProviderCapabilities,hasPaymentProviderAdapter}=require("./payment-provider-registry");
+const {BOOKING_SCHEMA,createBookingRecordFromQuote,recordReconciledPmsOutcome}=require("./booking-repository");
+const {listHotelBookings,parseBookingListQuery}=require("./booking-admin");
 const {createVerifiedDepositPmsOrchestrator}=require("./booking-service");
 const {AVAILABILITY_QUOTE_SCHEMA,createAvailabilityQuotes}=require("./availability-quotes");
-const {deliverStaffEscalation}=require("./staff-notifications");
+const {deliverStaffEscalation,deliverStaffBookingNotification}=require("./staff-notifications");
+const {enqueueBookingNotification,processBookingNotificationOutbox,getBookingNotificationHealth}=require("./booking-notification-outbox");
 const {encryptWebhookConfig,decryptWebhookConfig,resolvePublicWebhook,postSignedWebhook}=require("./staff-webhook-security");
 function isValidReviewDueDate(value){
  if(typeof value!=="string"||!/^\d{4}-\d{2}-\d{2}$/.test(value))return false;
@@ -135,7 +138,7 @@ app.use("/api/admin/storage",requireDb,createStorageRouter({db,auth,role,audit})
 const paymentWebhookRequestHandler=createPaymentWebhookRequestHandler({
  db,
  vault:paymentWebhookSecretVault,
- providerVerifiers:{},
+ providerVerifiers:PAYMENT_PROVIDER_ADAPTERS,
  onVerifiedDeposit:createVerifiedDepositPmsOrchestrator({
   db,
   vault:pmsCredentialVault,
@@ -149,6 +152,9 @@ app.post("/api/public/payments/:endpointToken",requireDb,paymentWebhookLimiter,a
 });
 const paymentConnectionLimiter=rateLimit({windowMs:900000,limit:10,standardHeaders:"draft-7",legacyHeaders:false});
 app.use("/api/admin/payment-connections",paymentConnectionLimiter);
+app.get("/api/admin/payment-provider-capabilities",requireDb,auth,role("owner","admin"),async(_q,r)=>{
+ r.json({providers:listPaymentProviderCapabilities(),liveCheckoutAvailable:false,livePaymentWebhookAvailable:listPaymentProviderCapabilities().length>0});
+});
 app.get("/api/admin/payment-connections",requireDb,auth,role("owner","admin"),async(q,r,n)=>{
  try{
   const x=await db.query("SELECT provider,status,connected_at,updated_at FROM organization_payment_connections WHERE organization_id=$1 ORDER BY provider",[q.actor.organization_id]);
@@ -160,6 +166,7 @@ app.put("/api/admin/payment-connections/:provider",requireDb,auth,role("owner","
   const provider=String(q.params.provider||"");
   const secret=q.body?.webhookSecret;
   if(!/^[a-z][a-z0-9_-]{1,39}$/.test(provider))return r.status(400).json({error:"Invalid payment provider identifier."});
+  if(!hasPaymentProviderAdapter(provider))return r.status(409).json({error:"This payment provider has not been integrated and verified by Veyra yet.",code:"PAYMENT_PROVIDER_NOT_SUPPORTED"});
   if(typeof secret!=="string")return r.status(400).json({error:"A provider webhook secret is required."});
   const result=await savePaymentWebhookSecret({db,organizationId:q.actor.organization_id,provider,secret,connectedBy:q.actor.user_id,vault:paymentWebhookSecretVault});
   await audit(q.actor,"payment_connection.configured","payment_connection",provider);
@@ -188,6 +195,21 @@ async function notify(org,cid,reason){
  if(!saved.rowCount||!process.env.STAFF_WEBHOOK_ENCRYPTION_KEY)return {configured:false,delivered:false,status:"not_configured"};
  try{const webhookConfig=decryptWebhookConfig(saved.rows[0].encrypted_config,process.env.STAFF_WEBHOOK_ENCRYPTION_KEY);return deliverStaffEscalation({organization:org,conversationId:cid,reason,webhookConfig});}
  catch{return {configured:false,delivered:false,status:"not_configured"};}
+}
+async function processBookingNotifications(organizationId){
+ return processBookingNotificationOutbox({db,batchSize:5,organizationId,deliver:async job=>{
+  const [org,booking]=await Promise.all([
+   db.query("SELECT id,name,slug FROM organizations WHERE id=$1",[job.organization_id]),
+   db.query("SELECT state FROM hotel_bookings WHERE id=$1 AND organization_id=$2",[job.booking_id,job.organization_id])
+  ]);
+  if(!org.rowCount||!booking.rowCount)return {configured:false,delivered:false,status:"not_configured"};
+  const saved=await db.query("SELECT encrypted_config FROM organization_staff_webhooks WHERE organization_id=$1 AND status='configured'",[job.organization_id]);
+  if(!saved.rowCount||!process.env.STAFF_WEBHOOK_ENCRYPTION_KEY)return {configured:false,delivered:false,status:"not_configured"};
+  try{
+   const webhookConfig=decryptWebhookConfig(saved.rows[0].encrypted_config,process.env.STAFF_WEBHOOK_ENCRYPTION_KEY);
+   return deliverStaffBookingNotification({organization:org.rows[0],bookingId:job.booking_id,state:booking.rows[0].state,webhookConfig});
+  }catch{return {configured:false,delivered:false,status:"not_configured"};}
+ }});
 }
 async function readinessSnapshot(){let database="not-configured",humanHandoff=false;if(db){try{await db.query("SELECT 1");database="connected";const handoff=await db.query("SELECT EXISTS(SELECT 1 FROM organization_staff_webhooks w JOIN organization_integration_checks c ON c.organization_id=w.organization_id AND c.integration='staff_webhook' WHERE w.status='configured' AND c.verified_at>now()-interval '30 days') AS configured");humanHandoff=handoff.rows[0]?.configured===true;}catch{database="unavailable";}}const guestDataStorage=process.env.GUEST_DATA_STORAGE_ENABLED==="true";const gate=buildPilotReadiness({databaseConnected:database==="connected",aiConfigured:Boolean(ai),guestDataStorageEnabled:guestDataStorage,staffWebhookConfigured:humanHandoff,durableBackupsVerified:process.env.DURABLE_BACKUPS_VERIFIED==="true",tenantIsolationTestsPassed:process.env.TENANT_ISOLATION_TESTS_PASSED==="true",providerOAuthTested:process.env.PROVIDER_OAUTH_TESTED==="true",hotelPrivacyApproved:process.env.HOTEL_PRIVACY_APPROVED==="true",staffHandoffTested:process.env.STAFF_HANDOFF_TESTED==="true",pilotReleaseApproved:process.env.PILOT_RELEASE_APPROVED==="true"});return{service:"Veyra AI",mode:ai?"ai-configured":"demo-no-api-key",model:ai?MODEL:null,database,multiTenant:database==="connected",guestDataStorage,humanHandoff:humanHandoff?"hotel-webhook-verified":"not-configured",readyForPilot:gate.readyForPilot,checks:gate.checks};}
 app.get("/api/health",async(_q,r)=>{const state=await readinessSnapshot();r.status(200).json({status:state.readyForPilot?"ready":"degraded",...state});});
@@ -328,6 +350,51 @@ app.patch("/api/admin/users/:id",requireDb,auth,role("owner","admin"),async(q,r,
 app.post("/api/invitations/accept",requireDb,async(q,r,n)=>{const b=q.body||{};try{if(typeof b.workspace!=="string"||!/^[a-z0-9-]{1,48}$/.test(b.workspace)||typeof b.token!=="string"||!/^[A-Za-z0-9_-]{40,64}$/.test(b.token)||typeof b.email!=="string"||typeof b.password!=="string"||b.password.length<12||b.password.length>200)return r.status(400).json({error:"Check the invitation details. Passwords must be at least 12 characters."});const email=b.email.trim().toLowerCase();if(!/^[-.+\w]+@[-.\w]+\.[A-Za-z]{2,}$/.test(email)||email.length>254)return r.status(400).json({error:"Enter the email address the invitation was sent to."});const c=await db.connect();try{await c.query("BEGIN");const found=await c.query("SELECT i.id,i.organization_id,i.email,i.role,i.expires_at,o.slug FROM user_invitations i JOIN organizations o ON o.id=i.organization_id WHERE i.token_hash=$1 AND o.slug=$2 AND i.email=$3 AND i.accepted_at IS NULL AND i.revoked_at IS NULL AND i.expires_at>now() AND o.status<>'suspended' FOR UPDATE OF i",[hash(b.token),b.workspace,email]);if(!found.rowCount){await c.query("ROLLBACK");return r.status(410).json({error:"This invitation is invalid, expired, already used or revoked."});}const i=found.rows[0];const exists=await c.query("SELECT id FROM users WHERE organization_id=$1 AND email=$2",[i.organization_id,email]);if(exists.rowCount){await c.query("ROLLBACK");return r.status(409).json({error:"An account already exists for this email. Ask the owner for help."});}const u=await c.query("INSERT INTO users(organization_id,email,password_hash,role) VALUES($1,$2,$3,$4) RETURNING id",[i.organization_id,email,await pwHash(b.password),i.role]);await c.query("UPDATE user_invitations SET accepted_at=now() WHERE id=$1",[i.id]);await c.query("INSERT INTO audit_logs(organization_id,actor_user_id,action,target_type,target_id) VALUES($1,$2,'invitation.accepted','user',$3)",[i.organization_id,u.rows[0].id,u.rows[0].id]);await c.query("COMMIT");r.status(201).json({ok:true,workspace:i.slug,email,role:i.role,message:"Account created. Sign in from the hotel workspace dashboard."});}catch(e){await c.query("ROLLBACK");throw e;}finally{c.release();}}catch(e){n(e);}});
 app.get("/api/admin/conversations/:id",requireDb,auth,async(q,r,n)=>{try{if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(q.params.id))return r.status(400).json({error:"Invalid conversation reference."});const x=await db.query("SELECT id,status,channel,started_at,last_message_at FROM conversations WHERE id=$1 AND organization_id=$2",[q.params.id,q.actor.organization_id]);if(!x.rowCount)return r.status(404).json({error:"Conversation not found."});const m=await db.query("SELECT m.id,m.role,m.content,m.created_at FROM messages m JOIN conversations c ON c.id=m.conversation_id WHERE m.conversation_id=$1 AND c.organization_id=$2 ORDER BY m.created_at DESC LIMIT 200",[q.params.id,q.actor.organization_id]);r.json({conversation:x.rows[0],messages:m.rows.reverse()});}catch(e){n(e);}});
 app.delete("/api/admin/conversations/:id",requireDb,auth,role("owner","admin"),async(q,r,n)=>{try{if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(q.params.id))return r.status(400).json({error:"Invalid conversation reference."});const c=await db.connect();try{await c.query("BEGIN");const found=await c.query("SELECT id FROM conversations WHERE id=$1 AND organization_id=$2 FOR UPDATE",[q.params.id,q.actor.organization_id]);if(!found.rowCount){await c.query("ROLLBACK");return r.status(404).json({error:"Conversation not found."});}await c.query("DELETE FROM conversations WHERE id=$1 AND organization_id=$2",[q.params.id,q.actor.organization_id]);await c.query("INSERT INTO audit_logs(organization_id,actor_user_id,action,target_type,target_id) VALUES($1,$2,'conversation.deleted','conversation',$3)",[q.actor.organization_id,q.actor.user_id,q.params.id]);await c.query("COMMIT");r.json({ok:true});}catch(e){await c.query("ROLLBACK");throw e;}finally{c.release();}}catch(e){n(e);}});
+app.post("/api/admin/bookings/:id/reconcile-pms",requireDb,auth,role("owner","admin"),integrationTestLimiter,async(q,r,n)=>{
+ try{
+  const booking=await db.query("SELECT state,pms_provider,pms_booking_id FROM hotel_bookings WHERE id=$1 AND organization_id=$2",[q.params.id,q.actor.organization_id]);
+  if(!booking.rowCount)return r.status(404).json({error:"Booking not found."});
+  const row=booking.rows[0];
+  if(row.state!=="booking_pending"||!row.pms_provider||!row.pms_booking_id)return r.status(409).json({error:"Only a pending booking with a stored PMS reservation reference can be reconciled."});
+  const connection=await db.query("SELECT mode,status,encrypted_credentials,scopes FROM pms_connections WHERE organization_id=$1 AND provider=$2",[q.actor.organization_id,row.pms_provider]);
+  if(!connection.rowCount||connection.rows[0].mode!=="production"||connection.rows[0].status!=="connected")return r.status(409).json({error:"A connected production PMS account is required for reconciliation."});
+  if(!Array.isArray(connection.rows[0].scopes)||!connection.rows[0].scopes.includes("booking:read"))return r.status(403).json({error:"The hotel's PMS connection is missing booking:read permission."});
+  if(!pmsCredentialVault.configured)return r.status(503).json({error:"PMS credential encryption is not configured on the server."});
+  const credentials=pmsCredentialVault.decrypt(connection.rows[0].encrypted_credentials);
+  const lookup=await pmsRegistry.getBookingStatus(row.pms_provider,{bookingId:row.pms_booking_id},{credentials,organizationId:q.actor.organization_id});
+  const result=await recordReconciledPmsOutcome(db,q.actor.organization_id,q.params.id,row.pms_provider,lookup);
+  let auditRecorded=true;
+  try{await audit(q.actor,"booking.pms_reconciled","booking",q.params.id);}catch(auditError){auditRecorded=false;console.error("PMS reconciliation audit write failed.");}
+  r.json({bookingId:q.params.id,state:result.state,duplicate:result.duplicate===true,providerStatus:lookup.status,auditRecorded,notice:result.state==="confirmed"?"The PMS explicitly confirmed the matching reservation.":lookup.status==="not_found"?"The PMS did not find the stored reservation reference. The booking remains pending for staff investigation; Veyra will not submit another reservation automatically.":"The PMS still reports this reservation as pending; Veyra has not confirmed it."});
+ }catch(e){
+  if(e instanceof PmsIntegrationError)return r.status(e.status).json({error:e.message,code:e.code});
+  if(e&&e.code&&["BOOKING_NOT_FOUND","PMS_RECONCILIATION_MISMATCH","PMS_ATTEMPT_NOT_RECONCILABLE","INVALID_PMS_RECONCILIATION","INVALID_PMS_REFERENCE"].includes(e.code))return r.status(e.status||409).json({error:e.message,code:e.code});
+  console.error("PMS reservation reconciliation failed.");
+  r.status(502).json({error:"The PMS reservation could not be safely reconciled. The booking remains unchanged unless the reconciliation transaction completed."});
+ }
+});
+app.get("/api/admin/bookings",requireDb,auth,role("owner","admin","staff"),async(q,r,n)=>{
+ try{
+  const pagination=parseBookingListQuery(q.query);
+  const result=await listHotelBookings({
+   db,
+   organizationId:q.actor.organization_id,
+   ...pagination
+  });
+  r.json(result);
+ }catch(e){
+  if(e&&["INVALID_BOOKING_STATE_FILTER","INVALID_BOOKING_PAGINATION"].includes(e.code))return r.status(400).json({error:e.message});
+  n(e);
+ }
+});
+app.get("/api/admin/booking-notifications",requireDb,auth,role("owner","admin","staff"),async(q,r,n)=>{
+ try{const health=await getBookingNotificationHealth(db,q.actor.organization_id);r.json({notifications:health});}
+ catch(e){n(e);}
+});
+app.post("/api/admin/booking-notifications/process",requireDb,auth,role("owner","admin","staff"),async(q,r,n)=>{
+ try{const result=await processBookingNotifications(q.actor.organization_id);r.json(result);}
+ catch(e){n(e);}
+});
 app.get("/api/admin/overview",requireDb,auth,async(q,r,n)=>{try{const org=q.actor.organization_id;const [m,e,c]=await Promise.all([
  db.query("SELECT count(*) FILTER(WHERE started_at>=date_trunc('day',now()))::int AS conversations_today,count(*) FILTER(WHERE started_at>=now()-interval '7 days')::int AS conversations_7d,count(*) FILTER(WHERE status='resolved')::int AS resolved_total FROM conversations WHERE organization_id=$1",[org]),
  db.query("SELECT count(*)::int AS open_escalations FROM escalations WHERE organization_id=$1 AND status<>'resolved'",[org]),
@@ -407,9 +474,13 @@ app.post("/api/public/:slug/booking-requests",async(q,r,n)=>{
  try{
   if(!db)return r.status(503).json({error:"Hotel booking service is not configured."});
   if(process.env.GUEST_DATA_STORAGE_ENABLED!=="true")return r.status(503).json({error:"Guest data storage is disabled until the hotel has approved its privacy notice, retention period and data-processing terms."});
-  const organization=await db.query("SELECT id,status FROM organizations WHERE slug=$1",[q.params.slug]);
+  const organization=await db.query("SELECT id,name,slug,status FROM organizations WHERE slug=$1",[q.params.slug]);
   if(!organization.rowCount||organization.rows[0].status==="suspended")return r.status(404).json({error:"Hotel booking service unavailable."});
   const result=await createBookingRecordFromQuote(db,organization.rows[0].id,q.body||{});
+  // Enqueue on both new and idempotent replay paths so a transient queue-write failure can be repaired by the guest retrying the same request key.
+  await enqueueBookingNotification(db,organization.rows[0].id,result.bookingId);
+  // Delivery is best-effort here; the durable queue preserves failures for retry.
+  try{await processBookingNotifications();}catch{}
   const status=result.created?201:200;
   r.status(status).json({
    bookingId:result.bookingId,
@@ -472,5 +543,5 @@ app.get("/setup.html",publicFile("setup.html","html"));
 app.get("/invite.html",publicFile("invite.html","html"));
 app.get("/widget.js",publicFile("widget.js","javascript"));
 app.use((e,_q,r,_n)=>{console.error("Veyra API error:",e?.message||"unknown");if(!r.headersSent)r.status(500).json({error:"Something went wrong. Please try again."});});
-async function start(){if(db){await db.query(schema);await db.query("DELETE FROM sessions WHERE expires_at<now()");await db.query("DELETE FROM storage_oauth_states WHERE expires_at<now()");}app.listen(PORT,"0.0.0.0",()=>console.log("Veyra listening on "+PORT+(db?" with PostgreSQL":" in demo mode")));}
+async function start(){if(db){await db.query(schema);await db.query("DELETE FROM sessions WHERE expires_at<now()");await db.query("DELETE FROM storage_oauth_states WHERE expires_at<now()");processBookingNotifications().catch(()=>{});const notificationWorker=setInterval(()=>{processBookingNotifications().catch(()=>{});},60000);notificationWorker.unref?.();}app.listen(PORT,"0.0.0.0",()=>console.log("Veyra listening on "+PORT+(db?" with PostgreSQL":" in demo mode")));}
 start().catch(e=>{console.error("Startup failed:",e.message);process.exit(1);});

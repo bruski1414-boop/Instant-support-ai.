@@ -9,6 +9,7 @@ const {
   normalizeAvailability,
   normalizeBookingRequest,
   normalizeBooking,
+  normalizeBookingLookup,
   normalizeWebhookEvent,
   createHmacSha256Verifier,
   recordWebhookEvent,
@@ -35,15 +36,19 @@ test("availability normalizer accepts only bounded, typed provider fields", () =
 
 test("booking requests require an idempotency key and bounded guest count", () => {
   assert.deepEqual(normalizeBookingRequest({
-    checkIn: "2027-01-10", checkOut: "2027-01-12", roomTypeId: "deluxe", guestCount: 2, idempotencyKey: "booking_req_12345",
+    checkIn: "2027-01-10", checkOut: "2027-01-12", roomTypeId: "deluxe", guestCount: 2, guest: { name: "Alex Guest", phone: "+66812345678" }, idempotencyKey: "booking_req_12345",
   }), {
-    checkIn: "2027-01-10", checkOut: "2027-01-12", roomTypeId: "deluxe", guestCount: 2, idempotencyKey: "booking_req_12345",
+    checkIn: "2027-01-10", checkOut: "2027-01-12", roomTypeId: "deluxe", guestCount: 2, guest: { name: "Alex Guest", phone: "+66812345678" }, idempotencyKey: "booking_req_12345",
   });
   assert.throws(() => normalizeBookingRequest({
     checkIn: "2027-01-10", checkOut: "2027-01-12", roomTypeId: "deluxe", guestCount: 2,
   }), PmsIntegrationError);
   assert.throws(() => normalizeBookingRequest({
     checkIn: "2027-01-10", checkOut: "2027-01-12", roomTypeId: "deluxe", guestCount: 21, idempotencyKey: "booking_req_12345",
+  }), PmsIntegrationError);
+  assert.throws(() => normalizeBookingRequest({
+    checkIn: "2027-01-10", checkOut: "2027-01-12", roomTypeId: "deluxe", guestCount: 2,
+    guest: { name: "Alex Guest", phone: "not-a-phone" }, idempotencyKey: "booking_req_12345",
   }), PmsIntegrationError);
 });
 
@@ -79,6 +84,174 @@ test("registry rejects duplicate or incomplete adapters and unknown providers", 
   await assert.rejects(() => registry.testConnection("unknown"), error => error.code === "PROVIDER_UNAVAILABLE");
 });
 
+
+test("booking adapter receives normalized guest identity and the stable idempotency key", async () => {
+  let received;
+  const adapter = {
+    id: "guesttest",
+    name: "Guest identity test provider",
+    mode: "sandbox",
+    capabilities: { booking: true },
+    async testConnection() { return { ok: true }; },
+    async createBooking(request) {
+      received = request;
+      return { bookingId: "provider-reservation-1", status: "confirmed" };
+    },
+  };
+  const registry = createPmsRegistry([adapter]);
+  const result = await registry.createBooking("guesttest", {
+    checkIn: "2027-02-10",
+    checkOut: "2027-02-12",
+    roomTypeId: "ocean-villa",
+    guestCount: 2,
+    guest: {
+      name: "Alex Guest",
+      phone: "+66812345678",
+      email: "alex@example.test",
+    },
+    idempotencyKey: "booking_req_12345",
+  });
+
+  assert.deepEqual(received, {
+    checkIn: "2027-02-10",
+    checkOut: "2027-02-12",
+    roomTypeId: "ocean-villa",
+    guestCount: 2,
+    guest: {
+      name: "Alex Guest",
+      phone: "+66812345678",
+      email: "alex@example.test",
+    },
+    idempotencyKey: "booking_req_12345",
+  });
+  assert.deepEqual(result, { bookingId: "provider-reservation-1", status: "confirmed" });
+});
+
+test("reservation lookup requires provider capability, credentials and read scope", async () => {
+  let lookupInput;
+  const registry = createPmsRegistry([{
+    id: "lookupdemo",
+    name: "Reservation lookup demo",
+    mode: "production",
+    capabilities: { bookingLookup: true },
+    async validateCredentials(credentials) {
+      return { credentials, scopes: ["booking:read"] };
+    },
+    async testConnection() { return { ok: true }; },
+    async getBookingStatus(input, context) {
+      lookupInput = { input, context };
+      return { bookingId: input.bookingId, status: "confirmed" };
+    },
+  }]);
+
+  assert.equal(registry.list()[0].capabilities.bookingLookup, true);
+  assert.deepEqual(await registry.getBookingStatus("lookupdemo", { bookingId: "reservation-123" }, {
+    credentials: { token: "test-token" },
+  }), { bookingId: "reservation-123", status: "confirmed" });
+  assert.deepEqual(lookupInput.input, { bookingId: "reservation-123" });
+  assert.deepEqual(lookupInput.context.scopes, ["booking:read"]);
+
+  await assert.rejects(
+    () => registry.getBookingStatus("lookupdemo", { bookingId: "reservation-123" }, {}),
+    error => error.code === "PROVIDER_CREDENTIALS_REQUIRED"
+  );
+  await assert.rejects(
+    () => registry.getBookingStatus("lookupdemo", { bookingId: "bad\nreference" }, { credentials: { token: "x" } }),
+    error => error.code === "INVALID_BOOKING_REFERENCE"
+  );
+});
+
+test("reservation lookup fails closed when provider lacks lookup capability or permission", async () => {
+  const noCapability = createPmsRegistry([{
+    id: "noread",
+    name: "No lookup",
+    mode: "sandbox",
+    capabilities: {},
+    async testConnection() { return { ok: true }; },
+  }]);
+  await assert.rejects(
+    () => noCapability.getBookingStatus("noread", { bookingId: "res-1" }),
+    error => error.code === "CAPABILITY_UNAVAILABLE"
+  );
+
+  const noScope = createPmsRegistry([{
+    id: "noscope",
+    name: "Missing read scope",
+    mode: "production",
+    capabilities: { bookingLookup: true },
+    async validateCredentials(credentials) { return { credentials, scopes: [] }; },
+    async testConnection() { return { ok: true }; },
+    async getBookingStatus() { throw new Error("must not call provider"); },
+  }]);
+  await assert.rejects(
+    () => noScope.getBookingStatus("noscope", { bookingId: "res-1" }, { credentials: { token: "test" } }),
+    error => error.code === "PROVIDER_SCOPE_MISSING"
+  );
+});
+
+test("reservation lookup by idempotency key requires explicit provider capability and read scope", async () => {
+  let received;
+  const registry = createPmsRegistry([{
+    id: "keylookup",
+    name: "Idempotency-key lookup provider",
+    mode: "production",
+    capabilities: { bookingLookupByIdempotencyKey: true },
+    async validateCredentials(credentials) {
+      return { credentials, scopes: ["booking:read"] };
+    },
+    async testConnection() { return { ok: true }; },
+    async getBookingByIdempotencyKey(input, context) {
+      received = { input, scopes: context.scopes };
+      return { bookingId: "provider-reservation-88", status: "confirmed" };
+    },
+  }]);
+
+  assert.equal(registry.list()[0].capabilities.bookingLookupByIdempotencyKey, true);
+  assert.deepEqual(await registry.getBookingByIdempotencyKey("keylookup", {
+    idempotencyKey: "booking_req_12345",
+  }, { credentials: { token: "provider-token" } }), {
+    bookingId: "provider-reservation-88", status: "confirmed",
+  });
+  assert.deepEqual(received, {
+    input: { idempotencyKey: "booking_req_12345" },
+    scopes: ["booking:read"],
+  });
+  await assert.rejects(
+    () => registry.getBookingByIdempotencyKey("keylookup", { idempotencyKey: "bad key" }, {
+      credentials: { token: "provider-token" },
+    }),
+    error => error.code === "INVALID_IDEMPOTENCY_KEY"
+  );
+  await assert.rejects(
+    () => registry.getBookingByIdempotencyKey("keylookup", { idempotencyKey: "booking_req_12345" }),
+    error => error.code === "PROVIDER_CREDENTIALS_REQUIRED"
+  );
+});
+
+test("idempotency-key lookup reports not-found without creating a reservation", async () => {
+  let createCalls = 0;
+  const registry = createPmsRegistry([{
+    id: "keymiss",
+    name: "Idempotency-key lookup miss provider",
+    mode: "production",
+    capabilities: { bookingLookupByIdempotencyKey: true, booking: true },
+    async validateCredentials(credentials) {
+      return { credentials, scopes: ["booking:read", "booking:write"] };
+    },
+    async testConnection() { return { ok: true }; },
+    async getBookingByIdempotencyKey() { return null; },
+    async createBooking() {
+      createCalls += 1;
+      return { bookingId: "must-not-be-created", status: "confirmed" };
+    },
+  }]);
+  assert.deepEqual(await registry.getBookingByIdempotencyKey("keymiss", {
+    idempotencyKey: "booking_req_12345",
+  }, { credentials: { token: "provider-token" } }), {
+    bookingId: "", status: "not_found",
+  });
+  assert.equal(createCalls, 0);
+});
 
 test("webhook events are normalized, time-bounded and size-limited", () => {
   const now = new Date("2027-01-10T12:00:00.000Z");
@@ -292,4 +465,42 @@ test("availability requests pass a bounded guest count to the provider adapter",
   await registry.getAvailability("testpms", { checkIn: "2027-01-10", checkOut: "2027-01-11", guestCount: 4 }, { credentials: { token: "test" } });
   assert.deepEqual(received, { checkIn: "2027-01-10", checkOut: "2027-01-11", guestCount: 4 });
   await assert.rejects(() => registry.getAvailability("testpms", { checkIn: "2027-01-10", checkOut: "2027-01-11", guestCount: 21 }, { credentials: { token: "test" } }), error => error.code === "INVALID_GUEST_COUNT");
+});
+
+
+test("reservation lookup distinguishes not-found from pending without weakening booking creation", () => {
+  assert.deepEqual(normalizeBookingLookup({ bookingId: "reservation-404", status: "not_found" }), {
+    bookingId: "reservation-404", status: "not_found",
+  });
+  assert.deepEqual(normalizeBookingLookup({ bookingId: "reservation-123", status: "pending" }), {
+    bookingId: "reservation-123", status: "pending",
+  });
+  assert.throws(
+    () => normalizeBookingLookup({ bookingId: "bad\\nreference", status: "confirmed" }),
+    error => error instanceof PmsIntegrationError && error.code === "INVALID_PROVIDER_RESPONSE"
+  );
+  assert.throws(
+    () => normalizeBooking({ bookingId: "reservation-404", status: "not_found" }),
+    PmsIntegrationError
+  );
+});
+
+
+test("PMS registry returns an explicit not-found lookup without accepting it as a created booking", async () => {
+  const registry = createPmsRegistry([{
+    id: "notfounddemo",
+    name: "Not found lookup demo",
+    mode: "production",
+    capabilities: { bookingLookup: true },
+    async validateCredentials(credentials) {
+      return { credentials, scopes: ["booking:read"] };
+    },
+    async testConnection() { return { ok: true }; },
+    async getBookingStatus({ bookingId }) {
+      return { bookingId, status: "not_found" };
+    },
+  }]);
+  assert.deepEqual(await registry.getBookingStatus("notfounddemo", { bookingId: "reservation-404" }, {
+    credentials: { token: "test-token" },
+  }), { bookingId: "reservation-404", status: "not_found" });
 });

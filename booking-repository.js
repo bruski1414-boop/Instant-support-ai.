@@ -16,6 +16,8 @@ const BOOKING_SCHEMA = [
   "CREATE UNIQUE INDEX IF NOT EXISTS hotel_bookings_pms_reference_idx ON hotel_bookings(organization_id,pms_provider,pms_booking_id) WHERE pms_booking_id IS NOT NULL",
   "CREATE INDEX IF NOT EXISTS hotel_bookings_org_state_time_idx ON hotel_bookings(organization_id,state,created_at DESC)",
   "CREATE TABLE IF NOT EXISTS hotel_pms_booking_attempts(organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,booking_id UUID NOT NULL REFERENCES hotel_bookings(id) ON DELETE CASCADE,provider TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'started' CHECK(status IN ('started','confirmed','pending')),pms_booking_id TEXT,started_at TIMESTAMPTZ NOT NULL DEFAULT now(),updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),PRIMARY KEY(organization_id,booking_id))",
+  "CREATE TABLE IF NOT EXISTS staff_booking_notification_outbox(id UUID PRIMARY KEY DEFAULT gen_random_uuid(),organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,booking_id UUID NOT NULL REFERENCES hotel_bookings(id) ON DELETE CASCADE,event_type TEXT NOT NULL DEFAULT 'booking_requested' CHECK(event_type='booking_requested'),status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','processing','delivered','dead_letter')),attempts INTEGER NOT NULL DEFAULT 0 CHECK(attempts>=0),next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT now(),lease_expires_at TIMESTAMPTZ,last_attempt_at TIMESTAMPTZ,delivered_at TIMESTAMPTZ,last_error_code TEXT NOT NULL DEFAULT '',created_at TIMESTAMPTZ NOT NULL DEFAULT now(),updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),UNIQUE(organization_id,booking_id,event_type))",
+  "CREATE INDEX IF NOT EXISTS staff_booking_notification_due_idx ON staff_booking_notification_outbox(status,next_attempt_at) WHERE status IN ('pending','processing')",
   "CREATE TABLE IF NOT EXISTS payment_webhook_events(id UUID PRIMARY KEY DEFAULT gen_random_uuid(),organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,provider TEXT NOT NULL,external_event_id TEXT NOT NULL,payload_sha256 CHAR(64) NOT NULL,received_at TIMESTAMPTZ NOT NULL DEFAULT now(),status TEXT NOT NULL DEFAULT 'received' CHECK(status IN ('received','processed','ignored','failed')),processed_at TIMESTAMPTZ,UNIQUE(organization_id,provider,external_event_id))",
   "CREATE INDEX IF NOT EXISTS payment_webhook_events_org_time_idx ON payment_webhook_events(organization_id,received_at DESC)"
 ];
@@ -294,6 +296,70 @@ async function recordPmsOutcome(db, organizationId, bookingId, provider, outcome
 }
 
 /**
+ * Reconcile an uncertain PMS submission using an authoritative, normalized
+ * lookup result. This never creates or resubmits a provider reservation.
+ * The stored provider/reference must match the lookup result exactly.
+ */
+async function recordReconciledPmsOutcome(db, organizationId, bookingId, provider, lookup) {
+  if (typeof organizationId !== "string" || !organizationId ||
+      typeof bookingId !== "string" || !bookingId ||
+      !/^[a-z][a-z0-9_-]{1,39}$/.test(provider || "") ||
+      !lookup || typeof lookup.bookingId !== "string" ||
+      !lookup.bookingId.trim() || lookup.bookingId.length > 160 ||
+      !["confirmed", "pending", "not_found"].includes(lookup.status)) {
+    fail("INVALID_PMS_RECONCILIATION", "A valid authoritative PMS lookup result is required.");
+  }
+  const reference = lookup.bookingId.trim();
+  if (/[\x00-\x1f\x7f]/.test(reference)) {
+    fail("INVALID_PMS_REFERENCE", "The PMS reservation reference is invalid.");
+  }
+  return inTransaction(db, async client => {
+    const found = await client.query(
+      "SELECT id,state,pms_provider,pms_booking_id FROM hotel_bookings WHERE id=$1 AND organization_id=$2 FOR UPDATE",
+      [bookingId, organizationId]
+    );
+    if (!found.rowCount) fail("BOOKING_NOT_FOUND", "The booking was not found for this hotel.", 404);
+    const row = found.rows[0];
+    if (row.state === "confirmed") {
+      if (row.pms_provider === provider && row.pms_booking_id === reference && lookup.status === "confirmed") {
+        return { state: "confirmed", duplicate: true };
+      }
+      fail("BOOKING_ALREADY_CONFIRMED", "A confirmed reservation cannot be overwritten.", 409);
+    }
+    if (row.state !== "booking_pending" || row.pms_provider !== provider ||
+        row.pms_booking_id !== reference) {
+      fail("PMS_RECONCILIATION_MISMATCH", "The lookup does not match this booking's stored pending PMS reservation.", 409);
+    }
+    const attempt = await client.query(
+      "SELECT provider,status,pms_booking_id FROM hotel_pms_booking_attempts WHERE organization_id=$1 AND booking_id=$2 FOR UPDATE",
+      [organizationId, bookingId]
+    );
+    if (!attempt.rowCount || attempt.rows[0].provider !== provider ||
+        attempt.rows[0].status !== "pending" || attempt.rows[0].pms_booking_id !== reference) {
+      fail("PMS_ATTEMPT_NOT_RECONCILABLE", "The matching pending PMS attempt could not be verified.", 409);
+    }
+    if (lookup.status === "confirmed") {
+      await client.query(
+        "UPDATE hotel_bookings SET state='confirmed',last_error_code='',updated_at=now() WHERE id=$1 AND organization_id=$2 AND state='booking_pending' AND pms_provider=$3 AND pms_booking_id=$4",
+        [bookingId, organizationId, provider, reference]
+      );
+      await client.query(
+        "UPDATE hotel_pms_booking_attempts SET status='confirmed',updated_at=now() WHERE organization_id=$1 AND booking_id=$2 AND provider=$3 AND status='pending' AND pms_booking_id=$4",
+        [organizationId, bookingId, provider, reference]
+      );
+      return { state: "confirmed", duplicate: false };
+    }
+    if (lookup.status === "not_found") {
+      await client.query(
+        "UPDATE hotel_bookings SET last_error_code='pms_lookup_not_found',updated_at=now() WHERE id=$1 AND organization_id=$2 AND state='booking_pending' AND pms_provider=$3 AND pms_booking_id=$4",
+        [bookingId, organizationId, provider, reference]
+      );
+    }
+    return { state: "booking_pending", duplicate: false, lookupStatus: lookup.status };
+  });
+}
+
+/**
  * Call only after the provider-specific webhook signature and event schema
  * have been verified. This function independently checks tenant, amount,
  * currency, provider payment ID and booking state in one database transaction.
@@ -381,4 +447,5 @@ module.exports = {
   claimPmsBookingAttempt,
   recordVerifiedDeposit,
   recordPmsOutcome,
+  recordReconciledPmsOutcome,
 };

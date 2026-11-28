@@ -257,7 +257,7 @@ try {
   assert.equal(retentionCleanupBody.remainingEligible, 2, "retention cleanup must report the two eligible rows still awaiting a later batch");
   assert.equal(retentionCleanupBody.hasMore, true, "retention cleanup must indicate that more eligible work remains");
   const retentionRemainingA = await pool.query(
-    "SELECT count(*)::int AS count FROM conversations WHERE organization_id=$1 AND status='resolved' AND last_message_at<now()-($2::int*interval '1 day')",
+    "SELECT count(*)::int AS count FROM conversations c WHERE c.organization_id=$1 AND c.status='resolved' AND c.last_message_at<now()-($2::int*interval '1 day') AND NOT EXISTS(SELECT 1 FROM escalations e WHERE e.conversation_id=c.id AND e.status<>'resolved')",
     [retentionOrgA, retentionDays]
   );
   assert.equal(retentionRemainingA.rows[0].count, 2, "exactly two eligible tenant A conversations must remain after the first batch");

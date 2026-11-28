@@ -85,6 +85,51 @@ test("Microsoft live reader retains the selected SharePoint site context", async
   assert.deepEqual(db.calls[0].params, ["hotel-beta", "microsoft"]);
 });
 
+test("live reader refreshes expired provider credentials and persists the encrypted rotation", async () => {
+  const key = crypto.randomBytes(32).toString("base64");
+  const cipher = createTokenCipher(key);
+  const db = fakeDatabase(cipher.encrypt({
+    access_token: "expired-access",
+    refresh_token: "refresh-token",
+    expires_at: Date.now() - 1000,
+  }));
+  const oldId = process.env.GOOGLE_OAUTH_CLIENT_ID;
+  const oldSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET;
+  process.env.GOOGLE_OAUTH_CLIENT_ID = "test-client";
+  process.env.GOOGLE_OAUTH_CLIENT_SECRET = "test-secret";
+  const calls = [];
+  const fetchImpl = async (url, options = {}) => {
+    const value = String(url);
+    calls.push({ url: value, options });
+    if (value === "https://oauth2.googleapis.com/token") {
+      return response(JSON.stringify({ access_token: "fresh-access", refresh_token: "rotated-refresh", expires_in: 3600 }));
+    }
+    if (value.includes("/drive/v3/files/file-refresh?")) {
+      return response(JSON.stringify({ id: "file-refresh", name: "Refreshed policy", mimeType: "text/plain" }));
+    }
+    if (value.includes("alt=media")) return response("Fresh source contents.");
+    throw new Error("Unexpected provider request: " + value);
+  };
+  try {
+    const reader = createStorageKnowledgeReader({ db, fetchImpl, encryptionKey: key });
+    const document = await reader.read({ organizationId: "hotel-delta", sourceReference: "google:file-refresh" });
+    assert.equal(document.content, "Fresh source contents.");
+    assert.ok(calls[0].options.body.toString().includes("refresh_token=refresh-token"));
+    const update = db.calls.find(call => call.sql.startsWith("UPDATE storage_connections"));
+    assert.ok(update, "rotated token must be persisted");
+    assert.equal(update.params[1], "hotel-delta");
+    assert.equal(update.params[2], "google");
+    const rotated = cipher.decrypt(update.params[0]);
+    assert.equal(rotated.access_token, "fresh-access");
+    assert.equal(rotated.refresh_token, "rotated-refresh");
+  } finally {
+    if (oldId === undefined) delete process.env.GOOGLE_OAUTH_CLIENT_ID;
+    else process.env.GOOGLE_OAUTH_CLIENT_ID = oldId;
+    if (oldSecret === undefined) delete process.env.GOOGLE_OAUTH_CLIENT_SECRET;
+    else process.env.GOOGLE_OAUTH_CLIENT_SECRET = oldSecret;
+  }
+});
+
 test("source reference parsing rejects malformed and unsupported providers", () => {
   assert.deepEqual(parseSourceReference("google:drive-123"), {
     provider: "google",

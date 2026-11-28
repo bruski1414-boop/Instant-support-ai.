@@ -286,7 +286,7 @@ try {
     "SELECT count(*)::int AS count FROM conversations WHERE organization_id=$1 AND ((status='resolved' AND last_message_at>=now()-($2::int*interval '1 day')) OR status='open')",
     [retentionOrgA, retentionDays]
   );
-  assert.equal(retentionProtectedA.rows[0].count, 2, "recent resolved and open conversations must be preserved");
+  assert.equal(retentionProtectedA.rows[0].count, 3, "the recent resolved conversation and both open conversations must be preserved");
   const retentionEscalationProtected = await pool.query(
     "SELECT c.id FROM conversations c JOIN escalations e ON e.conversation_id=c.id WHERE c.id=$1 AND c.organization_id=$2 AND c.status='resolved' AND e.status<>'resolved'",
     [escalatedRetentionCandidate.rows[0].id, retentionOrgA]

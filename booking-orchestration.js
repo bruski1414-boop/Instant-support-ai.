@@ -15,7 +15,9 @@ function validateVerifiedDeposit(booking, paymentEvidence) {
       paymentEvidence.currency.toUpperCase() !== booking.currency) {
     throw new PmsIntegrationError("DEPOSIT_EVIDENCE_MISMATCH", "The payment provider has not verified the exact deposit amount and currency for this booking.", 409);
   }
-  if (!Number.isSafeInteger(booking.depositAmountMinor) || booking.depositAmountMinor <= 0 ||
+  if (!Number.isSafeInteger(booking.totalAmountMinor) || booking.totalAmountMinor <= 0 ||
+      !Number.isSafeInteger(booking.depositAmountMinor) ||
+      booking.depositAmountMinor !== Math.ceil(booking.totalAmountMinor * 0.5) ||
       !/^[A-Z]{3}$/.test(booking.currency || "") ||
       typeof booking.idempotencyKey !== "string" ||
       !/^[A-Za-z0-9_-]{12,100}$/.test(booking.idempotencyKey)) {

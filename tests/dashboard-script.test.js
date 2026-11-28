@@ -15,6 +15,8 @@ test("hotel dashboard inline script parses without executing browser code", () =
   assert.match(applicationScript, /bookingOffset\+=50/);
   assert.match(applicationScript, /bookingPrevious/);
   assert.match(applicationScript, /data-action="reconcile-pms"/);
+  assert.match(applicationScript, /Manual PMS investigation required/);
+  assert.match(applicationScript, /do not submit another reservation/);
   assert.match(applicationScript, /api\("\/api\/admin\/bookings\/".*reconcile-pms/);
   assert.match(applicationScript, /includes\(currentRole\)/);
   assert.match(html, /id="panel-integrations"/);

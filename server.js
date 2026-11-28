@@ -20,7 +20,7 @@ const {createPmsCredentialVault}=require("./pms-credential-vault");
 const {createPaymentWebhookSecretVault,savePaymentWebhookSecret,disablePaymentWebhookConnection}=require("./payment-credential-vault");
 const {createPaymentWebhookRequestHandler}=require("./payment-webhook");
 const {BOOKING_SCHEMA}=require("./booking-repository");
-const {createReservationFromStoredBooking}=require("./booking-service");
+const {createVerifiedDepositPmsOrchestrator}=require("./booking-service");
 const {deliverStaffEscalation}=require("./staff-notifications");
 const {encryptWebhookConfig,decryptWebhookConfig,resolvePublicWebhook,postSignedWebhook}=require("./staff-webhook-security");
 function isValidReviewDueDate(value){
@@ -134,31 +134,11 @@ const paymentWebhookRequestHandler=createPaymentWebhookRequestHandler({
  db,
  vault:paymentWebhookSecretVault,
  providerVerifiers:{},
- onVerifiedDeposit:async({organizationId,bookingId})=>{
-  const current=await db.query("SELECT state FROM hotel_bookings WHERE id=$1 AND organization_id=$2",[bookingId,organizationId]);
-  if(!current.rowCount)return {state:"booking_pending",confirmed:false,requiresStaffReview:true,reason:"booking_not_found"};
-  if(current.rows[0].state==="booking_pending"||current.rows[0].state==="confirmed"){
-   return {state:current.rows[0].state,confirmed:current.rows[0].state==="confirmed",requiresStaffReview:current.rows[0].state!=="confirmed"};
-  }
-  if(current.rows[0].state!=="payment_verified"){
-   return {state:current.rows[0].state,confirmed:false,requiresStaffReview:true,reason:"payment_not_verified"};
-  }
-  const connection=await db.query("SELECT provider,encrypted_credentials FROM pms_connections WHERE organization_id=$1 AND status='connected' ORDER BY connected_at DESC LIMIT 1",[organizationId]);
-  if(!connection.rowCount){
-   return {state:"payment_verified",confirmed:false,requiresStaffReview:true,reason:"pms_connection_missing"};
-  }
-  let credentials;
-  try{credentials=pmsCredentialVault.decrypt(connection.rows[0].encrypted_credentials);}
-  catch{return {state:"payment_verified",confirmed:false,requiresStaffReview:true,reason:"pms_credentials_unavailable"};}
-  const pms={
-   createBooking:(provider,input,context={})=>pmsRegistry.createBooking(provider,input,{...context,credentials})
-  };
-  return createReservationFromStoredBooking({
-   db,organizationId,bookingId,
-   provider:connection.rows[0].provider,
-   pms,context:{credentials}
-  });
- }
+ onVerifiedDeposit:createVerifiedDepositPmsOrchestrator({
+  db,
+  vault:pmsCredentialVault,
+  pmsRegistry,
+ })
 });
 const paymentWebhookLimiter=rateLimit({windowMs:60000,limit:30,standardHeaders:"draft-7",legacyHeaders:false});
 app.post("/api/public/payments/:endpointToken",requireDb,paymentWebhookLimiter,async(q,r)=>{

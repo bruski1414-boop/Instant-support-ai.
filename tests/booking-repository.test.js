@@ -6,6 +6,7 @@ const {
   normalizeBookingRecord,
   createBookingRecord,
   recordVerifiedDeposit,
+  loadVerifiedBookingForPms,
 } = require("../booking-repository");
 
 function validInput(overrides = {}) {
@@ -160,4 +161,44 @@ test("rejects payment events without verified signatures or matching tenant book
   await assert.rejects(() => recordVerifiedDeposit(db, "hotel-b", "testpay", {
     ...base, signatureVerified: true,
   }), e => e.code === "BOOKING_NOT_FOUND");
+});
+
+
+test("loads PMS booking and payment evidence only from the tenant-scoped persisted row", async () => {
+  const calls = [];
+  const db = { async query(sql, params) {
+    calls.push({ sql, params });
+    return { rowCount: 1, rows: [{
+      id: "booking-verified-1", state: "payment_verified",
+      idempotency_key: "booking_req_12345", guest_name: "Alex Guest",
+      guest_phone: "+66812345678", guest_email: "alex@example.test",
+      check_in: "2027-03-10", check_out: "2027-03-12",
+      room_type_id: "ocean-villa", guest_count: 2, currency: "THB",
+      total_amount_minor: "250001", deposit_amount_minor: "125001",
+      payment_provider: "testpay", payment_provider_payment_id: "pay_persisted_123",
+      payment_verified_at: "2026-11-28T10:00:00.000Z",
+    }] };
+  } };
+  const stored = await loadVerifiedBookingForPms(db, "hotel-a", "booking-verified-1");
+  assert.deepEqual(calls[0].params, ["booking-verified-1", "hotel-a"]);
+  assert.equal(stored.booking.totalAmountMinor, 250001);
+  assert.equal(stored.booking.depositAmountMinor, 125001);
+  assert.equal(stored.booking.guest.name, "Alex Guest");
+  assert.equal(stored.paymentEvidence.providerPaymentId, "pay_persisted_123");
+  assert.equal(stored.paymentEvidence.amountMinor, 125001);
+  assert.equal(stored.paymentProvider, "testpay");
+});
+
+test("refuses to load a booking for PMS when persisted payment is not verified", async () => {
+  const db = { async query() {
+    return { rowCount: 1, rows: [{
+      id: "booking-pending-1", state: "booking_pending",
+      payment_provider: "testpay", payment_provider_payment_id: "pay_123",
+      payment_verified_at: "2026-11-28T10:00:00.000Z",
+    }] };
+  } };
+  await assert.rejects(
+    () => loadVerifiedBookingForPms(db, "hotel-a", "booking-pending-1"),
+    e => e.code === "PAYMENT_NOT_VERIFIED"
+  );
 });

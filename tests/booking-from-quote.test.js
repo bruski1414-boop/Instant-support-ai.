@@ -34,7 +34,7 @@ function fixture({ quote = {}, tenant = "hotel-a" } = {}) {
   const client = {
     async query(sql, params = []) {
       state.calls.push({ sql, params });
-      if (["BEGIN", "COMMIT", "ROLLBACK"].includes(sql)) return { rowCount: 0, rows: [] };
+      if (["BEGIN", "COMMIT", "ROLLBACK"].includes(sql) || sql.startsWith("SELECT pg_advisory_xact_lock")) return { rowCount: 0, rows: [] };
       if (sql.startsWith("SELECT id,quote_id")) {
         const row = state.bookings.get(params[0] + ":" + params[1]);
         return { rowCount: row ? 1 : 0, rows: row ? [row] : [] };

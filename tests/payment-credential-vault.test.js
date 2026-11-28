@@ -21,7 +21,7 @@ test("fails closed when the dedicated encryption key is not configured", () => {
 });
 
 test("rejects short, oversized and whitespace-padded secrets", () => {
-  for (const value of ["short", " provider_webhook_secret_123", "provider_webhook_secret_123 ", "x".repeat(513), "a\\nbbbbbbbbbbbbbbbbb"]) {
+  for (const value of ["short", " provider_webhook_secret_123", "provider_webhook_secret_123 ", "x".repeat(513), "a\nbbbbbbbbbbbbbbbbb"]) {
     assert.throws(() => validateWebhookSecret(value));
   }
 });

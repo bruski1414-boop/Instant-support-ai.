@@ -9,6 +9,7 @@ const {
   normalizeAvailability,
   normalizeBookingRequest,
   normalizeBooking,
+  normalizeBookingLookup,
   normalizeWebhookEvent,
   createHmacSha256Verifier,
   recordWebhookEvent,

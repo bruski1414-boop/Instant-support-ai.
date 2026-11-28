@@ -142,9 +142,9 @@ app.put("/api/admin/payment-connections/:provider",requireDb,auth,role("owner","
   const secret=q.body?.webhookSecret;
   if(!/^[a-z][a-z0-9_-]{1,39}$/.test(provider))return r.status(400).json({error:"Invalid payment provider identifier."});
   if(typeof secret!=="string")return r.status(400).json({error:"A provider webhook secret is required."});
-  await savePaymentWebhookSecret({db,organizationId:q.actor.organization_id,provider,secret,connectedBy:q.actor.user_id,vault:paymentWebhookSecretVault});
+  const result=await savePaymentWebhookSecret({db,organizationId:q.actor.organization_id,provider,secret,connectedBy:q.actor.user_id,vault:paymentWebhookSecretVault});
   await audit(q.actor,"payment_connection.configured","payment_connection",provider);
-  r.json({configured:true,provider,message:"Webhook secret encrypted and stored. The secret will not be returned."});
+  r.json({configured:true,provider,webhookEndpointToken:result.endpointToken,message:"Save this webhook endpoint token securely; it is shown only once. The provider secret itself is never returned."});
  }catch(e){
   if(/PAYMENT_WEBHOOK_ENCRYPTION_KEY|encryption key/i.test(e.message||""))return r.status(503).json({error:"Payment credential encryption is not configured."});
   if(/webhook secret/i.test(e.message||""))return r.status(400).json({error:"The provider webhook secret is invalid."});

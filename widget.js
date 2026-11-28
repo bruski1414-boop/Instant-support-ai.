@@ -56,7 +56,7 @@
       if(!response.ok||data.availabilityStatus!=="checked")throw new Error(data.error||"Availability could not be verified. Please contact hotel staff.");
       if(!Array.isArray(data.quotes)||!data.quotes.length)throw new Error("No bookable room quotes were returned. Please contact hotel staff.");
       data.quotes.forEach(function(q){var option=document.createElement("option");option.value=q.quoteId;var amount;try{amount=new Intl.NumberFormat(undefined,{style:"currency",currency:q.currency}).format(Number(q.amountMinor)/100);}catch(_){amount=q.currency+" "+(Number(q.amountMinor)/100).toFixed(2);}option.textContent=q.roomTypeName+" — "+amount+" total";quoteSelect.appendChild(option);});
-      selectedQuote=data.quotes[0];quoteSelect.hidden=false;quoteSelect.addEventListener("change",function(){selectedQuote=data.quotes.find(function(q){return q.quoteId===quoteSelect.value;})||null;requestKey=null;updateRequestButton();});
+      selectedQuote=data.quotes[0];quoteSelect.hidden=false;quoteSelect.onchange=function(){selectedQuote=data.quotes.find(function(q){return q.quoteId===quoteSelect.value;})||null;requestKey=null;updateRequestButton();};
       setBookingStatus("Availability checked. Select a room and enter your contact details to send a request. Quotes expire shortly.");
       updateRequestButton();
     }catch(err){setBookingStatus(err.message);}

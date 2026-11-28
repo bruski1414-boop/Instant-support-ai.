@@ -85,7 +85,7 @@ test("endpoint handler rejects unknown tokens and providers without an adapter",
   const unsupported = createPaymentWebhookRequestHandler({
     db: { async query(_sql, params) {
       assert.equal(params[0], tokenHash);
-      return { rowCount: 1, rows: [{ organization_id: "tenant-a", provider: "futurepay", encrypted_webhook_secret: "ciphertext" }] };
+      return { rowCount: 1, rows: [{ organization_id: "tenant-a", provider: "constructor", encrypted_webhook_secret: "ciphertext" }] };
     }},
     vault: { configured: true, decrypt: () => "secret-long-enough-for-test" },
     providerVerifiers: {},

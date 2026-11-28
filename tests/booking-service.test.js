@@ -211,6 +211,7 @@ test("live availability uses only the tenant's connected PMS and decrypted crede
     organizationId: "hotel-a",
     checkIn: "2027-02-10",
     checkOut: "2027-02-12",
+    guestCount: 3,
     vault: { decrypt(value) { assert.equal(value, "ciphertext"); return { accessToken: "secret" }; } },
     pmsRegistry: {
       async getAvailability(provider, dates, context) {
@@ -223,7 +224,7 @@ test("live availability uses only the tenant's connected PMS and decrypted crede
   assert.deepEqual(calls[0].params, ["hotel-a"]);
   assert.match(calls[0].sql, /organization_id=\$1 AND status='connected'/);
   assert.equal(registryArgs.provider, "mews");
-  assert.deepEqual(registryArgs.dates, { checkIn: "2027-02-10", checkOut: "2027-02-12" });
+  assert.deepEqual(registryArgs.dates, { checkIn: "2027-02-10", checkOut: "2027-02-12", guestCount: 3 });
   assert.deepEqual(registryArgs.context, { credentials: { accessToken: "secret" }, organizationId: "hotel-a" });
   assert.equal(result.status, "checked");
   assert.equal(result.rooms[0].availableUnits, 2);
@@ -284,4 +285,19 @@ test("booking orchestrator can be constructed in demo mode but refuses invocatio
     () => orchestrator({ organizationId: "hotel-a", bookingId: "booking-1" }),
     error => error.code === "PMS_ORCHESTRATOR_NOT_CONFIGURED"
   );
+});
+
+
+test("availability rejects invalid guest counts before reading a hotel's PMS connection", async () => {
+  let queries = 0;
+  await assert.rejects(() => getHotelAvailability({
+    db: { async query() { queries += 1; return { rowCount: 0, rows: [] }; } },
+    organizationId: "hotel-a",
+    checkIn: "2027-02-10",
+    checkOut: "2027-02-12",
+    guestCount: 21,
+    vault: { decrypt() { return {}; } },
+    pmsRegistry: { async getAvailability() { return []; } },
+  }), error => error.code === "INVALID_GUEST_COUNT");
+  assert.equal(queries, 0);
 });

@@ -65,6 +65,12 @@ test("stores only encrypted secrets and scopes lookups to the hotel and provider
   assert.equal(await loadPaymentWebhookSecret({ db, organizationId: "hotel-b", provider: "testpay", vault }), "secret_for_hotel_b_123");
   assert.equal((await loadPaymentConnectionByEndpointToken({ db, endpointToken: savedA.endpointToken, vault })).organizationId, "hotel-a");
   assert.equal((await loadPaymentConnectionByEndpointToken({ db, endpointToken: savedB.endpointToken, vault })).secret, "secret_for_hotel_b_123");
+  assert.notEqual(savedA.endpointToken, savedB.endpointToken);
+  assert.notEqual(rows.get("hotel-a:testpay").webhook_endpoint_token_hash, savedA.endpointToken);
+  const rotatedA = await savePaymentWebhookSecret({ db, organizationId: "hotel-a", provider: "testpay", secret: "rotated_secret_for_hotel_a_123", vault });
+  assert.notEqual(rotatedA.endpointToken, savedA.endpointToken);
+  assert.equal(await loadPaymentConnectionByEndpointToken({ db, endpointToken: savedA.endpointToken, vault }), null);
+  assert.equal((await loadPaymentConnectionByEndpointToken({ db, endpointToken: rotatedA.endpointToken, vault })).secret, "rotated_secret_for_hotel_a_123");
   assert.equal(await loadPaymentConnectionByEndpointToken({ db, endpointToken: "unknown_endpoint_token_12345678901234567890", vault }), null);
   assert.equal(await loadPaymentWebhookSecret({ db, organizationId: "hotel-c", provider: "testpay", vault }), null);
   assert.deepEqual(await disablePaymentWebhookConnection({ db, organizationId: "hotel-a", provider: "testpay", vault }), { disabled: true, provider: "testpay" });

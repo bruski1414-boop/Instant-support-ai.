@@ -45,6 +45,10 @@ test("booking requests require an idempotency key and bounded guest count", () =
   assert.throws(() => normalizeBookingRequest({
     checkIn: "2027-01-10", checkOut: "2027-01-12", roomTypeId: "deluxe", guestCount: 21, idempotencyKey: "booking_req_12345",
   }), PmsIntegrationError);
+  assert.throws(() => normalizeBookingRequest({
+    checkIn: "2027-01-10", checkOut: "2027-01-12", roomTypeId: "deluxe", guestCount: 2,
+    guest: { name: "Alex Guest", phone: "not-a-phone" }, idempotencyKey: "booking_req_12345",
+  }), PmsIntegrationError);
 });
 
 test("booking responses expose only a validated provider ID and status", () => {

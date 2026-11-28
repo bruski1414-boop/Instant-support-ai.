@@ -423,7 +423,7 @@ app.post("/api/public/:slug/booking-requests",async(q,r,n)=>{
   });
  }catch(e){
   const clientErrors=new Set(["INVALID_BOOKING_TENANT","INVALID_BOOKING_REQUEST","INVALID_GUEST_DETAILS","INVALID_GUEST_NAME","INVALID_GUEST_PHONE","INVALID_GUEST_EMAIL","BOOKING_IDEMPOTENCY_COLLISION","QUOTE_INVALID_OR_EXPIRED","QUOTE_ALREADY_USED","INVALID_STORED_QUOTE"]);
-  if(clientErrors.has(e?.code))return r.status(e.statusCode|| (e.code==="INVALID_BOOKING_TENANT"?400:409)).json({error:e.message,code:e.code});
+  if(clientErrors.has(e?.code))return r.status(e.status|| (e.code==="INVALID_BOOKING_TENANT"?400:409)).json({error:e.message,code:e.code});
   n(e);
  }
 });

@@ -130,7 +130,7 @@ async function createBookingRecordFromQuote(db, organizationId, input = {}) {
       return { created: false, bookingId: row.id, state: row.state };
     }
     const selected = await client.query(
-      "SELECT id,room_type_id,check_in::text,check_out::text,guest_count,currency,amount_minor::text,available_units FROM hotel_availability_quotes WHERE id=$1 AND organization_id=$2 AND consumed_at IS NULL AND expires_at>now() FOR UPDATE",
+      "SELECT id,room_type_id,check_in::text,check_out::text,guest_count,currency,amount_minor::text,available_units FROM hotel_availability_quotes WHERE id=$1 AND organization_id=$2 AND consumed_at IS NULL AND expires_at>now() AND checked_at>now()-interval '5 minutes' FOR UPDATE",
       [quoteId,organizationId]
     );
     if (!selected.rowCount) fail("QUOTE_INVALID_OR_EXPIRED", "This room quote has expired or is no longer available. Please check availability again.", 409);
@@ -146,7 +146,7 @@ async function createBookingRecordFromQuote(db, organizationId, input = {}) {
     }
     const amounts = calculateDeposit(totalAmountMinor, 50);
     const consumed = await client.query(
-      "UPDATE hotel_availability_quotes SET consumed_at=now() WHERE id=$1 AND organization_id=$2 AND consumed_at IS NULL AND expires_at>now() RETURNING id",
+      "UPDATE hotel_availability_quotes SET consumed_at=now() WHERE id=$1 AND organization_id=$2 AND consumed_at IS NULL AND expires_at>now() AND checked_at>now()-interval '5 minutes' RETURNING id",
       [quoteId,organizationId]
     );
     if (!consumed.rowCount) fail("QUOTE_ALREADY_USED", "This room quote has already been used. Please check availability again.", 409);

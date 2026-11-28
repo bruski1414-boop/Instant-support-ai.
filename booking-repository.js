@@ -9,7 +9,9 @@ const BOOKING_SCHEMA = [
   "ALTER TABLE organization_payment_connections ADD COLUMN IF NOT EXISTS webhook_endpoint_token_hash CHAR(64)",
   "ALTER TABLE organization_payment_connections ADD COLUMN IF NOT EXISTS connected_at TIMESTAMPTZ",
   "CREATE UNIQUE INDEX IF NOT EXISTS organization_payment_endpoint_token_idx ON organization_payment_connections(webhook_endpoint_token_hash) WHERE webhook_endpoint_token_hash IS NOT NULL",
-  "CREATE TABLE IF NOT EXISTS hotel_bookings(id UUID PRIMARY KEY DEFAULT gen_random_uuid(),organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,idempotency_key TEXT NOT NULL,guest_name TEXT NOT NULL,guest_phone TEXT NOT NULL,guest_email TEXT,check_in DATE NOT NULL,check_out DATE NOT NULL,room_type_id TEXT NOT NULL,guest_count INTEGER NOT NULL CHECK(guest_count BETWEEN 1 AND 20),currency CHAR(3) NOT NULL,total_amount_minor BIGINT NOT NULL CHECK(total_amount_minor>0),deposit_amount_minor BIGINT NOT NULL CHECK(deposit_amount_minor>0),balance_amount_minor BIGINT NOT NULL CHECK(balance_amount_minor>=0),state TEXT NOT NULL DEFAULT 'awaiting_payment' CHECK(state IN ('awaiting_payment','payment_pending','payment_verified','booking_pending','confirmed','payment_failed','booking_failed','cancelled')),payment_provider TEXT,payment_provider_payment_id TEXT,payment_verified_at TIMESTAMPTZ,pms_provider TEXT,pms_booking_id TEXT,last_error_code TEXT NOT NULL DEFAULT '',created_at TIMESTAMPTZ NOT NULL DEFAULT now(),updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),UNIQUE(organization_id,idempotency_key),CHECK(deposit_amount_minor+balance_amount_minor=total_amount_minor))",
+  "CREATE TABLE IF NOT EXISTS hotel_bookings(id UUID PRIMARY KEY DEFAULT gen_random_uuid(),organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,quote_id UUID,idempotency_key TEXT NOT NULL,guest_name TEXT NOT NULL,guest_phone TEXT NOT NULL,guest_email TEXT,check_in DATE NOT NULL,check_out DATE NOT NULL,room_type_id TEXT NOT NULL,guest_count INTEGER NOT NULL CHECK(guest_count BETWEEN 1 AND 20),currency CHAR(3) NOT NULL,total_amount_minor BIGINT NOT NULL CHECK(total_amount_minor>0),deposit_amount_minor BIGINT NOT NULL CHECK(deposit_amount_minor>0),balance_amount_minor BIGINT NOT NULL CHECK(balance_amount_minor>=0),state TEXT NOT NULL DEFAULT 'awaiting_payment' CHECK(state IN ('awaiting_payment','payment_pending','payment_verified','booking_pending','confirmed','payment_failed','booking_failed','cancelled')),payment_provider TEXT,payment_provider_payment_id TEXT,payment_verified_at TIMESTAMPTZ,pms_provider TEXT,pms_booking_id TEXT,last_error_code TEXT NOT NULL DEFAULT '',created_at TIMESTAMPTZ NOT NULL DEFAULT now(),updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),UNIQUE(organization_id,idempotency_key),CHECK(deposit_amount_minor+balance_amount_minor=total_amount_minor))",
+  "ALTER TABLE hotel_bookings ADD COLUMN IF NOT EXISTS quote_id UUID",
+  "CREATE UNIQUE INDEX IF NOT EXISTS hotel_bookings_quote_idx ON hotel_bookings(organization_id,quote_id) WHERE quote_id IS NOT NULL",
   "CREATE UNIQUE INDEX IF NOT EXISTS hotel_bookings_payment_reference_idx ON hotel_bookings(organization_id,payment_provider,payment_provider_payment_id) WHERE payment_provider_payment_id IS NOT NULL",
   "CREATE UNIQUE INDEX IF NOT EXISTS hotel_bookings_pms_reference_idx ON hotel_bookings(organization_id,pms_provider,pms_booking_id) WHERE pms_booking_id IS NOT NULL",
   "CREATE INDEX IF NOT EXISTS hotel_bookings_org_state_time_idx ON hotel_bookings(organization_id,state,created_at DESC)",
@@ -99,6 +101,62 @@ async function createBookingRecord(db, organizationId, input) {
  * Both records come from the tenant-scoped database row; webhook/client fields
  * are never accepted as a source of booking amounts or payment identity.
  */
+
+/**
+ * Create a booking from a persisted tenant-owned PMS quote. Price, room and
+ * stay details are read under a row lock; no commercial fields come from guest input.
+ */
+async function createBookingRecordFromQuote(db, organizationId, input = {}) {
+  if (typeof organizationId !== "string" || !organizationId) fail("INVALID_BOOKING_TENANT", "A hotel workspace is required.");
+  const quoteId = typeof input.quoteId === "string" ? input.quoteId.trim() : "";
+  const idempotencyKey = typeof input.idempotencyKey === "string" ? input.idempotencyKey.trim() : "";
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(quoteId) ||
+      !/^[A-Za-z0-9_-]{12,100}$/.test(idempotencyKey)) {
+    fail("INVALID_BOOKING_REQUEST", "A valid quote reference and request key are required.");
+  }
+  const guest = normalizeGuestDetails(input.guest);
+  return inTransaction(db, async client => {
+    const existing = await client.query(
+      "SELECT id,quote_id,guest_name,guest_phone,guest_email,state FROM hotel_bookings WHERE organization_id=$1 AND idempotency_key=$2 FOR UPDATE",
+      [organizationId,idempotencyKey]
+    );
+    if (existing.rowCount) {
+      const row = existing.rows[0];
+      if (row.quote_id !== quoteId || row.guest_name !== guest.name ||
+          row.guest_phone !== guest.phone || (row.guest_email || null) !== (guest.email || null)) {
+        fail("BOOKING_IDEMPOTENCY_COLLISION", "This request key was already used for different booking details.", 409);
+      }
+      return { created: false, bookingId: row.id, state: row.state };
+    }
+    const selected = await client.query(
+      "SELECT id,room_type_id,check_in::text,check_out::text,guest_count,currency,amount_minor::text,available_units FROM hotel_availability_quotes WHERE id=$1 AND organization_id=$2 AND consumed_at IS NULL AND expires_at>now() FOR UPDATE",
+      [quoteId,organizationId]
+    );
+    if (!selected.rowCount) fail("QUOTE_INVALID_OR_EXPIRED", "This room quote has expired or is no longer available. Please check availability again.", 409);
+    const quote = selected.rows[0];
+    const totalAmountMinor = Number(quote.amount_minor);
+    const guestCount = Number(quote.guest_count);
+    const availableUnits = Number(quote.available_units);
+    const currency = String(quote.currency).trim();
+    if (!Number.isSafeInteger(totalAmountMinor) || totalAmountMinor <= 0 ||
+        !Number.isInteger(guestCount) || guestCount < 1 || guestCount > 20 ||
+        !Number.isInteger(availableUnits) || availableUnits < 1 || !/^[A-Z]{3}$/.test(currency)) {
+      fail("INVALID_STORED_QUOTE", "The stored room quote is invalid and cannot be booked.", 409);
+    }
+    const amounts = calculateDeposit(totalAmountMinor, 50);
+    const consumed = await client.query(
+      "UPDATE hotel_availability_quotes SET consumed_at=now() WHERE id=$1 AND organization_id=$2 AND consumed_at IS NULL AND expires_at>now() RETURNING id",
+      [quoteId,organizationId]
+    );
+    if (!consumed.rowCount) fail("QUOTE_ALREADY_USED", "This room quote has already been used. Please check availability again.", 409);
+    const inserted = await client.query(
+      "INSERT INTO hotel_bookings(organization_id,quote_id,idempotency_key,guest_name,guest_phone,guest_email,check_in,check_out,room_type_id,guest_count,currency,total_amount_minor,deposit_amount_minor,balance_amount_minor,state) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'awaiting_payment') RETURNING id,state",
+      [organizationId,quoteId,idempotencyKey,guest.name,guest.phone,guest.email,quote.check_in,quote.check_out,quote.room_type_id,guestCount,currency,totalAmountMinor,amounts.depositAmountMinor,amounts.balanceAmountMinor]
+    );
+    return { created: true, bookingId: inserted.rows[0].id, state: inserted.rows[0].state, currency, totalAmountMinor, depositAmountMinor: amounts.depositAmountMinor, balanceAmountMinor: amounts.balanceAmountMinor };
+  });
+}
+
 async function loadVerifiedBookingForPms(db, organizationId, bookingId) {
   if (typeof organizationId !== "string" || !organizationId ||
       typeof bookingId !== "string" || !bookingId) {
@@ -317,6 +375,7 @@ module.exports = {
   BOOKING_SCHEMA,
   normalizeBookingRecord,
   createBookingRecord,
+  createBookingRecordFromQuote,
   loadVerifiedBookingForPms,
   claimPmsBookingAttempt,
   recordVerifiedDeposit,

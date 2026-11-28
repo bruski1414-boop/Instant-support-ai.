@@ -35,7 +35,7 @@ function validateConnectionInput({ db, organizationId, provider, vault }) {
       typeof organizationId !== "string" || !organizationId ||
       !/^[a-z][a-z0-9_-]{1,39}$/.test(provider || "") ||
       !vault || vault.configured !== true) {
-    throw new Error("Payment connection storage is not configured.");
+    throw new Error("Payment connection storage or PAYMENT_WEBHOOK_ENCRYPTION_KEY is not configured.");
   }
 }
 

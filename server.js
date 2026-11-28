@@ -17,6 +17,7 @@ const {selectRelevantOffers,buildOfferContext}=require("./hotel-offers");
 const {buildPilotReadiness}=require("./pilot-readiness");
 const {PmsIntegrationError,createPmsRegistry,createSandboxAdapter}=require("./pms-integration");
 const {createPmsCredentialVault}=require("./pms-credential-vault");
+const {createPaymentWebhookSecretVault,savePaymentWebhookSecret,disablePaymentWebhookConnection}=require("./payment-credential-vault");
 const {BOOKING_SCHEMA}=require("./booking-repository");
 const {deliverStaffEscalation}=require("./staff-notifications");
 const {encryptWebhookConfig,decryptWebhookConfig,resolvePublicWebhook,postSignedWebhook}=require("./staff-webhook-security");
@@ -34,6 +35,7 @@ const db=process.env.DATABASE_URL?new Pool({connectionString:process.env.DATABAS
 const storageKnowledgeReader=db?createStorageKnowledgeReader({db}):null;
 const pmsRegistry=createPmsRegistry([createSandboxAdapter()]);
 const pmsCredentialVault=createPmsCredentialVault();
+const paymentWebhookSecretVault=createPaymentWebhookSecretVault();
 const scrypt=promisify(crypto.scrypt);
 const prod=process.env.NODE_ENV==="production";
 const cookie=prod?"__Host-veyra_session":"veyra_session";
@@ -126,6 +128,41 @@ async function auth(q,r,n){
 function role(){const ok=Array.from(arguments);return(q,r,n)=>ok.includes(q.actor.role)?n():r.status(403).json({error:"Insufficient permissions."});}
 async function audit(a,action,type,id){await db.query("INSERT INTO audit_logs(organization_id,actor_user_id,action,target_type,target_id) VALUES($1,$2,$3,$4,$5)",[a.organization_id,a.user_id,action,type||null,id||null]);}
 app.use("/api/admin/storage",requireDb,createStorageRouter({db,auth,role,audit}));
+const paymentConnectionLimiter=rateLimit({windowMs:900000,limit:10,standardHeaders:"draft-7",legacyHeaders:false});
+app.use("/api/admin/payment-connections",paymentConnectionLimiter);
+app.get("/api/admin/payment-connections",requireDb,auth,role("owner","admin"),async(q,r,n)=>{
+ try{
+  const x=await db.query("SELECT provider,status,connected_at,updated_at FROM organization_payment_connections WHERE organization_id=$1 ORDER BY provider",[q.actor.organization_id]);
+  r.json({connections:x.rows.map(row=>({provider:row.provider,status:row.status,connectedAt:row.connected_at,updatedAt:row.updated_at}))});
+ }catch(e){n(e);}
+});
+app.put("/api/admin/payment-connections/:provider",requireDb,auth,role("owner","admin"),async(q,r,n)=>{
+ try{
+  const provider=String(q.params.provider||"");
+  const secret=q.body?.webhookSecret;
+  if(!/^[a-z][a-z0-9_-]{1,39}$/.test(provider))return r.status(400).json({error:"Invalid payment provider identifier."});
+  if(typeof secret!=="string")return r.status(400).json({error:"A provider webhook secret is required."});
+  await savePaymentWebhookSecret({db,organizationId:q.actor.organization_id,provider,secret,connectedBy:q.actor.user_id,vault:paymentWebhookSecretVault});
+  await audit(q.actor,"payment_connection.configured","payment_connection",provider);
+  r.json({configured:true,provider,message:"Webhook secret encrypted and stored. The secret will not be returned."});
+ }catch(e){
+  if(/PAYMENT_WEBHOOK_ENCRYPTION_KEY|encryption key/i.test(e.message||""))return r.status(503).json({error:"Payment credential encryption is not configured."});
+  if(/webhook secret/i.test(e.message||""))return r.status(400).json({error:"The provider webhook secret is invalid."});
+  n(e);
+ }
+});
+app.delete("/api/admin/payment-connections/:provider",requireDb,auth,role("owner","admin"),async(q,r,n)=>{
+ try{
+  const provider=String(q.params.provider||"");
+  if(!/^[a-z][a-z0-9_-]{1,39}$/.test(provider))return r.status(400).json({error:"Invalid payment provider identifier."});
+  const result=await disablePaymentWebhookConnection({db,organizationId:q.actor.organization_id,provider,actorUserId:q.actor.user_id,vault:paymentWebhookSecretVault});
+  if(result.disabled)await audit(q.actor,"payment_connection.disabled","payment_connection",provider);
+  r.json({disabled:result.disabled,provider});
+ }catch(e){
+  if(/PAYMENT_WEBHOOK_ENCRYPTION_KEY|encryption key/i.test(e.message||""))return r.status(503).json({error:"Payment credential encryption is not configured."});
+  n(e);
+ }
+});
 const escalate=requiresStaffEscalation;
 async function notify(org,cid,reason){
  const saved=await db.query("SELECT encrypted_config FROM organization_staff_webhooks WHERE organization_id=$1 AND status='configured'",[org.id]);

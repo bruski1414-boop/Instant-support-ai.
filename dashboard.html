@@ -156,6 +156,16 @@ main{padding:28px clamp(16px,4vw,48px);max-width:1450px;width:100%;margin:auto}.
     <div class="sectionrow"><h2>Staff workload</h2><span class="muted">Assigned handoffs · last 30 days and current queue</span></div>
     <p class="muted" style="font-size:12px">Counts use the staff member currently assigned to each handoff. Unassigned handoffs are shown separately. This is a workload snapshot, not a measure of employee performance or quality.</p>
     <div class="card" style="overflow-x:auto"><table style="width:100%;border-collapse:collapse"><thead><tr><th align="left">Staff member</th><th align="right">Handoffs · 30d</th><th align="right">Open now</th><th align="right">Resolved · 30d</th></tr></thead><tbody id="performanceStaffWorkload"><tr><td colspan="4" class="empty">Loading staff workload…</td></tr></tbody></table></div>
+    <div class="sectionrow"><h2>Guest-confirmed resolution evidence</h2><span class="muted">Rolling 30 days · self-reported</span></div>
+    <p class="muted" style="font-size:12px">Guests may optionally confirm that their latest assistant response resolved the question. Self-service candidates require exactly one confirmation, no recorded staff message or escalation, and no later conversation message. These counts do not prove answer accuracy or causation; off-platform staff work may not be visible.</p>
+    <div class="grid">
+     <div class="card"><div class="metriclabel">GUEST-REPORTED RESOLUTIONS</div><div class="metric" id="performanceGuestConfirmed">—</div></div>
+     <div class="card"><div class="metriclabel">SELF-SERVICE CANDIDATES</div><div class="metric" id="performanceSelfServiceCandidates">—</div></div>
+     <div class="card"><div class="metriclabel">ASSISTED OR AMBIGUOUS</div><div class="metric" id="performanceAssistedOrAmbiguous">—</div></div>
+     <div class="card"><div class="metriclabel">POTENTIAL STAFF MINUTES AVOIDED</div><div class="metric" id="performancePotentialStaffMinutes">Not calculated</div></div>
+    </div>
+    <p class="muted" id="performanceResolutionWindow" style="font-size:11px">Reporting window: loading…</p>
+    <p class="muted" style="font-size:12px">Influenced conversations: not measured. Potential staff minutes avoided are not calculated until a reviewed hotel-specific historical active-handling-time baseline is connected. Guest confirmation is not an independent accuracy check.</p>
     <div class="sectionrow"><h2>Daily conversation volume</h2><span class="muted">Unique conversations per day</span></div>
    <div class="card" id="performanceDaily" style="display:grid;gap:10px"><div class="empty">Loading report…</div></div>
    <div class="sectionrow"><h2>Offer enquiry outcomes</h2><span class="muted">All-time recorded attributions</span></div>
@@ -449,7 +459,7 @@ async function loadConversationInsights(){
  $("insightDaily").innerHTML=render(d.daily||[],"day","conversations");
 }
 async function loadPerformanceReport(){
- const [insights,revenue]=await Promise.all([api("/api/admin/insights"),api("/api/admin/offer-attributions")]);
+ const [insights,revenue,resolution]=await Promise.all([api("/api/admin/insights"),api("/api/admin/offer-attributions"),api("/api/admin/resolution-evidence")]);
  const m=insights.metrics||{},totals=revenue.totals||[];
  $("performanceConversations").textContent=String(m.conversations_30d||0);
  $("performanceEscalated").textContent=String(m.currently_escalated||0);
@@ -460,6 +470,11 @@ async function loadPerformanceReport(){
  $("performanceLatencyP95").textContent=latency.p95_ms==null?"—":(Number(latency.p95_ms)/1000).toFixed(2)+" s";
  const workload=insights.staffWorkload||[];
  $("performanceStaffWorkload").innerHTML=workload.length?workload.map(x=>'<tr><td style="padding:9px 4px;border-top:1px solid #263449">'+safe(x.staff_member)+'<div class="muted" style="font-size:11px">'+safe(x.staff_role)+'</div></td><td align="right" style="padding:9px 4px;border-top:1px solid #263449">'+Number(x.handoffs_30d||0)+'</td><td align="right" style="padding:9px 4px;border-top:1px solid #263449">'+Number(x.currently_open||0)+'</td><td align="right" style="padding:9px 4px;border-top:1px solid #263449">'+Number(x.resolved_30d||0)+'</td></tr>').join(""):'<tr><td colspan="4" class="empty">No staff handoffs recorded in this period.</td></tr>';
+ $("performanceGuestConfirmed").textContent=String(resolution.guestReportedConversations??"—");
+ $("performanceSelfServiceCandidates").textContent=String(resolution.selfServiceCandidates??"—");
+ $("performanceAssistedOrAmbiguous").textContent=String(resolution.assistedOrAmbiguousConversations??"—");
+ $("performancePotentialStaffMinutes").textContent=resolution.potentialStaffMinutesAvoided?.status==="not_calculated"?"Not calculated":"—";
+ $("performanceResolutionWindow").textContent=resolution.windowStart&&resolution.windowEnd?"Exact 720-hour UTC window: "+resolution.windowStart+" to "+resolution.windowEnd+" (start inclusive, end exclusive).":"Reporting window unavailable.";
  const daily=insights.daily||[],max=Math.max(1,...daily.map(x=>Number(x.conversations||0)));
  $("performanceDaily").innerHTML=daily.length?daily.map(x=>{const count=Number(x.conversations||0),width=count?Math.max(2,count/max*100):0;return '<div style="display:grid;grid-template-columns:90px minmax(0,1fr) 35px;gap:9px;align-items:center"><span class="muted" style="font-size:11px">'+safe(x.day)+'</span><div style="height:9px;background:#263449;border-radius:8px;overflow:hidden"><div style="height:9px;width:'+width+'%;background:#78a9df;border-radius:8px"></div></div><strong style="text-align:right">'+count+'</strong></div>';}).join(""):'<div class="empty">No daily conversation data in this period.</div>';
  const enquiries=totals.reduce((sum,x)=>sum+Number(x.count||0),0);

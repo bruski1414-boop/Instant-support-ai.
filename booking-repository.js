@@ -93,6 +93,53 @@ async function createBookingRecord(db, organizationId, input) {
  * never as confirmed. Only a confirmed provider response with a reference can
  * transition the booking to confirmed.
  */
+/**
+ * Load the authoritative booking and payment evidence for PMS orchestration.
+ * Both records come from the tenant-scoped database row; webhook/client fields
+ * are never accepted as a source of booking amounts or payment identity.
+ */
+async function loadVerifiedBookingForPms(db, organizationId, bookingId) {
+  if (typeof organizationId !== "string" || !organizationId ||
+      typeof bookingId !== "string" || !bookingId) {
+    fail("INVALID_BOOKING_LOOKUP", "A hotel and booking reference are required.");
+  }
+  if (!db || typeof db.query !== "function") {
+    fail("DATABASE_UNAVAILABLE", "Booking storage is unavailable.", 503);
+  }
+  const result = await db.query(
+    "SELECT id,state,idempotency_key,guest_name,guest_phone,guest_email,check_in::text,check_out::text,room_type_id,guest_count,currency,total_amount_minor,deposit_amount_minor,payment_provider,payment_provider_payment_id,payment_verified_at FROM hotel_bookings WHERE id=$1 AND organization_id=$2",
+    [bookingId, organizationId]
+  );
+  if (!result.rowCount) fail("BOOKING_NOT_FOUND", "The booking was not found for this hotel.", 404);
+  const row = result.rows[0];
+  if (row.state !== "payment_verified" || !row.payment_verified_at ||
+      typeof row.payment_provider !== "string" || !row.payment_provider ||
+      typeof row.payment_provider_payment_id !== "string" || !row.payment_provider_payment_id) {
+    fail("PAYMENT_NOT_VERIFIED", "A persisted, verified deposit is required before PMS booking.", 409);
+  }
+  const booking = {
+    id: row.id,
+    state: row.state,
+    idempotencyKey: row.idempotency_key,
+    guest: { name: row.guest_name, phone: row.guest_phone, email: row.guest_email || "" },
+    checkIn: row.check_in,
+    checkOut: row.check_out,
+    roomTypeId: row.room_type_id,
+    guestCount: Number(row.guest_count),
+    currency: String(row.currency).trim(),
+    totalAmountMinor: Number(row.total_amount_minor),
+    depositAmountMinor: Number(row.deposit_amount_minor),
+  };
+  const paymentEvidence = {
+    verified: true,
+    status: "succeeded",
+    providerPaymentId: row.payment_provider_payment_id,
+    amountMinor: booking.depositAmountMinor,
+    currency: booking.currency,
+  };
+  return { booking, paymentEvidence, paymentProvider: row.payment_provider };
+}
+
 async function recordPmsOutcome(db, organizationId, bookingId, provider, outcome) {
   if (typeof organizationId !== "string" || !organizationId ||
       typeof bookingId !== "string" || !bookingId ||

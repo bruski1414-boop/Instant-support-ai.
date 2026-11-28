@@ -84,6 +84,48 @@ test("registry rejects duplicate or incomplete adapters and unknown providers", 
 });
 
 
+test("booking adapter receives normalized guest identity and the stable idempotency key", async () => {
+  let received;
+  const adapter = {
+    id: "guesttest",
+    name: "Guest identity test provider",
+    mode: "sandbox",
+    capabilities: { booking: true },
+    async testConnection() { return { ok: true }; },
+    async createBooking(request) {
+      received = request;
+      return { bookingId: "provider-reservation-1", status: "confirmed" };
+    },
+  };
+  const registry = createPmsRegistry([adapter]);
+  const result = await registry.createBooking("guesttest", {
+    checkIn: "2027-02-10",
+    checkOut: "2027-02-12",
+    roomTypeId: "ocean-villa",
+    guestCount: 2,
+    guest: {
+      name: "Alex Guest",
+      phone: "+66812345678",
+      email: "alex@example.test",
+    },
+    idempotencyKey: "booking_req_12345",
+  });
+
+  assert.deepEqual(received, {
+    checkIn: "2027-02-10",
+    checkOut: "2027-02-12",
+    roomTypeId: "ocean-villa",
+    guestCount: 2,
+    guest: {
+      name: "Alex Guest",
+      phone: "+66812345678",
+      email: "alex@example.test",
+    },
+    idempotencyKey: "booking_req_12345",
+  });
+  assert.deepEqual(result, { bookingId: "provider-reservation-1", status: "confirmed" });
+});
+
 test("webhook events are normalized, time-bounded and size-limited", () => {
   const now = new Date("2027-01-10T12:00:00.000Z");
   assert.deepEqual(normalizeWebhookEvent({

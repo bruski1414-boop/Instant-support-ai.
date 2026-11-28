@@ -306,7 +306,7 @@ async function recordReconciledPmsOutcome(db, organizationId, bookingId, provide
       !/^[a-z][a-z0-9_-]{1,39}$/.test(provider || "") ||
       !lookup || typeof lookup.bookingId !== "string" ||
       !lookup.bookingId.trim() || lookup.bookingId.length > 160 ||
-      !["confirmed", "pending"].includes(lookup.status)) {
+      !["confirmed", "pending", "not_found"].includes(lookup.status)) {
     fail("INVALID_PMS_RECONCILIATION", "A valid authoritative PMS lookup result is required.");
   }
   const reference = lookup.bookingId.trim();
@@ -349,7 +349,13 @@ async function recordReconciledPmsOutcome(db, organizationId, bookingId, provide
       );
       return { state: "confirmed", duplicate: false };
     }
-    return { state: "booking_pending", duplicate: false };
+    if (lookup.status === "not_found") {
+      await client.query(
+        "UPDATE hotel_bookings SET last_error_code='pms_lookup_not_found',updated_at=now() WHERE id=$1 AND organization_id=$2 AND state='booking_pending' AND pms_provider=$3 AND pms_booking_id=$4",
+        [bookingId, organizationId, provider, reference]
+      );
+    }
+    return { state: "booking_pending", duplicate: false, lookupStatus: lookup.status };
   });
 }
 

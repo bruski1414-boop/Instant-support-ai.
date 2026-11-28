@@ -550,3 +550,23 @@ test("public booking requests fail closed until guest-data privacy approval is e
   assert.ok(privacyGate >= 0, "booking route enforces guest-data privacy gate");
   assert.ok(bookingWrite > privacyGate, "privacy gate runs before guest details are persisted");
 });
+
+
+test("PMS reconciliation endpoint fails closed without a database", async () => {
+  const response = await fetch(`${baseUrl}/api/admin/bookings/123e4567-e89b-42d3-a456-426614174000/reconcile-pms`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: "{}"
+  });
+  assert.equal(response.status, 503);
+});
+
+test("PMS reconciliation endpoint is owner/admin-only and uses hotel-scoped stored credentials", () => {
+  const server = fs.readFileSync("server.js", "utf8");
+  assert.match(server, /reconcile-pms",requireDb,auth,role\("owner","admin"\)/);
+  assert.match(server, /pmsCredentialVault\.decrypt\(connection\.rows\[0\]\.encrypted_credentials\)/);
+  assert.match(server, /includes\("booking:read"\)/);
+  assert.match(server, /pmsRegistry\.getBookingStatus/);
+  assert.match(server, /recordReconciledPmsOutcome/);
+  assert.match(server, /booking\.pms_reconciled/);
+});

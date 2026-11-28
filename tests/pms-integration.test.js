@@ -60,7 +60,7 @@ test("registry advertises sandbox mode without claiming production readiness", a
     id: "sandbox",
     name: "Veyra PMS adapter sandbox",
     mode: "sandbox",
-    capabilities: { availability: true, booking: false, webhooks: false },
+    capabilities: { availability: false, booking: false, webhooks: false },
   }]);
   assert.deepEqual(await registry.testConnection("sandbox"), {
     provider: "sandbox", providerName: "Veyra PMS adapter sandbox", mode: "sandbox", ok: true, productionReady: false,

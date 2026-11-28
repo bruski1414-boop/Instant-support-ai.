@@ -39,11 +39,13 @@ const setupLimiter=rateLimit({windowMs:3600000,limit:5,standardHeaders:"draft-7"
 const platformProvisionLimiter=rateLimit({windowMs:3600000,limit:10,standardHeaders:"draft-7",legacyHeaders:false});
 const integrationTestLimiter=rateLimit({windowMs:3600000,limit:5,standardHeaders:"draft-7",legacyHeaders:false});
 const publicChatLimiter=rateLimit({windowMs:300000,limit:10,standardHeaders:"draft-7",legacyHeaders:false});
+const publicResolutionLimiter=rateLimit({windowMs:300000,limit:20,standardHeaders:"draft-7",legacyHeaders:false});
 const invitationAcceptLimiter=rateLimit({windowMs:3600000,limit:5,standardHeaders:"draft-7",legacyHeaders:false});
 app.use("/api/invitations/accept",invitationAcceptLimiter);
 app.use("/api/setup/organization",setupLimiter);
 app.use("/api/platform/organizations",platformProvisionLimiter);
-app.use("/api/public/",publicChatLimiter);
+app.use("/api/public/:slug/chat",publicChatLimiter);
+app.use("/api/public/:slug/resolution",publicResolutionLimiter);
 const schema=[
 "CREATE EXTENSION IF NOT EXISTS pgcrypto",
 "CREATE TABLE IF NOT EXISTS organizations(id UUID PRIMARY KEY DEFAULT gen_random_uuid(),name TEXT NOT NULL,slug TEXT NOT NULL UNIQUE,status TEXT NOT NULL DEFAULT 'trial' CHECK(status IN ('trial','active','suspended')),created_at TIMESTAMPTZ NOT NULL DEFAULT now())",

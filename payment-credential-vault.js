@@ -1,5 +1,6 @@
 "use strict";
 
+const crypto = require("node:crypto");
 const { createTokenCipher } = require("./storage-security");
 
 function validateWebhookSecret(value) {
@@ -42,11 +43,13 @@ function validateConnectionInput({ db, organizationId, provider, vault }) {
 async function savePaymentWebhookSecret({ db, organizationId, provider, secret, connectedBy = null, vault }) {
   validateConnectionInput({ db, organizationId, provider, vault });
   const encrypted = vault.encrypt(secret);
+  const endpointToken = crypto.randomBytes(32).toString("base64url");
+  const endpointTokenHash = crypto.createHash("sha256").update(endpointToken).digest("hex");
   await db.query(
-    "INSERT INTO organization_payment_connections(organization_id,provider,encrypted_webhook_secret,status,connected_by,updated_at) VALUES($1,$2,$3,'configured',$4,now()) ON CONFLICT(organization_id,provider) DO UPDATE SET encrypted_webhook_secret=EXCLUDED.encrypted_webhook_secret,status='configured',connected_by=EXCLUDED.connected_by,updated_at=now()",
-    [organizationId, provider, encrypted, connectedBy]
+    "INSERT INTO organization_payment_connections(organization_id,provider,encrypted_webhook_secret,webhook_endpoint_token_hash,status,connected_by,connected_at,updated_at) VALUES($1,$2,$3,$4,'configured',$5,now(),now()) ON CONFLICT(organization_id,provider) DO UPDATE SET encrypted_webhook_secret=EXCLUDED.encrypted_webhook_secret,webhook_endpoint_token_hash=EXCLUDED.webhook_endpoint_token_hash,status='configured',connected_by=EXCLUDED.connected_by,connected_at=now(),updated_at=now()",
+    [organizationId, provider, encrypted, endpointTokenHash, connectedBy]
   );
-  return { configured: true, provider };
+  return { configured: true, provider, endpointToken };
 }
 
 async function loadPaymentWebhookSecret({ db, organizationId, provider, vault }) {
@@ -68,10 +71,30 @@ async function disablePaymentWebhookConnection({ db, organizationId, provider, a
   return { disabled: result.rowCount > 0, provider };
 }
 
+
+async function loadPaymentConnectionByEndpointToken({ db, endpointToken, vault }) {
+  if (!db || typeof db.query !== "function" || typeof endpointToken !== "string" ||
+      !/^[A-Za-z0-9_-]{40,60}$/.test(endpointToken) || !vault || vault.configured !== true) {
+    return null;
+  }
+  const tokenHash = crypto.createHash("sha256").update(endpointToken).digest("hex");
+  const result = await db.query(
+    "SELECT organization_id,provider,encrypted_webhook_secret FROM organization_payment_connections WHERE webhook_endpoint_token_hash=$1 AND status='configured'",
+    [tokenHash]
+  );
+  if (!result.rowCount) return null;
+  return {
+    organizationId: result.rows[0].organization_id,
+    provider: result.rows[0].provider,
+    secret: vault.decrypt(result.rows[0].encrypted_webhook_secret),
+  };
+}
+
 module.exports = {
   validateWebhookSecret,
   createPaymentWebhookSecretVault,
   savePaymentWebhookSecret,
   loadPaymentWebhookSecret,
+  loadPaymentConnectionByEndpointToken,
   disablePaymentWebhookConnection,
 };

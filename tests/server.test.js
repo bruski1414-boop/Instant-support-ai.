@@ -6,6 +6,7 @@ const fs = require("node:fs");
 const vm = require("node:vm");
 let child;
 let baseUrl;
+let childStderr = "";
 async function getFreePort() {
   const server = net.createServer();
   await new Promise((resolve, reject) => { server.once("error", reject); server.listen(0, "127.0.0.1", resolve); });
@@ -16,10 +17,12 @@ async function getFreePort() {
 before(async () => {
   const port = await getFreePort();
   baseUrl = `http://127.0.0.1:${port}`;
-  child = spawn(process.execPath, ["server.js"], { cwd: process.cwd(), env: { ...process.env, PORT: String(port), OPENAI_API_KEY: "", ALLOWED_ORIGINS: "http://localhost:3000" }, stdio: "ignore" });
+  child = spawn(process.execPath, ["server.js"], { cwd: process.cwd(), env: { ...process.env, PORT: String(port), OPENAI_API_KEY: "", ALLOWED_ORIGINS: "http://localhost:3000" }, stdio: ["ignore", "ignore", "pipe"] });
+  child.stderr.setEncoding("utf8");
+  child.stderr.on("data", chunk => { childStderr += chunk; });
   let ready = false;
   for (let attempt = 0; attempt < 60; attempt += 1) {
-    if (child.exitCode !== null) throw new Error("Veyra server exited before tests started");
+    if (child.exitCode !== null) throw new Error("Veyra server exited before tests started: " + childStderr.slice(-3000));
     try { const response = await fetch(`${baseUrl}/api/health`); if (response.ok || response.status === 503) { ready = true; break; } } catch {}
     await new Promise((resolve) => setTimeout(resolve, 100));
   }

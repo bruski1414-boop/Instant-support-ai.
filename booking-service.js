@@ -29,14 +29,21 @@ async function createAndPersistReservation({
     booking, paymentEvidence, pms, provider, context,
   });
 
+  let persisted;
   try {
-    await persistOutcome(organizationId, bookingId, provider, outcome);
+    persisted = await persistOutcome(organizationId, bookingId, provider, outcome);
   } catch {
+    persisted = null;
+  }
+
+  // A successful promise alone is not proof of a committed state. Require the
+  // repository to explicitly report the matching state before guest confirmation.
+  if (!persisted || persisted.state !== outcome.state) {
     return {
       state: "booking_pending",
       confirmed: false,
       requiresStaffReview: true,
-      reason: "pms_outcome_persistence_failed",
+      reason: "pms_outcome_persistence_unverified",
       pmsBookingId: outcome.pmsBookingId,
       guestMessage: "Your deposit has been verified. The hotel team is checking the reservation and will confirm shortly.",
     };

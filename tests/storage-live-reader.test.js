@@ -31,6 +31,7 @@ test("Google Drive live reader fetches current approved source content, not stor
   const fetchImpl = async (url, options = {}) => {
     const value = String(url);
     calls.push({ url: value, options });
+    if (value.includes("alt=media")) return response("Breakfast is now served from 6:30 to 10:30.");
     if (value.includes("/drive/v3/files/google-file%2F1?")) {
       return response(JSON.stringify({
         id: "google-file/1",
@@ -40,7 +41,6 @@ test("Google Drive live reader fetches current approved source content, not stor
         md5Checksum: "abc123",
       }), 200, { "content-type": "application/json" });
     }
-    if (value.includes("alt=media")) return response("Breakfast is now served from 6:30 to 10:30.");
     throw new Error("Unexpected provider request: " + value);
   };
   const reader = createStorageKnowledgeReader({ db, fetchImpl, encryptionKey: key });
@@ -104,10 +104,10 @@ test("live reader refreshes expired provider credentials and persists the encryp
     if (value === "https://oauth2.googleapis.com/token") {
       return response(JSON.stringify({ access_token: "fresh-access", refresh_token: "rotated-refresh", expires_in: 3600 }));
     }
+    if (value.includes("alt=media")) return response("Fresh source contents.");
     if (value.includes("/drive/v3/files/file-refresh?")) {
       return response(JSON.stringify({ id: "file-refresh", name: "Refreshed policy", mimeType: "text/plain" }));
     }
-    if (value.includes("alt=media")) return response("Fresh source contents.");
     throw new Error("Unexpected provider request: " + value);
   };
   try {

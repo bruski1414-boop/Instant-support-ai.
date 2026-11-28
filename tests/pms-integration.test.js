@@ -189,6 +189,70 @@ test("reservation lookup fails closed when provider lacks lookup capability or p
   );
 });
 
+test("reservation lookup by idempotency key requires explicit provider capability and read scope", async () => {
+  let received;
+  const registry = createPmsRegistry([{
+    id: "keylookup",
+    name: "Idempotency-key lookup provider",
+    mode: "production",
+    capabilities: { bookingLookupByIdempotencyKey: true },
+    async validateCredentials(credentials) {
+      return { credentials, scopes: ["booking:read"] };
+    },
+    async testConnection() { return { ok: true }; },
+    async getBookingByIdempotencyKey(input, context) {
+      received = { input, scopes: context.scopes };
+      return { bookingId: "provider-reservation-88", status: "confirmed" };
+    },
+  }]);
+
+  assert.equal(registry.list()[0].capabilities.bookingLookupByIdempotencyKey, true);
+  assert.deepEqual(await registry.getBookingByIdempotencyKey("keylookup", {
+    idempotencyKey: "booking_req_12345",
+  }, { credentials: { token: "provider-token" } }), {
+    bookingId: "provider-reservation-88", status: "confirmed",
+  });
+  assert.deepEqual(received, {
+    input: { idempotencyKey: "booking_req_12345" },
+    scopes: ["booking:read"],
+  });
+  await assert.rejects(
+    () => registry.getBookingByIdempotencyKey("keylookup", { idempotencyKey: "bad key" }, {
+      credentials: { token: "provider-token" },
+    }),
+    error => error.code === "INVALID_IDEMPOTENCY_KEY"
+  );
+  await assert.rejects(
+    () => registry.getBookingByIdempotencyKey("keylookup", { idempotencyKey: "booking_req_12345" }),
+    error => error.code === "PROVIDER_CREDENTIALS_REQUIRED"
+  );
+});
+
+test("idempotency-key lookup reports not-found without creating a reservation", async () => {
+  let createCalls = 0;
+  const registry = createPmsRegistry([{
+    id: "keymiss",
+    name: "Idempotency-key lookup miss provider",
+    mode: "production",
+    capabilities: { bookingLookupByIdempotencyKey: true, booking: true },
+    async validateCredentials(credentials) {
+      return { credentials, scopes: ["booking:read", "booking:write"] };
+    },
+    async testConnection() { return { ok: true }; },
+    async getBookingByIdempotencyKey() { return null; },
+    async createBooking() {
+      createCalls += 1;
+      return { bookingId: "must-not-be-created", status: "confirmed" };
+    },
+  }]);
+  assert.deepEqual(await registry.getBookingByIdempotencyKey("keymiss", {
+    idempotencyKey: "booking_req_12345",
+  }, { credentials: { token: "provider-token" } }), {
+    bookingId: "", status: "not_found",
+  });
+  assert.equal(createCalls, 0);
+});
+
 test("webhook events are normalized, time-bounded and size-limited", () => {
   const now = new Date("2027-01-10T12:00:00.000Z");
   assert.deepEqual(normalizeWebhookEvent({

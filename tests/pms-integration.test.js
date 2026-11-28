@@ -276,3 +276,20 @@ test("production provider operations require validated server-side hotel credent
   assert.equal(calls.length, 3);
   assert.ok(calls.every(([, credentials]) => credentials.accessToken === "server-only-token"));
 });
+
+test("availability requests pass a bounded guest count to the provider adapter", async () => {
+  let received;
+  const registry = createPmsRegistry([{
+    id: "testpms", name: "Test PMS", mode: "production",
+    capabilities: { availability: true },
+    async validateCredentials(credentials) { return { credentials, scopes: ["availability:read"] }; },
+    async testConnection() { return { ok: true }; },
+    async getAvailability(request) {
+      received = request;
+      return [{ roomTypeId: "deluxe", roomTypeName: "Deluxe", currency: "THB", amountMinor: 10000, availableUnits: 1 }];
+    },
+  }]);
+  await registry.getAvailability("testpms", { checkIn: "2027-01-10", checkOut: "2027-01-11", guestCount: 4 }, { credentials: { token: "test" } });
+  assert.deepEqual(received, { checkIn: "2027-01-10", checkOut: "2027-01-11", guestCount: 4 });
+  await assert.rejects(() => registry.getAvailability("testpms", { checkIn: "2027-01-10", checkOut: "2027-01-11", guestCount: 21 }, { credentials: { token: "test" } }), error => error.code === "INVALID_GUEST_COUNT");
+});

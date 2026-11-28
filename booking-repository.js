@@ -209,11 +209,19 @@ async function recordPmsOutcome(db, organizationId, bookingId, provider, outcome
         "UPDATE hotel_bookings SET state='confirmed',pms_provider=$3,pms_booking_id=$4,last_error_code='',updated_at=now() WHERE id=$1 AND organization_id=$2",
         [bookingId, organizationId, provider, pmsBookingId]
       );
+      await client.query(
+        "UPDATE hotel_pms_booking_attempts SET status='confirmed',pms_booking_id=$3,updated_at=now() WHERE organization_id=$1 AND booking_id=$2 AND provider=$4",
+        [organizationId, bookingId, pmsBookingId, provider]
+      );
       return { state: "confirmed", duplicate: false };
     }
     await client.query(
       "UPDATE hotel_bookings SET state='booking_pending',pms_provider=$3,pms_booking_id=$4,last_error_code=$5,updated_at=now() WHERE id=$1 AND organization_id=$2",
       [bookingId, organizationId, provider, pmsBookingId || null, errorCode || "pms_pending"]
+    );
+    await client.query(
+      "UPDATE hotel_pms_booking_attempts SET status='pending',pms_booking_id=$3,updated_at=now() WHERE organization_id=$1 AND booking_id=$2 AND provider=$4",
+      [organizationId, bookingId, pmsBookingId || null, provider]
     );
     return { state: "booking_pending", duplicate: false };
   });

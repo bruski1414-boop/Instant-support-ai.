@@ -19,6 +19,7 @@ const {PmsIntegrationError,createPmsRegistry,createSandboxAdapter}=require("./pm
 const {createPmsCredentialVault}=require("./pms-credential-vault");
 const {createPaymentWebhookSecretVault,savePaymentWebhookSecret,disablePaymentWebhookConnection}=require("./payment-credential-vault");
 const {createPaymentWebhookRequestHandler}=require("./payment-webhook");
+const {PAYMENT_PROVIDER_ADAPTERS,listPaymentProviderCapabilities,hasPaymentProviderAdapter}=require("./payment-provider-registry");
 const {BOOKING_SCHEMA,createBookingRecordFromQuote}=require("./booking-repository");
 const {listHotelBookings,parseBookingListQuery}=require("./booking-admin");
 const {createVerifiedDepositPmsOrchestrator}=require("./booking-service");
@@ -137,7 +138,7 @@ app.use("/api/admin/storage",requireDb,createStorageRouter({db,auth,role,audit})
 const paymentWebhookRequestHandler=createPaymentWebhookRequestHandler({
  db,
  vault:paymentWebhookSecretVault,
- providerVerifiers:{},
+ providerVerifiers:PAYMENT_PROVIDER_ADAPTERS,
  onVerifiedDeposit:createVerifiedDepositPmsOrchestrator({
   db,
   vault:pmsCredentialVault,
@@ -151,6 +152,9 @@ app.post("/api/public/payments/:endpointToken",requireDb,paymentWebhookLimiter,a
 });
 const paymentConnectionLimiter=rateLimit({windowMs:900000,limit:10,standardHeaders:"draft-7",legacyHeaders:false});
 app.use("/api/admin/payment-connections",paymentConnectionLimiter);
+app.get("/api/admin/payment-provider-capabilities",requireDb,auth,role("owner","admin"),async(_q,r)=>{
+ r.json({providers:listPaymentProviderCapabilities(),liveCheckoutAvailable:false,livePaymentWebhookAvailable:listPaymentProviderCapabilities().length>0});
+});
 app.get("/api/admin/payment-connections",requireDb,auth,role("owner","admin"),async(q,r,n)=>{
  try{
   const x=await db.query("SELECT provider,status,connected_at,updated_at FROM organization_payment_connections WHERE organization_id=$1 ORDER BY provider",[q.actor.organization_id]);
@@ -162,6 +166,7 @@ app.put("/api/admin/payment-connections/:provider",requireDb,auth,role("owner","
   const provider=String(q.params.provider||"");
   const secret=q.body?.webhookSecret;
   if(!/^[a-z][a-z0-9_-]{1,39}$/.test(provider))return r.status(400).json({error:"Invalid payment provider identifier."});
+  if(!hasPaymentProviderAdapter(provider))return r.status(409).json({error:"This payment provider has not been integrated and verified by Veyra yet.",code:"PAYMENT_PROVIDER_NOT_SUPPORTED"});
   if(typeof secret!=="string")return r.status(400).json({error:"A provider webhook secret is required."});
   const result=await savePaymentWebhookSecret({db,organizationId:q.actor.organization_id,provider,secret,connectedBy:q.actor.user_id,vault:paymentWebhookSecretVault});
   await audit(q.actor,"payment_connection.configured","payment_connection",provider);

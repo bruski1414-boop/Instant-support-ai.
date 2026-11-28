@@ -105,10 +105,13 @@ function createVerifiedDepositPmsOrchestrator({
   pmsRegistry,
   createReservation = createReservationFromStoredBooking,
 }) {
-  if (!db || !vault || !pmsRegistry || typeof createReservation !== "function") {
+  if (!vault || !pmsRegistry || typeof createReservation !== "function") {
     throw new PmsIntegrationError("PMS_ORCHESTRATOR_NOT_CONFIGURED", "The hotel reservation service is not configured.", 503);
   }
   return async ({ organizationId, bookingId }) => {
+    if (!db || typeof db.query !== "function") {
+      throw new PmsIntegrationError("PMS_ORCHESTRATOR_NOT_CONFIGURED", "The hotel reservation service is not configured.", 503);
+    }
     const current = await db.query(
       "SELECT state FROM hotel_bookings WHERE id=$1 AND organization_id=$2",
       [bookingId, organizationId]

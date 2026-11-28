@@ -209,6 +209,17 @@ test("retention policy is tenant-controlled, disabled by default and requires ex
   assert.match(dashboard, /Permanently delete eligible resolved conversations/);
 });
 
+test("retention cleanup deletes at most 500 oldest eligible rows per tenant and reports remaining work", () => {
+  const server = fs.readFileSync("server.js", "utf8");
+  const route = server.slice(server.indexOf('app.post("/api/admin/retention/cleanup"'));
+  assert.match(route, /WITH eligible AS/);
+  assert.match(route, /ORDER BY c\.last_message_at ASC,c\.id ASC LIMIT 500 FOR UPDATE SKIP LOCKED/);
+  assert.match(route, /DELETE FROM conversations c USING eligible e WHERE c\.id=e\.id AND c\.organization_id=\$1/);
+  assert.match(route, /retention\.cleanup_batch_executed/);
+  assert.match(route, /remainingEligible:remaining\.rows\[0\]\.eligible/);
+  assert.match(route, /hasMore:remaining\.rows\[0\]\.eligible>0/);
+});
+
 test("health endpoint cannot report pilot readiness with missing prerequisites", async () => {
   const response = await fetch(`${baseUrl}/api/health`);
   const body = await response.json();

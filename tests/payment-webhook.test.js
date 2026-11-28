@@ -121,3 +121,74 @@ test("preserves explicit retryable configuration status codes", async () => {
   assert.equal(result.status, 503);
   assert.equal(result.body.code, "PAYMENT_WEBHOOK_REJECTED");
 });
+
+
+test("invokes post-verification orchestration with tenant and booking from trusted sources", async () => {
+  const token = "E".repeat(43);
+  const crypto = require("node:crypto");
+  const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
+  let orchestrationArgs;
+  const handler = createPaymentWebhookRequestHandler({
+    db: { async query(_sql, params) {
+      assert.equal(params[0], tokenHash);
+      return { rowCount: 1, rows: [{
+        organization_id: "tenant-from-token",
+        provider: "testpay",
+        encrypted_webhook_secret: "ciphertext",
+      }] };
+    }},
+    vault: { configured: true, decrypt: () => "secret-long-enough-for-test" },
+    providerVerifiers: { testpay: () => ({
+      signatureVerified: true, eventId: "evt_verified_55",
+      bookingId: "booking-from-signed-event", paymentId: "pay_verified_55",
+      amountMinor: 125000, currency: "THB", status: "succeeded",
+    }) },
+    async recordDeposit(_db, organizationId, provider, event) {
+      assert.equal(organizationId, "tenant-from-token");
+      assert.equal(provider, "testpay");
+      assert.equal(event.signatureVerified, true);
+      return { accepted: true, duplicate: false, state: "payment_verified" };
+    },
+    async onVerifiedDeposit(args) {
+      orchestrationArgs = args;
+      return { state: "booking_pending", requiresStaffReview: true };
+    },
+  });
+  const result = await handler({
+    endpointToken: token, headers: {}, rawBody: Buffer.from("{}"),
+  });
+  assert.equal(result.status, 200);
+  assert.deepEqual(orchestrationArgs, {
+    organizationId: "tenant-from-token",
+    bookingId: "booking-from-signed-event",
+    paymentProvider: "testpay",
+  });
+  assert.equal(result.body.orchestration.state, "booking_pending");
+});
+
+test("does not invoke PMS orchestration for an unverified or ignored payment event", async () => {
+  let calls = 0;
+  const handler = createPaymentWebhookRequestHandler({
+    db: { async query() {
+      return { rowCount: 1, rows: [{
+        organization_id: "tenant-a", provider: "testpay",
+        encrypted_webhook_secret: "ciphertext",
+      }] };
+    }},
+    vault: { configured: true, decrypt: () => "secret-long-enough-for-test" },
+    providerVerifiers: { testpay: () => ({
+      signatureVerified: true, eventId: "evt_failed_55",
+      bookingId: "booking-1", paymentId: "pay-failed",
+      amountMinor: 125000, currency: "THB", status: "failed",
+    }) },
+    async recordDeposit() {
+      return { accepted: true, duplicate: false, state: "ignored_non_success" };
+    },
+    async onVerifiedDeposit() { calls += 1; },
+  });
+  const result = await handler({
+    endpointToken: "F".repeat(43), headers: {}, rawBody: Buffer.from("{}"),
+  });
+  assert.equal(result.status, 200);
+  assert.equal(calls, 0);
+});

@@ -18,6 +18,7 @@ const {buildPilotReadiness}=require("./pilot-readiness");
 const {PmsIntegrationError,createPmsRegistry,createSandboxAdapter}=require("./pms-integration");
 const {createPmsCredentialVault}=require("./pms-credential-vault");
 const {createPaymentWebhookSecretVault,savePaymentWebhookSecret,disablePaymentWebhookConnection}=require("./payment-credential-vault");
+const {createPaymentWebhookRequestHandler}=require("./payment-webhook");
 const {BOOKING_SCHEMA}=require("./booking-repository");
 const {deliverStaffEscalation}=require("./staff-notifications");
 const {encryptWebhookConfig,decryptWebhookConfig,resolvePublicWebhook,postSignedWebhook}=require("./staff-webhook-security");
@@ -128,6 +129,12 @@ async function auth(q,r,n){
 function role(){const ok=Array.from(arguments);return(q,r,n)=>ok.includes(q.actor.role)?n():r.status(403).json({error:"Insufficient permissions."});}
 async function audit(a,action,type,id){await db.query("INSERT INTO audit_logs(organization_id,actor_user_id,action,target_type,target_id) VALUES($1,$2,$3,$4,$5)",[a.organization_id,a.user_id,action,type||null,id||null]);}
 app.use("/api/admin/storage",requireDb,createStorageRouter({db,auth,role,audit}));
+const paymentWebhookRequestHandler=createPaymentWebhookRequestHandler({db,vault:paymentWebhookSecretVault,providerVerifiers:{}});
+const paymentWebhookLimiter=rateLimit({windowMs:60000,limit:30,standardHeaders:"draft-7",legacyHeaders:false});
+app.post("/api/public/payments/:endpointToken",requireDb,paymentWebhookLimiter,async(q,r)=>{
+ const result=await paymentWebhookRequestHandler({endpointToken:q.params.endpointToken,headers:q.headers,rawBody:q.rawBody});
+ r.status(result.status).json(result.body);
+});
 const paymentConnectionLimiter=rateLimit({windowMs:900000,limit:10,standardHeaders:"draft-7",legacyHeaders:false});
 app.use("/api/admin/payment-connections",paymentConnectionLimiter);
 app.get("/api/admin/payment-connections",requireDb,auth,role("owner","admin"),async(q,r,n)=>{

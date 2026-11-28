@@ -13,6 +13,7 @@ const BOOKING_SCHEMA = [
   "CREATE UNIQUE INDEX IF NOT EXISTS hotel_bookings_payment_reference_idx ON hotel_bookings(organization_id,payment_provider,payment_provider_payment_id) WHERE payment_provider_payment_id IS NOT NULL",
   "CREATE UNIQUE INDEX IF NOT EXISTS hotel_bookings_pms_reference_idx ON hotel_bookings(organization_id,pms_provider,pms_booking_id) WHERE pms_booking_id IS NOT NULL",
   "CREATE INDEX IF NOT EXISTS hotel_bookings_org_state_time_idx ON hotel_bookings(organization_id,state,created_at DESC)",
+  "CREATE TABLE IF NOT EXISTS hotel_pms_booking_attempts(organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,booking_id UUID NOT NULL REFERENCES hotel_bookings(id) ON DELETE CASCADE,provider TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'started' CHECK(status IN ('started','confirmed','pending')),pms_booking_id TEXT,started_at TIMESTAMPTZ NOT NULL DEFAULT now(),updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),PRIMARY KEY(organization_id,booking_id))",
   "CREATE TABLE IF NOT EXISTS payment_webhook_events(id UUID PRIMARY KEY DEFAULT gen_random_uuid(),organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,provider TEXT NOT NULL,external_event_id TEXT NOT NULL,payload_sha256 CHAR(64) NOT NULL,received_at TIMESTAMPTZ NOT NULL DEFAULT now(),status TEXT NOT NULL DEFAULT 'received' CHECK(status IN ('received','processed','ignored','failed')),processed_at TIMESTAMPTZ,UNIQUE(organization_id,provider,external_event_id))",
   "CREATE INDEX IF NOT EXISTS payment_webhook_events_org_time_idx ON payment_webhook_events(organization_id,received_at DESC)"
 ];
@@ -138,6 +139,35 @@ async function loadVerifiedBookingForPms(db, organizationId, bookingId) {
     currency: booking.currency,
   };
   return { booking, paymentEvidence, paymentProvider: row.payment_provider };
+}
+
+/**
+ * Atomically claim the one permitted automatic PMS submission for a booking.
+ * A pre-existing attempt is never submitted again automatically: it may have
+ * reached the PMS even if Veyra lost the response.
+ */
+async function claimPmsBookingAttempt(db, organizationId, bookingId, provider) {
+  if (!db || typeof db.connect !== "function" ||
+      typeof organizationId !== "string" || !organizationId ||
+      typeof bookingId !== "string" || !bookingId ||
+      !/^[a-z][a-z0-9_-]{1,39}$/.test(provider || "")) {
+    fail("INVALID_PMS_ATTEMPT", "A valid tenant-scoped PMS attempt is required.");
+  }
+  return inTransaction(db, async client => {
+    const booking = await client.query(
+      "SELECT state FROM hotel_bookings WHERE id=$1 AND organization_id=$2 FOR UPDATE",
+      [bookingId, organizationId]
+    );
+    if (!booking.rowCount) fail("BOOKING_NOT_FOUND", "The booking was not found for this hotel.", 404);
+    if (booking.rows[0].state !== "payment_verified") {
+      fail("PAYMENT_NOT_VERIFIED", "Only a newly verified booking can start PMS submission.", 409);
+    }
+    const claimed = await client.query(
+      "INSERT INTO hotel_pms_booking_attempts(organization_id,booking_id,provider,status) VALUES($1,$2,$3,'started') ON CONFLICT(organization_id,booking_id) DO NOTHING RETURNING booking_id",
+      [organizationId, bookingId, provider]
+    );
+    return { claimed: Boolean(claimed.rowCount) };
+  });
 }
 
 async function recordPmsOutcome(db, organizationId, bookingId, provider, outcome) {
@@ -273,6 +303,7 @@ module.exports = {
   normalizeBookingRecord,
   createBookingRecord,
   loadVerifiedBookingForPms,
+  claimPmsBookingAttempt,
   recordVerifiedDeposit,
   recordPmsOutcome,
 };

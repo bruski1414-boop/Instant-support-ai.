@@ -322,6 +322,43 @@ try {
   assert.equal(storageBBody.connections[0].account_email, "storage-google-" + tenants[1].email);
   assert.equal(JSON.stringify(storageBBody).includes(tenants[0].email), false, "tenant B must not see tenant A's storage account");
 
+  // Force the final audit insert to fail after all three disconnect DELETEs have run.
+  // The endpoint must roll the entire transaction back, preserving credentials and metadata.
+  const storageOrgA = (await pool.query("SELECT id FROM organizations WHERE slug=$1", [tenants[0].slug])).rows[0].id;
+  const failFn = "ci_fail_storage_disconnect_" + tag;
+  const failTrigger = "ci_fail_storage_disconnect_trigger_" + tag;
+  await pool.query(`
+    CREATE FUNCTION ${failFn}() RETURNS trigger LANGUAGE plpgsql AS $
+    BEGIN
+      IF NEW.organization_id = '${storageOrgA}'::uuid AND NEW.action = 'storage.google.disconnected' THEN
+        RAISE EXCEPTION 'intentional integration-test failure';
+      END IF;
+      RETURN NEW;
+    END;
+    $;
+  `);
+  await pool.query(`CREATE TRIGGER ${failTrigger} BEFORE INSERT ON audit_logs FOR EACH ROW EXECUTE FUNCTION ${failFn}()`);
+  try {
+    const failedDisconnect = await fetch(baseUrl + "/api/admin/storage/connections/google", {
+      method: "DELETE",
+      headers: { cookie: cookieA, "X-CSRF-Token": tenants[0].csrfToken },
+    });
+    assert.equal(failedDisconnect.status, 500, "audit failure must make disconnect fail");
+    const credentialsAfterFailure = await pool.query(
+      "SELECT provider FROM storage_connections WHERE organization_id=$1 AND provider='google'",
+      [storageOrgA]
+    );
+    const metadataAfterFailure = await pool.query(
+      "SELECT provider FROM organization_storage_connections WHERE organization_id=$1 AND provider='google_drive'",
+      [storageOrgA]
+    );
+    assert.equal(credentialsAfterFailure.rowCount, 1, "credential deletion must roll back after a later transaction failure");
+    assert.equal(metadataAfterFailure.rowCount, 1, "connection metadata deletion must roll back after a later transaction failure");
+  } finally {
+    await pool.query(`DROP TRIGGER IF EXISTS ${failTrigger} ON audit_logs`);
+    await pool.query(`DROP FUNCTION IF EXISTS ${failFn}()`);
+  }
+
   const crossDisconnect = await fetch(baseUrl + "/api/admin/storage/connections/google", {
     method: "DELETE",
     headers: { cookie: cookieA, "X-CSRF-Token": tenants[0].csrfToken },

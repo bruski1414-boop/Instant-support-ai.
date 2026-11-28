@@ -642,7 +642,7 @@ $("bookingRows").addEventListener("click",async e=>{
  b.disabled=true;
  try{
   const result=await api("/api/admin/bookings/"+encodeURIComponent(b.dataset.id)+"/reconcile-pms",{method:"POST",body:"{}"});
-  showToast(result.state==="confirmed"?"PMS confirmed the existing reservation.":"PMS still reports the reservation as pending.");
+  showToast(result.state==="confirmed"?"PMS confirmed the existing reservation.":result.providerStatus==="not_found"?"PMS did not find the reference; staff investigation is required.":"PMS still reports the reservation as pending.");
   await loadHotelBookings();
  }catch(err){notice(err.message,"error");b.disabled=false;}
 });

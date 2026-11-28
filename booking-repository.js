@@ -310,7 +310,7 @@ async function recordReconciledPmsOutcome(db, organizationId, bookingId, provide
     fail("INVALID_PMS_RECONCILIATION", "A valid authoritative PMS lookup result is required.");
   }
   const reference = lookup.bookingId.trim();
-  if (/[\\x00-\\x1f\\x7f]/.test(reference)) {
+  if (/[\x00-\x1f\x7f]/.test(reference)) {
     fail("INVALID_PMS_REFERENCE", "The PMS reservation reference is invalid.");
   }
   return inTransaction(db, async client => {

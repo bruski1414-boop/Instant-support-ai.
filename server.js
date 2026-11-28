@@ -406,6 +406,7 @@ app.get("/api/public/:slug/availability",async(q,r,n)=>{
 app.post("/api/public/:slug/booking-requests",async(q,r,n)=>{
  try{
   if(!db)return r.status(503).json({error:"Hotel booking service is not configured."});
+  if(process.env.GUEST_DATA_STORAGE_ENABLED!=="true")return r.status(503).json({error:"Guest data storage is disabled until the hotel has approved its privacy notice, retention period and data-processing terms."});
   const organization=await db.query("SELECT id,status FROM organizations WHERE slug=$1",[q.params.slug]);
   if(!organization.rowCount||organization.rows[0].status==="suspended")return r.status(404).json({error:"Hotel booking service unavailable."});
   const result=await createBookingRecordFromQuote(db,organization.rows[0].id,q.body||{});

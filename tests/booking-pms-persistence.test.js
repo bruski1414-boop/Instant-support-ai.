@@ -1,0 +1,75 @@
+"use strict";
+
+const test = require("node:test");
+const assert = require("node:assert/strict");
+const { recordPmsOutcome } = require("../booking-repository");
+
+function makeDb(initialState = "payment_verified") {
+  const row = { id: "booking-1", state: initialState, pms_provider: null, pms_booking_id: null };
+  const queries = [];
+  const client = {
+    async query(sql, params = []) {
+      queries.push({ sql, params });
+      if (["BEGIN", "COMMIT", "ROLLBACK"].includes(sql)) return { rowCount: 0, rows: [] };
+      if (sql.startsWith("SELECT id,state FROM hotel_bookings")) {
+        return { rowCount: row.id === params[0] ? 1 : 0, rows: row.id === params[0] ? [{ id: row.id, state: row.state }] : [] };
+      }
+      if (sql.startsWith("SELECT id FROM hotel_bookings WHERE id=$1 AND organization_id=$2 AND pms_provider")) {
+        return { rowCount: row.pms_provider === params[2] && row.pms_booking_id === params[3] ? 1 : 0, rows: [] };
+      }
+      if (sql.startsWith("UPDATE hotel_bookings SET state='confirmed'")) {
+        Object.assign(row, { state: "confirmed", pms_provider: params[2], pms_booking_id: params[3] });
+        return { rowCount: 1, rows: [] };
+      }
+      if (sql.startsWith("UPDATE hotel_bookings SET state='booking_pending'")) {
+        Object.assign(row, { state: "booking_pending", pms_provider: params[2], pms_booking_id: params[3], last_error_code: params[4] });
+        return { rowCount: 1, rows: [] };
+      }
+      throw new Error("Unexpected SQL: " + sql);
+    },
+    release() {},
+  };
+  return { row, queries, async connect() { return client; } };
+}
+
+test("persists confirmed PMS reference only after verified payment", async () => {
+  const db = makeDb();
+  const result = await recordPmsOutcome(db, "hotel-a", "booking-1", "mews", {
+    state: "confirmed", pmsBookingId: "mews-res-987",
+  });
+  assert.deepEqual(result, { state: "confirmed", duplicate: false });
+  assert.equal(db.row.state, "confirmed");
+  assert.equal(db.row.pms_booking_id, "mews-res-987");
+  assert.equal(db.queries.at(-1).params[3], "mews-res-987");
+});
+
+test("persists uncertain PMS outcomes as pending, never confirmed", async () => {
+  const db = makeDb();
+  const result = await recordPmsOutcome(db, "hotel-a", "booking-1", "mews", {
+    state: "booking_pending", reason: "pms_result_unknown",
+  });
+  assert.deepEqual(result, { state: "booking_pending", duplicate: false });
+  assert.equal(db.row.state, "booking_pending");
+  assert.equal(db.row.pms_booking_id, null);
+  assert.equal(db.row.last_error_code, "pms_result_unknown");
+});
+
+test("rejects confirmation without a PMS reference and wrong hotel scope", async () => {
+  const db = makeDb();
+  await assert.rejects(
+    () => recordPmsOutcome(db, "hotel-a", "booking-1", "mews", { state: "confirmed" }),
+    e => e.code === "PMS_CONFIRMATION_REFERENCE_REQUIRED"
+  );
+  await assert.rejects(
+    () => recordPmsOutcome(db, "hotel-b", "booking-1", "mews", { state: "confirmed", pmsBookingId: "res-1" }),
+    e => e.code === "BOOKING_NOT_FOUND"
+  );
+});
+
+test("confirmed records cannot be overwritten by a pending result", async () => {
+  const db = makeDb("confirmed");
+  await assert.rejects(
+    () => recordPmsOutcome(db, "hotel-a", "booking-1", "mews", { state: "booking_pending", reason: "timeout" }),
+    e => e.code === "BOOKING_ALREADY_CONFIRMED"
+  );
+});

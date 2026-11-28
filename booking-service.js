@@ -2,7 +2,7 @@
 
 const { PmsIntegrationError } = require("./pms-integration");
 const { createReservationAfterVerifiedDeposit } = require("./booking-orchestration");
-const { loadVerifiedBookingForPms, recordPmsOutcome } = require("./booking-repository");
+const { loadVerifiedBookingForPms, claimPmsBookingAttempt, recordPmsOutcome } = require("./booking-repository");
 
 /**
  * Application service boundary: do not return a guest-facing confirmation
@@ -70,6 +70,16 @@ async function createReservationFromStoredBooking({
   context = {},
 }) {
   const stored = await loadVerifiedBookingForPms(db, organizationId, bookingId);
+  const attempt = await claimPmsBookingAttempt(db, organizationId, bookingId, provider);
+  if (!attempt.claimed) {
+    return {
+      state: "booking_pending",
+      confirmed: false,
+      requiresStaffReview: true,
+      reason: "pms_attempt_already_started",
+      guestMessage: "Your deposit has been verified. The hotel team is checking the reservation and will confirm shortly.",
+    };
+  }
   return createAndPersistReservation({
     booking: stored.booking,
     bookingId,

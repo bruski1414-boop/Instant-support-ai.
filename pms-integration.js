@@ -202,6 +202,7 @@ function createPmsRegistry(adapters = []) {
         availability: adapter.capabilities.availability === true && typeof adapter.getAvailability === "function",
         booking: adapter.capabilities.booking === true && typeof adapter.createBooking === "function",
         bookingLookup: adapter.capabilities.bookingLookup === true && typeof adapter.getBookingStatus === "function",
+        bookingLookupByIdempotencyKey: adapter.capabilities.bookingLookupByIdempotencyKey === true && typeof adapter.getBookingByIdempotencyKey === "function",
         webhooks: adapter.capabilities.webhooks === true && typeof adapter.verifyWebhook === "function",
       }),
       testConnection: adapter.testConnection,
@@ -209,6 +210,7 @@ function createPmsRegistry(adapters = []) {
       createBooking: adapter.createBooking,
       verifyWebhook: adapter.verifyWebhook,
       getBookingStatus: adapter.getBookingStatus,
+      getBookingByIdempotencyKey: adapter.getBookingByIdempotencyKey,
     }));
   }
   for (const adapter of adapters) register(adapter);
@@ -305,6 +307,20 @@ function createPmsRegistry(adapters = []) {
       }
       const securedContext = await requireProductionCredentials(adapter, context, ["booking:read"]);
       const result = await adapter.getBookingStatus({ bookingId }, securedContext);
+      return normalizeBookingLookup(result);
+    },
+    getBookingByIdempotencyKey: async (provider, input, context = {}) => {
+      const adapter = get(provider);
+      if (!adapter.capabilities.bookingLookupByIdempotencyKey) {
+        throw new PmsIntegrationError("CAPABILITY_UNAVAILABLE", "This provider adapter does not support reservation lookup by idempotency key.", 409);
+      }
+      const idempotencyKey = input && typeof input.idempotencyKey === "string" ? input.idempotencyKey.trim() : "";
+      if (!/^[A-Za-z0-9_-]{12,100}$/.test(idempotencyKey)) {
+        throw new PmsIntegrationError("INVALID_IDEMPOTENCY_KEY", "A valid reservation idempotency key is required.");
+      }
+      const securedContext = await requireProductionCredentials(adapter, context, ["booking:read"]);
+      const result = await adapter.getBookingByIdempotencyKey({ idempotencyKey }, securedContext);
+      if (result === null || (result && result.status === "not_found")) return { bookingId: "", status: "not_found" };
       return normalizeBookingLookup(result);
     },
     verifyWebhook: async (provider, input) => {

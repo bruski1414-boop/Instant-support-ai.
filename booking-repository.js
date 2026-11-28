@@ -148,10 +148,10 @@ async function recordVerifiedDeposit(db, organizationId, provider, event) {
       !/^[a-z][a-z0-9_-]{1,39}$/.test(provider || "") ||
       !event || event.signatureVerified !== true ||
       typeof event.eventId !== "string" || !event.eventId.trim() || event.eventId.length > 200 ||
-      typeof event.bookingId !== "string" || !event.bookingId ||
-      typeof event.paymentId !== "string" || !event.paymentId ||
+      typeof event.bookingId !== "string" || !event.bookingId.trim() ||
+      typeof event.paymentId !== "string" || !event.paymentId.trim() ||
       !Number.isSafeInteger(event.amountMinor) || event.amountMinor <= 0 ||
-      typeof event.currency !== "string" || !/^[A-Z]{3}$/.test(normalizedCurrency)) {
+      typeof event.currency !== "string" || !/^[A-Za-z]{3}$/.test(event.currency.trim())) {
     fail("INVALID_VERIFIED_PAYMENT_EVENT", "A verified, complete payment event is required.", 400);
   }
   const eventId = event.eventId.trim();

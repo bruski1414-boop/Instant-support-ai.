@@ -2,7 +2,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const crypto = require("node:crypto");
-const { validateWebhookSecret, createPaymentWebhookSecretVault } = require("../payment-credential-vault");
+const { validateWebhookSecret, createPaymentWebhookSecretVault, savePaymentWebhookSecret, loadPaymentWebhookSecret, disablePaymentWebhookConnection } = require("../payment-credential-vault");
 
 const key = crypto.randomBytes(32).toString("base64");
 
@@ -32,4 +32,40 @@ test("authenticated encryption rejects tampered ciphertext", () => {
   const parts = encrypted.split(".");
   parts[2] = (parts[2][0] === "A" ? "B" : "A") + parts[2].slice(1);
   assert.throws(() => vault.decrypt(parts.join(".")));
+});
+
+test("stores only encrypted secrets and scopes lookups to the hotel and provider", async () => {
+  const vault = createPaymentWebhookSecretVault(key);
+  const rows = new Map();
+  const db = { async query(sql, params) {
+    if (sql.startsWith("INSERT INTO organization_payment_connections")) {
+      rows.set(params[0] + ":" + params[1], { encrypted_webhook_secret: params[2], status: "configured" });
+      return { rowCount: 1, rows: [] };
+    }
+    if (sql.startsWith("SELECT encrypted_webhook_secret")) {
+      const row = rows.get(params[0] + ":" + params[1]);
+      return { rowCount: row?.status === "configured" ? 1 : 0, rows: row?.status === "configured" ? [row] : [] };
+    }
+    if (sql.startsWith("UPDATE organization_payment_connections")) {
+      const row = rows.get(params[0] + ":" + params[1]);
+      if (row?.status === "configured") row.status = "disabled";
+      return { rowCount: row?.status === "disabled" ? 1 : 0, rows: [] };
+    }
+    throw new Error("Unexpected query");
+  }};
+  await savePaymentWebhookSecret({ db, organizationId: "hotel-a", provider: "testpay", secret: "secret_for_hotel_a_123", vault });
+  await savePaymentWebhookSecret({ db, organizationId: "hotel-b", provider: "testpay", secret: "secret_for_hotel_b_123", vault });
+  assert.notEqual(rows.get("hotel-a:testpay").encrypted_webhook_secret, "secret_for_hotel_a_123");
+  assert.equal(await loadPaymentWebhookSecret({ db, organizationId: "hotel-a", provider: "testpay", vault }), "secret_for_hotel_a_123");
+  assert.equal(await loadPaymentWebhookSecret({ db, organizationId: "hotel-b", provider: "testpay", vault }), "secret_for_hotel_b_123");
+  assert.equal(await loadPaymentWebhookSecret({ db, organizationId: "hotel-c", provider: "testpay", vault }), null);
+  assert.deepEqual(await disablePaymentWebhookConnection({ db, organizationId: "hotel-a", provider: "testpay", vault }), { disabled: true, provider: "testpay" });
+  assert.equal(await loadPaymentWebhookSecret({ db, organizationId: "hotel-a", provider: "testpay", vault }), null);
+});
+
+test("refuses payment connection operations when encryption is unavailable", async () => {
+  const vault = createPaymentWebhookSecretVault("");
+  const db = { async query() { throw new Error("must not query database"); } };
+  await assert.rejects(() => savePaymentWebhookSecret({ db, organizationId: "hotel-a", provider: "testpay", secret: "secret_for_hotel_a_123", vault }), /not configured/);
+  await assert.rejects(() => loadPaymentWebhookSecret({ db, organizationId: "hotel-a", provider: "testpay", vault }), /not configured/);
 });

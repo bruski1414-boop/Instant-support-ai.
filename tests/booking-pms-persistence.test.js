@@ -2,7 +2,7 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { recordPmsOutcome } = require("../booking-repository");
+const { recordPmsOutcome, claimPmsBookingAttempt } = require("../booking-repository");
 
 function makeDb(initialState = "payment_verified") {
   const row = { id: "booking-1", state: initialState, pms_provider: null, pms_booking_id: null };
@@ -71,5 +71,49 @@ test("confirmed records cannot be overwritten by a pending result", async () => 
   await assert.rejects(
     () => recordPmsOutcome(db, "hotel-a", "booking-1", "mews", { state: "booking_pending", reason: "timeout" }),
     e => e.code === "BOOKING_ALREADY_CONFIRMED"
+  );
+});
+
+
+test("claims a single automatic PMS submission per tenant booking", async () => {
+  const attempts = new Set();
+  const client = {
+    async query(sql, params = []) {
+      if (["BEGIN", "COMMIT", "ROLLBACK"].includes(sql)) return { rowCount: 0, rows: [] };
+      if (sql.startsWith("SELECT state FROM hotel_bookings")) {
+        return { rowCount: 1, rows: [{ state: "payment_verified" }] };
+      }
+      if (sql.startsWith("INSERT INTO hotel_pms_booking_attempts")) {
+        const key = params[0] + ":" + params[1];
+        if (attempts.has(key)) return { rowCount: 0, rows: [] };
+        attempts.add(key);
+        return { rowCount: 1, rows: [{ booking_id: params[1] }] };
+      }
+      throw new Error("Unexpected SQL: " + sql);
+    },
+    release() {},
+  };
+  const db = { async connect() { return client; } };
+  const first = await claimPmsBookingAttempt(db, "hotel-a", "booking-1", "mews");
+  const duplicate = await claimPmsBookingAttempt(db, "hotel-a", "booking-1", "mews");
+  assert.deepEqual(first, { claimed: true });
+  assert.deepEqual(duplicate, { claimed: false });
+});
+
+test("does not claim a PMS attempt before payment verification", async () => {
+  const client = {
+    async query(sql) {
+      if (["BEGIN", "COMMIT", "ROLLBACK"].includes(sql)) return { rowCount: 0, rows: [] };
+      if (sql.startsWith("SELECT state FROM hotel_bookings")) {
+        return { rowCount: 1, rows: [{ state: "awaiting_payment" }] };
+      }
+      throw new Error("Unexpected SQL: " + sql);
+    },
+    release() {},
+  };
+  const db = { async connect() { return client; } };
+  await assert.rejects(
+    () => claimPmsBookingAttempt(db, "hotel-a", "booking-1", "mews"),
+    e => e.code === "PAYMENT_NOT_VERIFIED"
   );
 });

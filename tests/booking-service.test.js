@@ -2,7 +2,7 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { createAndPersistReservation } = require("../booking-service");
+const { createAndPersistReservation, createVerifiedDepositPmsOrchestrator } = require("../booking-service");
 
 function fixtures() {
   return {
@@ -93,8 +93,6 @@ test("does not confirm a guest when persisted state differs from the PMS outcome
   assert.equal(result.reason, "pms_outcome_persistence_unverified");
 });
 
-
-const { createVerifiedDepositPmsOrchestrator } = require("../booking-service");
 
 function orchestratorDb({ bookingState = "payment_verified", connection = null } = {}) {
   const calls = [];

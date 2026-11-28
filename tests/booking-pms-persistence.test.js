@@ -6,6 +6,7 @@ const { recordPmsOutcome, claimPmsBookingAttempt } = require("../booking-reposit
 
 function makeDb(initialState = "payment_verified") {
   const row = { id: "booking-1", state: initialState, pms_provider: null, pms_booking_id: null };
+  const attempt = { status: "started", pms_booking_id: null };
   const queries = [];
   const client = {
     async query(sql, params = []) {
@@ -25,11 +26,19 @@ function makeDb(initialState = "payment_verified") {
         Object.assign(row, { state: "booking_pending", pms_provider: params[2], pms_booking_id: params[3], last_error_code: params[4] });
         return { rowCount: 1, rows: [] };
       }
+      if (sql.startsWith("UPDATE hotel_pms_booking_attempts SET status='confirmed'")) {
+        Object.assign(attempt, { status: "confirmed", pms_booking_id: params[2] });
+        return { rowCount: 1, rows: [] };
+      }
+      if (sql.startsWith("UPDATE hotel_pms_booking_attempts SET status='pending'")) {
+        Object.assign(attempt, { status: "pending", pms_booking_id: params[2] });
+        return { rowCount: 1, rows: [] };
+      }
       throw new Error("Unexpected SQL: " + sql);
     },
     release() {},
   };
-  return { row, queries, async connect() { return client; } };
+  return { row, attempt, queries, async connect() { return client; } };
 }
 
 test("persists confirmed PMS reference only after verified payment", async () => {
@@ -40,7 +49,8 @@ test("persists confirmed PMS reference only after verified payment", async () =>
   assert.deepEqual(result, { state: "confirmed", duplicate: false });
   assert.equal(db.row.state, "confirmed");
   assert.equal(db.row.pms_booking_id, "mews-res-987");
-  assert.equal(db.queries.at(-1).params[3], "mews-res-987");
+  assert.deepEqual(db.attempt, { status: "confirmed", pms_booking_id: "mews-res-987" });
+  assert.equal(db.queries.at(-1).params[3], "mews");
 });
 
 test("persists uncertain PMS outcomes as pending, never confirmed", async () => {
@@ -52,6 +62,7 @@ test("persists uncertain PMS outcomes as pending, never confirmed", async () => 
   assert.equal(db.row.state, "booking_pending");
   assert.equal(db.row.pms_booking_id, null);
   assert.equal(db.row.last_error_code, "pms_result_unknown");
+  assert.deepEqual(db.attempt, { status: "pending", pms_booking_id: null });
 });
 
 test("rejects confirmation without a PMS reference and wrong hotel scope", async () => {

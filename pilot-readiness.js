@@ -19,7 +19,7 @@ function hasCurrentBackupEvidence(evidence, now = new Date()) {
   if (typeof evidence.backupRestoreVerifiedAt !== "string") return false;
 
   const timestamp = evidence.backupRestoreVerifiedAt;
-  if (!/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$/.test(timestamp)) return false;
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(timestamp)) return false;
 
   const verifiedAt = Date.parse(timestamp);
   const currentTime = now instanceof Date ? now.getTime() : Date.parse(now);

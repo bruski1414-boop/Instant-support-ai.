@@ -301,7 +301,12 @@ test("hotel profile email validation accepts ordinary staff email addresses", ()
 test("provider import purge requires explicit confirmation and deletes only this hotel's provider-sourced knowledge and versions", () => {
   const storage = fs.readFileSync("storage-integrations.js", "utf8");
   assert.match(storage, /router\.delete\("\/imports\/:provider", auth, role\("owner", "admin"\)/);
+  const purgeRoute = storage.slice(storage.indexOf('router.delete("/imports/:provider"'));
   assert.match(storage, /req\.body\?\.confirm !== true/);
+  assert.match(purgeRoute, /let client;/);
+  assert.match(purgeRoute, /client = await db.connect\(\)/);
+  assert.match(purgeRoute, /if \(client\) await client.query\("ROLLBACK"\)/);
+  assert.match(purgeRoute, /finally \{ if \(client\) client.release\(\); \}/);
   assert.match(storage, /WHERE organization_id=\$1 AND source_reference LIKE \$2 FOR UPDATE/);
   assert.match(storage, /DELETE FROM knowledge_document_versions WHERE organization_id=\$1 AND document_id=ANY\(\$2::uuid\[\]\)/);
   assert.match(storage, /DELETE FROM knowledge_documents WHERE organization_id=\$1 AND id=ANY\(\$2::uuid\[\]\)/);
@@ -309,13 +314,35 @@ test("provider import purge requires explicit confirmation and deletes only this
 });
 
 
+test("storage disconnect removes local credentials and connection state atomically without purging imported knowledge", () => {
+  const storage = fs.readFileSync("storage-integrations.js", "utf8");
+  const route = storage.slice(storage.indexOf('router.delete("/connections/:provider"'));
+  assert.match(route, /let client;/);
+  assert.match(route, /client = await db.connect\(\)/);
+  assert.match(route, /await client.query\("BEGIN"\)/);
+  assert.match(route, /DELETE FROM storage_connections WHERE organization_id=\$1 AND provider=\$2/);
+  assert.match(route, /DELETE FROM organization_storage_connections WHERE organization_id=\$1 AND provider=\$2/);
+  assert.match(route, /DELETE FROM storage_oauth_states WHERE organization_id=\$1 AND provider=\$2/);
+  assert.match(route, /await client.query\("COMMIT"\)/);
+  assert.match(route, /await client.query\("ROLLBACK"\)/);
+  assert.match(route, /localCredentialsDeleted: Boolean\(result.rowCount\)/);
+  assert.match(route, /importedCopiesPreserved: true/);
+});
+
+test("storage disconnect warns that provider-side OAuth access and imported copies need separate removal", () => {
+  const dashboard = fs.readFileSync("dashboard.html", "utf8");
+  assert.match(dashboard, /may not revoke the app's access at Google\/Microsoft/);
+  assert.match(dashboard, /Remove Veyra from that provider's connected-app settings too/);
+  assert.match(dashboard, /Veyra credentials removed\. Check provider app access too/);
+});
+
 test("hotel storage dashboard distinguishes disconnect from explicit imported-copy deletion", () => {
   const dashboard = fs.readFileSync("dashboard.html", "utf8");
   assert.match(dashboard, /data-storage-purge="google"/);
   assert.match(dashboard, /data-storage-purge="microsoft"/);
   assert.match(dashboard, /PERMANENTLY delete this hotel's imported/);
   assert.match(dashboard, /api\("\/api\/admin\/storage\/imports\/"\+b\.dataset\.storagePurge/);
-  assert.match(dashboard, /Existing imported knowledge copies will remain in Veyra until separately deleted/);
+  assert.match(dashboard, /Imported copies remain until separately deleted/);
 });
 
 test("staff notification retries are capped and direct staff to manual fallback", () => {

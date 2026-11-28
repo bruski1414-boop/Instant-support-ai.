@@ -253,8 +253,9 @@ function createStorageRouter({ db, auth, role, audit }) {
     const provider = req.params.provider;
     if (!providerValid(provider)) return safeError(res, "Unsupported storage provider.");
     if (req.body?.confirm !== true) return safeError(res, "Explicit confirmation is required to delete imported copies.", 400);
-    const client = await db.connect();
+    let client;
     try {
+      client = await db.connect();
       await client.query("BEGIN");
       const documents = await client.query(
         "SELECT id FROM knowledge_documents WHERE organization_id=$1 AND source_reference LIKE $2 FOR UPDATE",
@@ -278,21 +279,31 @@ function createStorageRouter({ db, auth, role, audit }) {
       await client.query("COMMIT");
       res.json({ deletedDocuments: ids.length, provider, purged: true });
     } catch (e) {
-      await client.query("ROLLBACK").catch(() => {});
+      if (client) await client.query("ROLLBACK").catch(() => {});
       res.status(500).json({ error: "Could not delete imported copies." });
-    } finally { client.release(); }
+    } finally { if (client) client.release(); }
   });
 
   router.delete("/connections/:provider", auth, role("owner", "admin"), async (req, res) => {
     const provider = req.params.provider;
     if (!providerValid(provider)) return safeError(res, "Unsupported storage provider.");
+    let client;
     try {
-      const result = await db.query("DELETE FROM storage_connections WHERE organization_id=$1 AND provider=$2 RETURNING provider", [req.actor.organization_id, provider]);
-      await db.query("DELETE FROM organization_storage_connections WHERE organization_id=$1 AND provider=$2", [req.actor.organization_id, provider === "google" ? "google_drive" : "microsoft_sharepoint"]);
-      await db.query("DELETE FROM storage_oauth_states WHERE organization_id=$1 AND provider=$2", [req.actor.organization_id, provider]);
-      await audit(req.actor, "storage." + provider + ".disconnected", "storage_connection");
-      res.json({ disconnected: Boolean(result.rowCount) });
-    } catch (e) { res.status(500).json({ error: "Could not disconnect storage." }); }
+      client = await db.connect();
+      await client.query("BEGIN");
+      const result = await client.query("DELETE FROM storage_connections WHERE organization_id=$1 AND provider=$2 RETURNING provider", [req.actor.organization_id, provider]);
+      await client.query("DELETE FROM organization_storage_connections WHERE organization_id=$1 AND provider=$2", [req.actor.organization_id, provider === "google" ? "google_drive" : "microsoft_sharepoint"]);
+      await client.query("DELETE FROM storage_oauth_states WHERE organization_id=$1 AND provider=$2", [req.actor.organization_id, provider]);
+      await client.query(
+        "INSERT INTO audit_logs(organization_id,actor_user_id,action,target_type) VALUES($1,$2,$3,'storage_connection')",
+        [req.actor.organization_id, req.actor.user_id, "storage." + provider + ".disconnected"]
+      );
+      await client.query("COMMIT");
+      res.json({ disconnected: Boolean(result.rowCount), localCredentialsDeleted: Boolean(result.rowCount), importedCopiesPreserved: true });
+    } catch (e) {
+      if (client) await client.query("ROLLBACK").catch(() => {});
+      res.status(500).json({ error: "Could not disconnect storage." });
+    } finally { if (client) client.release(); }
   });
 
   return router;

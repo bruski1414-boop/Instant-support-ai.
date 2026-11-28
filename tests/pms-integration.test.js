@@ -126,6 +126,68 @@ test("booking adapter receives normalized guest identity and the stable idempote
   assert.deepEqual(result, { bookingId: "provider-reservation-1", status: "confirmed" });
 });
 
+test("reservation lookup requires provider capability, credentials and read scope", async () => {
+  let lookupInput;
+  const registry = createPmsRegistry([{
+    id: "lookupdemo",
+    name: "Reservation lookup demo",
+    mode: "production",
+    capabilities: { bookingLookup: true },
+    async validateCredentials(credentials) {
+      return { credentials, scopes: ["booking:read"] };
+    },
+    async testConnection() { return { ok: true }; },
+    async getBookingStatus(input, context) {
+      lookupInput = { input, context };
+      return { bookingId: input.bookingId, status: "confirmed" };
+    },
+  }]);
+
+  assert.equal(registry.list()[0].capabilities.bookingLookup, true);
+  assert.deepEqual(await registry.getBookingStatus("lookupdemo", { bookingId: "reservation-123" }, {
+    credentials: { token: "test-token" },
+  }), { bookingId: "reservation-123", status: "confirmed" });
+  assert.deepEqual(lookupInput.input, { bookingId: "reservation-123" });
+  assert.deepEqual(lookupInput.context.scopes, ["booking:read"]);
+
+  await assert.rejects(
+    () => registry.getBookingStatus("lookupdemo", { bookingId: "reservation-123" }, {}),
+    error => error.code === "PROVIDER_CREDENTIALS_REQUIRED"
+  );
+  await assert.rejects(
+    () => registry.getBookingStatus("lookupdemo", { bookingId: "bad\nreference" }, { credentials: { token: "x" } }),
+    error => error.code === "INVALID_BOOKING_REFERENCE"
+  );
+});
+
+test("reservation lookup fails closed when provider lacks lookup capability or permission", async () => {
+  const noCapability = createPmsRegistry([{
+    id: "noread",
+    name: "No lookup",
+    mode: "sandbox",
+    capabilities: {},
+    async testConnection() { return { ok: true }; },
+  }]);
+  await assert.rejects(
+    () => noCapability.getBookingStatus("noread", { bookingId: "res-1" }),
+    error => error.code === "CAPABILITY_UNAVAILABLE"
+  );
+
+  const noScope = createPmsRegistry([{
+    id: "noscope",
+    name: "Missing read scope",
+    mode: "production",
+    capabilities: { bookingLookup: true },
+    async validateCredentials(credentials) { return { credentials, scopes: [] }; },
+    async testConnection() { return { ok: true }; },
+    async getBookingStatus() { throw new Error("must not call provider"); },
+  }]);
+  await assert.rejects(
+    () => noScope.getBookingStatus("noscope", { bookingId: "res-1" }, { credentials: { token: "test" } }),
+    error => error.code === "PROVIDER_SCOPE_MISSING"
+  );
+});
+
 test("webhook events are normalized, time-bounded and size-limited", () => {
   const now = new Date("2027-01-10T12:00:00.000Z");
   assert.deepEqual(normalizeWebhookEvent({

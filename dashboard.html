@@ -580,7 +580,8 @@ async function loadHotelBookings(){
   const amounts='<strong>'+money(b.total_amount_minor,b.currency)+'</strong><div class="muted" style="font-size:12px">Deposit: '+money(b.deposit_amount_minor,b.currency)+'</div>';
   const status='<span class="tag '+(b.state==="confirmed"?"good":b.state==="payment_failed"||b.state==="booking_failed"||b.state==="cancelled"?"bad":"warn")+'">'+safe(stateLabels[b.state]||b.state)+'</span>';
   const pms=b.pms_booking_id?'<strong>'+safe(b.pms_provider||"PMS")+'</strong><div class="muted" style="font-size:12px">Ref: '+safe(b.pms_booking_id)+'</div>': '<span class="muted">No confirmed PMS reference</span>';
-  return '<tr><td>'+guest+'</td><td>'+stay+'</td><td>'+room+'</td><td>'+amounts+'</td><td>'+status+'</td><td>'+pms+(b.last_error_code?'<div class="muted" style="font-size:12px">Issue: '+safe(b.last_error_code)+'</div>':'')+'</td><td>'+date(b.created_at)+'</td></tr>';
+  const reconcile=["owner","admin"].includes(currentRole)&&b.state==="booking_pending"&&b.pms_provider&&b.pms_booking_id?'<div style="margin-top:7px"><button class="btn" data-action="reconcile-pms" data-id="'+safe(b.id)+'">Check PMS status</button></div>':"";
+  return '<tr><td>'+guest+'</td><td>'+stay+'</td><td>'+room+'</td><td>'+amounts+'</td><td>'+status+'</td><td>'+pms+(b.last_error_code?'<div class="muted" style="font-size:12px">Issue: '+safe(b.last_error_code)+'</div>':'')+reconcile+'</td><td>'+date(b.created_at)+'</td></tr>';
  }).join("");
  $("bookingRows").innerHTML=rows||'<tr><td colspan="7" class="empty">No booking records match this filter.</td></tr>';
 }
@@ -634,6 +635,17 @@ async function enterWorkspace(){
 $("loginForm").addEventListener("submit",async e=>{e.preventDefault();try{const d=await api("/api/auth/login",{method:"POST",body:JSON.stringify({organizationSlug:$("workspaceSlug").value.trim().toLowerCase(),email:$("email").value,password:$("password").value})});csrfToken=d.csrfToken;await enterWorkspace();}catch(err){loginError(err.message);}});
 $("logout").addEventListener("click",async()=>{try{await api("/api/auth/logout",{method:"POST",body:"{}"});}catch{}csrfToken="";$("app").classList.add("hidden");$("login").classList.remove("hidden");$("password").value="";});
 $("refresh").addEventListener("click",()=>loadPanel(activePanel));
+$("bookingRows").addEventListener("click",async e=>{
+ const b=e.target.closest('button[data-action="reconcile-pms"]');
+ if(!b)return;
+ if(!confirm("Ask the hotel's connected PMS for the status of this existing reservation? Veyra will not create another reservation."))return;
+ b.disabled=true;
+ try{
+  const result=await api("/api/admin/bookings/"+encodeURIComponent(b.dataset.id)+"/reconcile-pms",{method:"POST",body:"{}"});
+  showToast(result.state==="confirmed"?"PMS confirmed the existing reservation.":"PMS still reports the reservation as pending.");
+  await loadHotelBookings();
+ }catch(err){notice(err.message,"error");b.disabled=false;}
+});
 $("bookingStateFilter").addEventListener("change",()=>{bookingOffset=0;loadHotelBookings();});
 $("bookingPrevious").addEventListener("click",()=>{bookingOffset=Math.max(0,bookingOffset-50);loadHotelBookings();});
 $("bookingNext").addEventListener("click",()=>{bookingOffset+=50;loadHotelBookings();});

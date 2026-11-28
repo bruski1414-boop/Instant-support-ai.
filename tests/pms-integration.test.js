@@ -420,3 +420,23 @@ test("reservation lookup distinguishes not-found from pending without weakening 
     PmsIntegrationError
   );
 });
+
+
+test("PMS registry returns an explicit not-found lookup without accepting it as a created booking", async () => {
+  const registry = createPmsRegistry([{
+    id: "notfounddemo",
+    name: "Not found lookup demo",
+    mode: "production",
+    capabilities: { bookingLookup: true },
+    async validateCredentials(credentials) {
+      return { credentials, scopes: ["booking:read"] };
+    },
+    async testConnection() { return { ok: true }; },
+    async getBookingStatus({ bookingId }) {
+      return { bookingId, status: "not_found" };
+    },
+  }]);
+  assert.deepEqual(await registry.getBookingStatus("notfounddemo", { bookingId: "reservation-404" }, {
+    credentials: { token: "test-token" },
+  }), { bookingId: "reservation-404", status: "not_found" });
+});

@@ -49,7 +49,7 @@ test("a database failure after PMS confirmation keeps guest status pending for s
   assert.equal(result.state, "booking_pending");
   assert.equal(result.confirmed, false);
   assert.equal(result.requiresStaffReview, true);
-  assert.equal(result.reason, "pms_outcome_persistence_failed");
+  assert.equal(result.reason, "pms_outcome_persistence_unverified");
   assert.equal(result.pmsBookingId, "mews-987");
 });
 

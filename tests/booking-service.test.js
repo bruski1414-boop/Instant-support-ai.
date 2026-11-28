@@ -272,3 +272,16 @@ test("unavailable provider capability reports unknown instead of fake availabili
   assert.equal(result.reason, "pms_availability_not_ready");
   assert.deepEqual(result.rooms, []);
 });
+
+
+test("booking orchestrator can be constructed in demo mode but refuses invocation without a database", async () => {
+  const orchestrator = createVerifiedDepositPmsOrchestrator({
+    db: null,
+    vault: { decrypt() { return {}; } },
+    pmsRegistry: { async createBooking() { throw new Error("must not call"); } },
+  });
+  await assert.rejects(
+    () => orchestrator({ organizationId: "hotel-a", bookingId: "booking-1" }),
+    error => error.code === "PMS_ORCHESTRATOR_NOT_CONFIGURED"
+  );
+});

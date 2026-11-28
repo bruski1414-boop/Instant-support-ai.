@@ -104,7 +104,8 @@ function orchestratorDb({ bookingState = "payment_verified", connection = null }
         return { rowCount: bookingState ? 1 : 0, rows: bookingState ? [{ state: bookingState }] : [] };
       }
       if (sql.includes("FROM pms_connections")) {
-        return { rowCount: connection ? 1 : 0, rows: connection ? [connection] : [] };
+        const matches = Boolean(connection) && (!sql.includes("mode='production'") || connection.mode === "production");
+        return { rowCount: matches ? 1 : 0, rows: matches ? [connection] : [] };
       }
       throw new Error("Unexpected SQL: " + sql);
     },
@@ -129,7 +130,9 @@ test("verified deposit with no connected PMS stays unconfirmed for staff review"
 
 
 test("sandbox PMS connections are never used to create live guest reservations", async () => {
-  const db = orchestratorDb({ connection: null });
+  const db = orchestratorDb({ connection: {
+    provider: "sandbox-pms", mode: "sandbox", scopes: ["booking:write"], encrypted_credentials: "sandbox-ciphertext",
+  } });
   let reservationCalls = 0;
   const orchestrate = createVerifiedDepositPmsOrchestrator({
     db,
